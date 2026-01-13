@@ -1,5 +1,13 @@
-
 import { createContext, useContext, useState, useEffect } from 'react';
+import {
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged,
+    updateProfile
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 const AuthContext = createContext(null);
 
@@ -16,80 +24,112 @@ export const AuthProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Check for persisted user on mount (mock persistence)
-        const storedUser = localStorage.getItem('idol_wiki_user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-        setIsLoading(false);
+        // Listen for real Firebase auth state changes
+        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (firebaseUser) {
+                // Get additional user data from Firestore (role, avatar, etc.)
+                try {
+                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                    if (userDoc.exists()) {
+                        setUser({
+                            uid: firebaseUser.uid,
+                            email: firebaseUser.email,
+                            ...userDoc.data()
+                        });
+                    } else {
+                        // If no firestore doc yet, use basic auth info
+                        setUser({
+                            uid: firebaseUser.uid,
+                            email: firebaseUser.email,
+                            name: firebaseUser.displayName,
+                            avatar: firebaseUser.photoURL,
+                            role: firebaseUser.email === 'admin@example.com' ? 'admin' : 'user'
+                        });
+                    }
+                } catch (error) {
+                    console.error("Error fetching user data:", error);
+                    // Fallback to basic auth info
+                    setUser({
+                        uid: firebaseUser.uid,
+                        email: firebaseUser.email,
+                        name: firebaseUser.displayName
+                    });
+                }
+            } else {
+                setUser(null);
+            }
+            setIsLoading(false);
+        });
+
+        return () => unsubscribe();
     }, []);
 
     const login = async (email, password) => {
         setIsLoading(true);
-        // Mock API call
-        return new Promise((resolve, reject) => {
-            setTimeout(() => {
-                if (email === 'admin@example.com' && password === 'admin123') {
-                    const newUser = {
-                        name: 'Admin User',
-                        email: email,
-                        role: 'admin',
-                        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=60'
-                    };
-                    setUser(newUser);
-                    localStorage.setItem('idol_wiki_user', JSON.stringify(newUser));
-                    resolve(newUser);
-                } else if (password === 'password123') {
-                    const newUser = {
-                        name: 'K-Pop Fan',
-                        email: email,
-                        role: 'user',
-                        avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=60'
-                    };
-                    setUser(newUser);
-                    localStorage.setItem('idol_wiki_user', JSON.stringify(newUser));
-                    resolve(newUser);
-                } else {
-                    reject(new Error('Invalid credentials'));
-                }
-                setIsLoading(false);
-            }, 800);
-        });
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            return userCredential.user;
+        } catch (error) {
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const register = async (name, email, password) => {
         setIsLoading(true);
-        // Mock API call
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const newUser = {
-                    name: name,
-                    email: email,
-                    role: 'user', // Default to user
-                    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=60'
-                };
-                setUser(newUser);
-                localStorage.setItem('idol_wiki_user', JSON.stringify(newUser));
-                resolve(newUser);
-                setIsLoading(false);
-            }, 800);
-        });
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const firebaseUser = userCredential.user;
+
+            // Update basic profile
+            await updateProfile(firebaseUser, { displayName: name });
+
+            // Create user document in Firestore
+            const userData = {
+                name: name,
+                email: email,
+                role: email === 'admin@example.com' ? 'admin' : 'user',
+                avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=60',
+                createdAt: new Date().toISOString()
+            };
+
+            await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+
+            setUser({ uid: firebaseUser.uid, ...userData });
+            return firebaseUser;
+        } catch (error) {
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const logout = () => {
-        setUser(null);
-        localStorage.removeItem('idol_wiki_user');
+    const logout = async () => {
+        try {
+            await signOut(auth);
+            setUser(null);
+        } catch (error) {
+            console.error("Logout error:", error);
+        }
     };
 
     const updateUser = async (data) => {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const updatedUser = { ...user, ...data };
-                setUser(updatedUser);
-                localStorage.setItem('idol_wiki_user', JSON.stringify(updatedUser));
-                resolve(updatedUser);
-            }, 500);
-        });
+        if (!user) return;
+        try {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, data);
+
+            // Also update Auth profile if name changed
+            if (data.name) {
+                await updateProfile(auth.currentUser, { displayName: data.name });
+            }
+
+            setUser(prev => ({ ...prev, ...data }));
+        } catch (error) {
+            console.error("Update error:", error);
+            throw error;
+        }
     };
 
     const isAdmin = user?.role === 'admin';

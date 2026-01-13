@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2 } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { convertDriveLink, uploadToDrive } from '../lib/storage';
+import { useGoogleDrive } from '../context/GoogleDriveContext';
 
 export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const { accessToken, connectDrive, isConnected } = useGoogleDrive();
     const [formData, setFormData] = useState(idol || {});
     const [editMode, setEditMode] = useState(mode === 'create');
     const [activeImage, setActiveImage] = useState('');
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -40,7 +44,9 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        const processedValue = name === 'image' ? convertDriveLink(value) : value;
+        setFormData(prev => ({ ...prev, [name]: processedValue }));
+        if (name === 'image') setActiveImage(processedValue);
     };
 
     const handlePositionsChange = (e) => {
@@ -310,7 +316,87 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                                 {editMode && (
                                     <>
-                                        <DetailItem icon={Instagram} label="Image URL" value={formData.image} editMode={editMode} name="image" onChange={handleChange} theme={theme} />
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                    <Instagram size={12} />
+                                                    Photo & Storage
+                                                </label>
+                                                <span className={cn(
+                                                    "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full transition-colors",
+                                                    isConnected ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                                                )}>
+                                                    {isConnected ? "Drive Connected" : "Drive Disconnected"}
+                                                </span>
+                                            </div>
+
+                                            <div className="flex flex-col sm:flex-row gap-4">
+                                                <div className="relative flex-1 group/input">
+                                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-brand-pink transition-colors">
+                                                        <Globe size={18} />
+                                                    </div>
+                                                    <input
+                                                        name="image"
+                                                        value={formData.image}
+                                                        onChange={handleChange}
+                                                        className={cn(
+                                                            "w-full rounded-2xl py-4 pl-12 pr-6 border-2 focus:outline-none transition-all text-sm font-bold",
+                                                            theme === 'dark'
+                                                                ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
+                                                                : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                                                        )}
+                                                        placeholder="Paste image URL or Drive link..."
+                                                    />
+                                                </div>
+
+                                                <div className="flex gap-2">
+                                                    {!isConnected ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={connectDrive}
+                                                            className="px-6 py-4 rounded-2xl bg-slate-800 text-white font-black uppercase text-[10px] tracking-widest hover:bg-slate-700 transition-all active:scale-95 shadow-lg flex items-center gap-2"
+                                                        >
+                                                            <Lock size={16} /> Auth Drive
+                                                        </button>
+                                                    ) : (
+                                                        <label className="cursor-pointer group/upload">
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
+                                                                className="hidden"
+                                                                onChange={async (e) => {
+                                                                    const file = e.target.files[0];
+                                                                    if (!file) return;
+                                                                    setLoading(true);
+                                                                    try {
+                                                                        const url = await uploadToDrive(file, accessToken);
+                                                                        const directUrl = convertDriveLink(url);
+                                                                        setFormData(prev => ({ ...prev, image: directUrl }));
+                                                                        setActiveImage(directUrl);
+                                                                    } catch (err) {
+                                                                        console.error(err);
+                                                                        alert(err.message);
+                                                                    } finally {
+                                                                        setLoading(false);
+                                                                    }
+                                                                }}
+                                                                disabled={loading}
+                                                            />
+                                                            <div className={cn(
+                                                                "px-6 py-4 rounded-2xl bg-gradient-to-tr from-brand-blue to-brand-purple text-white font-black uppercase text-[10px] tracking-widest transition-all active:scale-95 shadow-lg flex items-center gap-2",
+                                                                loading ? "opacity-50 cursor-not-allowed" : "hover:scale-105"
+                                                            )}>
+                                                                {loading ? <Loader2 size={16} className="animate-spin" /> : <Rocket size={16} />}
+                                                                Upload
+                                                            </div>
+                                                        </label>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <p className="text-[9px] text-slate-500 font-medium pl-1">
+                                                💡 Tip: เชื่อมต่อ Google Drive หนึ่งครั้งเพื่ออัปโหลดรูปเข้า Folder ของคุณโดยตรงครับ
+                                            </p>
+                                        </div>
                                         <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
                                     </>
                                 )}

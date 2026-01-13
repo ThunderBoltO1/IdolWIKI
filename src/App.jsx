@@ -14,7 +14,10 @@ import { ProfilePage } from './components/ProfilePage';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { GoogleDriveProvider } from './context/GoogleDriveContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 
 function AppContent() {
@@ -37,8 +40,56 @@ function AppContent() {
   }, []);
 
   // No longer needed: setCurrentView, setSelectedGroupId (moved to URL)
-  const [idols, setIdols] = useState(initialIdols);
-  const [groups] = useState(initialGroups);
+  const [idols, setIdols] = useState([]);
+  const [groups, setGroups] = useState([]);
+
+  // Firestore Real-time Sync & Seeding
+  useEffect(() => {
+    const seedDatabase = async () => {
+      try {
+        const groupsSnap = await getDocs(query(collection(db, 'groups'), limit(1)));
+        if (groupsSnap.empty && initialGroups?.length > 0) {
+          console.log("Seeding groups...");
+          const batch = writeBatch(db);
+          initialGroups.forEach((g) => {
+            const newRef = doc(collection(db, 'groups'));
+            batch.set(newRef, { ...g, id: newRef.id });
+          });
+          await batch.commit();
+        }
+
+        const idolsSnap = await getDocs(query(collection(db, 'idols'), limit(1)));
+        if (idolsSnap.empty && initialIdols?.length > 0) {
+          console.log("Seeding idols...");
+          const batch = writeBatch(db);
+          initialIdols.forEach((idol) => {
+            const newRef = doc(collection(db, 'idols'));
+            batch.set(newRef, { ...idol, id: newRef.id });
+          });
+          await batch.commit();
+        }
+      } catch (err) {
+        console.error("Seeding error:", err);
+      }
+    };
+
+    seedDatabase();
+
+    const unsubGroups = onSnapshot(collection(db, 'groups'), (snap) => {
+      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setGroups(data);
+    });
+
+    const unsubIdols = onSnapshot(collection(db, 'idols'), (snap) => {
+      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setIdols(data);
+    });
+
+    return () => {
+      unsubGroups();
+      unsubIdols();
+    };
+  }, []);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({ group: '', company: '' });
   const [sortOption, setSortOption] = useState('name_asc');
@@ -73,7 +124,7 @@ function AppContent() {
   }, [groups, filters.company]);
 
   const groupCompanies = useMemo(() => {
-    return [...new Set(groups.map(g => g.company.split(' (')[0]))].sort();
+    return [...new Set(groups.map(g => (g.company || '').split(' (')[0]))].sort();
   }, [groups]);
 
   // Navigation Scroll Fix
@@ -94,37 +145,50 @@ function AppContent() {
     setModalOpen(true);
   };
 
-  const handleSave = (idolData) => {
-    if (modalMode === 'create') {
-      const newIdol = {
-        ...idolData,
-        id: Date.now().toString(),
-        likes: 0,
-        isFavorite: false
-      };
-      setIdols(prev => [newIdol, ...prev]);
-    } else {
-      setIdols(prev => prev.map(i => i.id === idolData.id ? idolData : i));
-    }
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm('Are you sure you want to delete this idol?')) {
-      setIdols(prev => prev.filter(i => i.id !== id));
-    }
-  };
-
-  const handleLike = (id) => {
-    setIdols(prev => prev.map(i => {
-      if (i.id === id) {
-        return {
-          ...i,
-          likes: i.isFavorite ? i.likes - 1 : i.likes + 1,
-          isFavorite: !i.isFavorite
+  const handleSave = async (idolData) => {
+    try {
+      if (modalMode === 'create') {
+        const newIdol = {
+          ...idolData,
+          likes: 0,
+          isFavorite: false,
+          createdAt: new Date().toISOString()
         };
+        await addDoc(collection(db, 'idols'), newIdol);
+      } else if (selectedIdol?.id) {
+        const idolRef = doc(db, 'idols', selectedIdol.id);
+        await updateDoc(idolRef, idolData);
       }
-      return i;
-    }));
+      setModalOpen(false);
+    } catch (err) {
+      console.error("Save error:", err);
+      alert("Failed to save data. Please check your Firestore rules.");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (window.confirm('Are you sure you want to delete this idol?')) {
+      try {
+        await deleteDoc(doc(db, 'idols', id));
+        setModalOpen(false);
+      } catch (err) {
+        console.error("Delete error:", err);
+      }
+    }
+  };
+
+  const handleLike = async (id) => {
+    const idol = idols.find(i => i.id === id);
+    if (!idol) return;
+    try {
+      const idolRef = doc(db, 'idols', id);
+      await updateDoc(idolRef, {
+        likes: idol.isFavorite ? (idol.likes || 0) - 1 : (idol.likes || 0) + 1,
+        isFavorite: !idol.isFavorite
+      });
+    } catch (err) {
+      console.error("Like error:", err);
+    }
   };
 
   const handleGroupClick = (groupId) => {
@@ -274,11 +338,13 @@ function App() {
   return (
     <Router>
       <ThemeProvider>
-        <AuthProvider>
-          <ErrorBoundary>
-            <AppContent />
-          </ErrorBoundary>
-        </AuthProvider>
+        <GoogleDriveProvider>
+          <AuthProvider>
+            <ErrorBoundary>
+              <AppContent />
+            </ErrorBoundary>
+          </AuthProvider>
+        </GoogleDriveProvider>
       </ThemeProvider>
     </Router>
   );

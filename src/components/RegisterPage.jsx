@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
     const { register } = useAuth();
     const { theme } = useTheme();
-    const [formData, setFormData] = useState({ name: '', email: '', password: '' });
+    const [formData, setFormData] = useState({ name: '', username: '', email: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -17,7 +17,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
         setError('');
         setLoading(true);
         try {
-            await register(formData.name, formData.email, formData.password);
+            await register(formData.name, formData.username, formData.email, formData.password);
             onRegisterSuccess();
         } catch (err) {
             setError(err.message || 'Failed to register');
@@ -75,6 +75,15 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                         onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                         theme={theme}
                         placeholder="John Doe"
+                    />
+
+                    <InputGroup
+                        icon={User}
+                        label="Username"
+                        value={formData.username}
+                        onChange={e => setFormData(prev => ({ ...prev, username: e.target.value }))}
+                        theme={theme}
+                        placeholder="unique_username"
                     />
 
                     <InputGroup

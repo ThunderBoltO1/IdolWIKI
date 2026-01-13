@@ -2,21 +2,31 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Camera, Loader2, Save, ArrowLeft, CheckCircle2, Mail, Info, Globe, Lock, Rocket } from 'lucide-react';
+import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useGoogleDrive } from '../context/GoogleDriveContext';
-import { uploadToDrive, convertDriveLink } from '../lib/storage';
+import { convertDriveLink } from '../lib/storage';
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
     const { theme } = useTheme();
-    const { accessToken, connectDrive, isConnected } = useGoogleDrive();
     const [formData, setFormData] = useState({
         name: user?.name || '',
         avatar: user?.avatar || '',
         email: user?.email || '',
         bio: user?.bio || ''
     });
+
+    // Sync formData when user data is loaded or changed in Firestore
+    React.useEffect(() => {
+        if (user) {
+            setFormData({
+                name: user.name || '',
+                avatar: user.avatar || '',
+                email: user.email || '',
+                bio: user.bio || ''
+            });
+        }
+    }, [user]);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
 
@@ -78,66 +88,38 @@ export const ProfilePage = ({ onBack }) => {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-10 relative z-10">
-                    {/* Avatar Upload Preview */}
+                    {/* Avatar Preview */}
                     <div className="flex flex-col items-center gap-5">
                         <div className="relative group">
                             <div className="absolute inset-0 bg-gradient-to-tr from-brand-pink to-brand-purple rounded-full blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
                             <img
-                                src={formData.avatar}
+                                src={convertDriveLink(formData.avatar)}
                                 alt="Avatar"
                                 className={cn(
                                     "w-36 h-36 rounded-full border-4 object-cover shadow-2xl relative z-10 transition-transform duration-500 group-hover:scale-105",
                                     theme === 'dark' ? "border-slate-800" : "border-white"
                                 )}
+                                onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = '';
+                                }}
                             />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20 backdrop-blur-[2px]">
-                                <Camera className="text-white" size={28} />
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                    disabled={!isConnected || loading}
-                                    onChange={async (e) => {
-                                        const file = e.target.files[0];
-                                        if (!file) return;
-                                        setLoading(true);
-                                        try {
-                                            const url = await uploadToDrive(file, accessToken);
-                                            const directUrl = convertDriveLink(url);
-                                            setFormData(prev => ({ ...prev, avatar: directUrl }));
-                                        } catch (err) {
-                                            console.error(err);
-                                            alert(err.message);
-                                        } finally {
-                                            setLoading(false);
-                                        }
-                                    }}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex flex-col items-center gap-2">
-                            <p className="text-[10px] text-brand-pink uppercase font-black tracking-[0.2em]">Profile Identity</p>
-                            <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full transition-colors",
-                                    isConnected ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
-                                )}>
-                                    {isConnected ? "Drive Connected" : "Drive Disconnected"}
-                                </span>
-                                {!isConnected && (
-                                    <button
-                                        type="button"
-                                        onClick={connectDrive}
-                                        className="text-[9px] font-black uppercase tracking-widest text-brand-blue hover:underline"
-                                    >
-                                        Connect
-                                    </button>
-                                )}
-                            </div>
                         </div>
                     </div>
 
                     <div className="grid gap-8 md:grid-cols-2">
+                        <div className="md:col-span-2">
+                            <InputGroup
+                                icon={Globe}
+                                label="Avatar URL"
+                                name="avatar"
+                                value={formData.avatar}
+                                onChange={e => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://example.com/image.jpg"
+                            />
+                        </div>
+
                         <div className="md:col-span-2">
                             <InputGroup
                                 icon={User}

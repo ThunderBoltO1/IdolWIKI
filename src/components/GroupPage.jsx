@@ -1,18 +1,30 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, Music, Heart } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, Music, Heart, Globe, Edit2, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { convertDriveLink } from '../lib/storage';
 
-export function GroupPage({ group, members, onBack, onMemberClick }) {
+export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup }) {
+    const { isAdmin } = useAuth();
     const { theme } = useTheme();
     const containerRef = useRef(null);
     const [activeImage, setActiveImage] = useState(group?.image || '');
+    const [isEditingUrl, setIsEditingUrl] = useState(false);
+
+    // Sync activeImage when group data changes from Firestore
+    useEffect(() => {
+        if (group?.image) {
+            setActiveImage(group.image);
+        }
+    }, [group?.image]);
 
     const { scrollY } = useScroll();
     const y1 = useTransform(scrollY, [0, 500], [0, 150]);
     const scale = useTransform(scrollY, [0, 500], [1, 1.1]);
     const opacity = useTransform(scrollY, [0, 400], [1, 0]);
+    const y2 = useTransform(scrollY, [0, 400], [0, -50]);
 
     if (!group) return (
         <div className="py-20 text-center">
@@ -29,14 +41,61 @@ export function GroupPage({ group, members, onBack, onMemberClick }) {
             <section className="relative h-[500px] md:h-[700px] rounded-[32px] md:rounded-[60px] overflow-hidden shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] group/hero perspective-1000">
                 <motion.div
                     style={{ y: y1, scale }}
-                    className="absolute inset-0 w-full h-full"
+                    className="absolute inset-0 w-full h-full transition-all duration-700"
                 >
                     <img
-                        src={activeImage}
+                        src={convertDriveLink(activeImage)}
                         alt={group.name}
                         className="w-full h-full object-cover"
+                        onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = '';
+                        }}
                     />
                 </motion.div>
+
+                {isAdmin && (
+                    <div className="absolute top-8 right-8 z-20 flex flex-col items-end gap-3">
+                        {isEditingUrl ? (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9, x: 20 }}
+                                animate={{ opacity: 1, scale: 1, x: 0 }}
+                                className="bg-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-white/20 shadow-2xl flex items-center gap-3 min-w-[300px]"
+                            >
+                                <Globe size={18} className="text-brand-pink shrink-0" />
+                                <input
+                                    type="text"
+                                    value={activeImage}
+                                    placeholder="Paste Image URL..."
+                                    className="bg-transparent border-none focus:outline-none text-white text-xs font-bold w-full"
+                                    onChange={(e) => {
+                                        const url = e.target.value;
+                                        setActiveImage(url);
+                                    }}
+                                    onBlur={async () => {
+                                        await onUpdateGroup(group.id, { image: activeImage });
+                                        setIsEditingUrl(false);
+                                    }}
+                                    onKeyDown={async (e) => {
+                                        if (e.key === 'Enter') {
+                                            await onUpdateGroup(group.id, { image: activeImage });
+                                            setIsEditingUrl(false);
+                                        }
+                                    }}
+                                    autoFocus
+                                />
+                            </motion.div>
+                        ) : (
+                            <button
+                                onClick={() => setIsEditingUrl(true)}
+                                className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50 active:scale-95"
+                                title="Edit Hero Image URL"
+                            >
+                                <Edit2 size={20} />
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 <div className={cn(
                     "absolute inset-0 bg-gradient-to-t via-slate-950/20 to-transparent transition-opacity duration-700",
@@ -56,7 +115,7 @@ export function GroupPage({ group, members, onBack, onMemberClick }) {
                 </motion.button>
 
                 <motion.div
-                    style={{ y: useTransform(scrollY, [0, 400], [0, -50]), opacity }}
+                    style={{ y: y2, opacity }}
                     className="absolute bottom-10 md:bottom-20 left-6 md:left-12 right-6 md:right-12 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-10 z-10"
                 >
                     <div className="max-w-3xl">
@@ -263,7 +322,7 @@ function MemberCard({ member, theme, onClick }) {
                 <div className="relative shrink-0">
                     <div className="absolute inset-0 bg-brand-pink blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500 rounded-full" />
                     <img
-                        src={member.image}
+                        src={convertDriveLink(member.image)}
                         alt={member.name}
                         className="w-32 h-32 md:w-40 md:h-40 rounded-[32px] md:rounded-[40px] object-cover border-4 border-white/5 shadow-2xl transition-all duration-700 group-hover:scale-110 group-hover:rotate-3"
                     />

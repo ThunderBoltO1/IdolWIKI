@@ -12,9 +12,8 @@ import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
 import { ProfilePage } from './components/ProfilePage';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { GoogleDriveProvider } from './context/GoogleDriveContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
 import { db } from './lib/firebase';
@@ -23,9 +22,24 @@ import { cn } from './lib/utils';
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [error, setError] = useState(null);
+  const { user, isAdmin, logout } = useAuth();
 
-  React.useEffect(() => {
+  const [error, setError] = useState(null);
+  const [idols, setIdols] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [dbError, setDbError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filters, setFilters] = useState({ group: '', company: '' });
+  const [sortOption, setSortOption] = useState('name_asc');
+  const { theme } = useTheme();
+
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', 'create'
+  const [selectedIdol, setSelectedIdol] = useState(null);
+
+  // Error Handler
+  useEffect(() => {
     const handleError = (event) => {
       setError({
         message: event.message,
@@ -39,21 +53,18 @@ function AppContent() {
     return () => window.removeEventListener('error', handleError);
   }, []);
 
-  // No longer needed: setCurrentView, setSelectedGroupId (moved to URL)
-  const [idols, setIdols] = useState([]);
-  const [groups, setGroups] = useState([]);
-
   // Firestore Real-time Sync & Seeding
   useEffect(() => {
     const seedDatabase = async () => {
       try {
+        console.log("Checking database status...");
         const groupsSnap = await getDocs(query(collection(db, 'groups'), limit(1)));
         if (groupsSnap.empty && initialGroups?.length > 0) {
           console.log("Seeding groups...");
           const batch = writeBatch(db);
           initialGroups.forEach((g) => {
-            const newRef = doc(collection(db, 'groups'));
-            batch.set(newRef, { ...g, id: newRef.id });
+            const docRef = doc(db, 'groups', g.id);
+            batch.set(docRef, g);
           });
           await batch.commit();
         }
@@ -63,42 +74,51 @@ function AppContent() {
           console.log("Seeding idols...");
           const batch = writeBatch(db);
           initialIdols.forEach((idol) => {
-            const newRef = doc(collection(db, 'idols'));
-            batch.set(newRef, { ...idol, id: newRef.id });
+            const docRef = doc(db, 'idols', idol.id);
+            batch.set(docRef, idol);
           });
           await batch.commit();
         }
       } catch (err) {
-        console.error("Seeding error:", err);
+        console.error("Seeding failed critical check:", err);
+        if (err.code === 'permission-denied') {
+          setDbError("Seeding failed: Missing permissions. Please ensure your account has the 'admin' role in Firestore.");
+        }
       }
     };
 
     seedDatabase();
 
-    const unsubGroups = onSnapshot(collection(db, 'groups'), (snap) => {
-      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setGroups(data);
-    });
+    const unsubGroups = onSnapshot(collection(db, 'groups'),
+      (snap) => {
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setGroups(data);
+        setDbError(null);
+      },
+      (error) => {
+        console.error("Firestore groups error:", error);
+        setDbError("Firestore access denied. Please check your security rules or ensure the database is initialized.");
+      }
+    );
 
-    const unsubIdols = onSnapshot(collection(db, 'idols'), (snap) => {
-      const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setIdols(data);
-    });
+    const unsubIdols = onSnapshot(collection(db, 'idols'),
+      (snap) => {
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setIdols(data);
+        setDbError(null);
+      },
+      (error) => {
+        console.error("Firestore idols error:", error);
+        setDbError("Firestore access denied. Please check your security rules or ensure the database is initialized.");
+      }
+    );
 
     return () => {
       unsubGroups();
       unsubIdols();
     };
-  }, []);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({ group: '', company: '' });
-  const [sortOption, setSortOption] = useState('name_asc');
-  const { theme } = useTheme();
+  }, [user]);
 
-  // Modal State
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', 'create'
-  const [selectedIdol, setSelectedIdol] = useState(null);
 
   // Derived Data
   const uniqueGroups = useMemo(() => {
@@ -196,6 +216,43 @@ function AppContent() {
     setModalOpen(false);
   };
 
+  const handleUpdateGroup = async (groupId, data) => {
+    try {
+      const groupRef = doc(db, 'groups', groupId);
+      await updateDoc(groupRef, data);
+    } catch (err) {
+      console.error("Group update error:", err);
+      alert("Failed to update group: " + err.message);
+    }
+  };
+
+  const handleResetData = async () => {
+    if (!isAdmin) return;
+    if (!window.confirm("⚠️ WARNING: This will clear all current Idols/Groups and re-sync with the latest data. This is recommended to fix the 'Missing Idols' issue. Proceed?")) return;
+
+    try {
+      setDbError("🔄 Re-syncing database... please wait.");
+
+      // Clear groups
+      const gSnap = await getDocs(collection(db, 'groups'));
+      const b1 = writeBatch(db);
+      gSnap.docs.forEach(d => b1.delete(d.ref));
+      await b1.commit();
+
+      // Clear idols
+      const iSnap = await getDocs(collection(db, 'idols'));
+      const b2 = writeBatch(db);
+      iSnap.docs.forEach(d => b2.delete(d.ref));
+      await b2.commit();
+
+      // Trigger reload
+      window.location.reload();
+    } catch (err) {
+      console.error("Reset error:", err);
+      alert("Reset failed: " + err.message);
+    }
+  };
+
   const handleMemberClick = (member) => {
     setSelectedIdol(member);
     setModalMode('view');
@@ -230,6 +287,37 @@ function AppContent() {
         onProfileClick={() => navigate('/profile')}
         onHomeClick={() => navigate('/')}
       />
+
+      {dbError && (
+        <div className="max-w-7xl mx-auto px-4 pt-8">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-3xl p-6 text-center">
+            <p className="text-red-500 font-black uppercase tracking-widest text-[10px] mb-2">System Alert: Database Connectivity</p>
+            <p className="text-slate-900 dark:text-white text-sm font-bold mb-4">{dbError}</p>
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-4">💡 Tip: Make sure you have created the 'Firestore Database' in your Firebase Console and applied the security rules.</p>
+            {isAdmin && (
+              <button
+                onClick={handleResetData}
+                className="px-6 py-2 rounded-xl bg-red-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg"
+              >
+                Perform System Re-Sync
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Admin Quick Sync Tool (Optional, always visible for admin) */}
+      {!dbError && isAdmin && (
+        <div className="fixed bottom-6 left-6 z-50">
+          <button
+            onClick={handleResetData}
+            className="px-4 py-2 rounded-full bg-slate-900/50 backdrop-blur-md border border-white/10 text-white text-[9px] font-black uppercase tracking-widest hover:bg-red-500 transition-all shadow-2xl"
+            title="Fix Data Linking Issues"
+          >
+            🔄 Re-Sync Data
+          </button>
+        </div>
+      )}
 
 
       <main className="container mx-auto px-4 py-8 relative z-10">
@@ -293,7 +381,7 @@ function AppContent() {
               </motion.div>
             } />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} navigate={navigate} />} />
+            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} navigate={navigate} />} />
           </Routes>
         </AnimatePresence>
       </main>
@@ -312,7 +400,7 @@ function AppContent() {
   );
 }
 
-function GroupRouteWrapper({ groups, idols, handleMemberClick, navigate }) {
+function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, navigate }) {
   const { groupId } = useParams();
   const group = groups.find(g => g.id === groupId);
   const members = idols.filter(i => i.groupId === groupId);
@@ -329,6 +417,7 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, navigate }) {
         members={members}
         onBack={() => navigate('/')}
         onMemberClick={handleMemberClick}
+        onUpdateGroup={onUpdateGroup}
       />
     </motion.div>
   );
@@ -338,13 +427,11 @@ function App() {
   return (
     <Router>
       <ThemeProvider>
-        <GoogleDriveProvider>
-          <AuthProvider>
-            <ErrorBoundary>
-              <AppContent />
-            </ErrorBoundary>
-          </AuthProvider>
-        </GoogleDriveProvider>
+        <AuthProvider>
+          <ErrorBoundary>
+            <AppContent />
+          </ErrorBoundary>
+        </AuthProvider>
       </ThemeProvider>
     </Router>
   );

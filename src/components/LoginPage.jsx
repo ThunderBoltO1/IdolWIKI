@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
     const { login } = useAuth();
     const { theme } = useTheme();
-    const [formData, setFormData] = useState({ email: '', password: '' });
+    const [formData, setFormData] = useState({ identifier: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -17,7 +17,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
         setError('');
         setLoading(true);
         try {
-            await login(formData.email, formData.password);
+            await login(formData.identifier, formData.password);
             onLoginSuccess();
         } catch (err) {
             setError(err.message || 'Failed to login');
@@ -72,21 +72,21 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                         <label className={cn(
                             "text-[10px] font-black uppercase tracking-[0.2em] ml-1",
                             theme === 'dark' ? "text-slate-500" : "text-slate-400"
-                        )}>Email Address</label>
+                        )}>Username</label>
                         <div className="relative">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input
-                                type="email"
+                                type="text"
                                 required
-                                value={formData.email}
-                                onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                                value={formData.identifier}
+                                onChange={e => setFormData(prev => ({ ...prev, identifier: e.target.value }))}
                                 className={cn(
                                     "w-full rounded-[20px] py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
                                     theme === 'dark'
                                         ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                                         : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
                                 )}
-                                placeholder="admin@example.com"
+                                placeholder="Your Username"
                             />
                         </div>
                     </div>

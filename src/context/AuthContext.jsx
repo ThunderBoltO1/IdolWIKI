@@ -6,7 +6,7 @@ import {
     onAuthStateChanged,
     updateProfile
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 const AuthContext = createContext(null);
@@ -24,49 +24,64 @@ export const AuthProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        // Listen for real Firebase auth state changes
-        const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        let unsubscribeUser = null;
+
+        const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+            if (unsubscribeUser) unsubscribeUser();
+
             if (firebaseUser) {
-                // Get additional user data from Firestore (role, avatar, etc.)
-                try {
-                    const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        setUser({
-                            uid: firebaseUser.uid,
-                            email: firebaseUser.email,
-                            ...userDoc.data()
-                        });
-                    } else {
-                        // If no firestore doc yet, use basic auth info
-                        setUser({
-                            uid: firebaseUser.uid,
-                            email: firebaseUser.email,
-                            name: firebaseUser.displayName,
-                            avatar: firebaseUser.photoURL,
-                            role: firebaseUser.email === 'admin@example.com' ? 'admin' : 'user'
-                        });
+                // Real-time listener for user document
+                unsubscribeUser = onSnapshot(doc(db, 'users', firebaseUser.uid),
+                    (docSnap) => {
+                        if (docSnap.exists()) {
+                            setUser({
+                                uid: firebaseUser.uid,
+                                email: firebaseUser.email,
+                                ...docSnap.data()
+                            });
+                        } else {
+                            // If no firestore doc yet
+                            setUser({
+                                uid: firebaseUser.uid,
+                                email: firebaseUser.email,
+                                name: firebaseUser.displayName,
+                                avatar: firebaseUser.photoURL,
+                                role: (firebaseUser.email === 'admin@example.com' || firebaseUser.email === 'mctv2541@gmail.com') ? 'admin' : 'user'
+                            });
+                        }
+                        setIsLoading(false);
+                    },
+                    (error) => {
+                        console.error("User doc listener error:", error);
+                        setIsLoading(false);
                     }
-                } catch (error) {
-                    console.error("Error fetching user data:", error);
-                    // Fallback to basic auth info
-                    setUser({
-                        uid: firebaseUser.uid,
-                        email: firebaseUser.email,
-                        name: firebaseUser.displayName
-                    });
-                }
+                );
             } else {
                 setUser(null);
+                setIsLoading(false);
             }
-            setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeAuth();
+            if (unsubscribeUser) unsubscribeUser();
+        };
     }, []);
 
-    const login = async (email, password) => {
+    const login = async (identifier, password) => {
         setIsLoading(true);
         try {
+            let email = identifier;
+
+            // If identifier doesn't look like an email, treat it as a username
+            if (!identifier.includes('@')) {
+                const usernameDoc = await getDoc(doc(db, 'usernames', identifier.toLowerCase()));
+                if (!usernameDoc.exists()) {
+                    throw new Error('Username not found');
+                }
+                email = usernameDoc.data().email;
+            }
+
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             return userCredential.user;
         } catch (error) {
@@ -76,23 +91,36 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const register = async (name, email, password) => {
+    const register = async (name, username, email, password) => {
         setIsLoading(true);
-        console.log("Starting registration for:", email);
+        const lowerUsername = username.toLowerCase().trim();
+        console.log("Starting registration for:", email, "with username:", lowerUsername);
         try {
+            // 1. Check if username exists
+            const usernameDoc = await getDoc(doc(db, 'usernames', lowerUsername));
+            if (usernameDoc.exists()) {
+                throw new Error('Username already taken');
+            }
+
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const firebaseUser = userCredential.user;
             console.log("Firebase Auth user created:", firebaseUser.uid);
 
-            // Update basic profile
+            // 2. Update basic profile
             await updateProfile(firebaseUser, { displayName: name });
-            console.log("Auth profile updated with name:", name);
 
-            // Create user document in Firestore
+            // 3. Create username mapping
+            await setDoc(doc(db, 'usernames', lowerUsername), {
+                email: email,
+                uid: firebaseUser.uid
+            });
+
+            // 4. Create user document in Firestore
             const userData = {
                 name: name,
+                username: lowerUsername,
                 email: email,
-                role: email === 'admin@example.com' ? 'admin' : 'user',
+                role: (email === 'admin@example.com' || email === 'mctv2541@gmail.com') ? 'admin' : 'user',
                 avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=60',
                 createdAt: new Date().toISOString()
             };

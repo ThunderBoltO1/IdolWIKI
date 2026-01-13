@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
+import { convertDriveLink } from '../lib/storage';
 
 export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }) {
     const { user, logout, isAdmin } = useAuth();
@@ -81,7 +82,7 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
                                     <p className="text-[10px] text-brand-pink uppercase font-black tracking-widest">{user.role}</p>
                                 </div>
                                 <img
-                                    src={user.avatar}
+                                    src={convertDriveLink(user.avatar)}
                                     alt={user.name}
                                     className={cn(
                                         "w-9 h-9 rounded-full border object-cover cursor-pointer hover:scale-110 transition-transform shadow-sm",

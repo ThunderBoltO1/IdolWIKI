@@ -138,26 +138,17 @@ export const ProfilePage = ({ onBack }) => {
                     </div>
 
                     <div className="grid gap-8 md:grid-cols-2">
-                        <InputGroup
-                            icon={User}
-                            label="Display Name"
-                            name="name"
-                            value={formData.name}
-                            onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                            theme={theme}
-                            placeholder="e.g. K-Pop Fan #1"
-                        />
-
-                        <InputGroup
-                            icon={Camera}
-                            label="Avatar URL"
-                            name="avatar"
-                            value={formData.avatar}
-                            onChange={e => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
-                            theme={theme}
-                            placeholder="URL to your image"
-                            isMono
-                        />
+                        <div className="md:col-span-2">
+                            <InputGroup
+                                icon={User}
+                                label="Display Name"
+                                name="name"
+                                value={formData.name}
+                                onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                theme={theme}
+                                placeholder="e.g. K-Pop Fan #1"
+                            />
+                        </div>
 
                         <div className="md:col-span-2">
                             <InputGroup

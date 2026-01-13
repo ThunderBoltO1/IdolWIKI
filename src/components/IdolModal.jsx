@@ -4,6 +4,7 @@ import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Buildin
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { convertDriveLink } from '../lib/storage';
 export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
@@ -40,7 +41,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        const processedValue = name === 'image' ? convertDriveLink(value) : value;
+        const processedValue = name === 'image' && value ? convertDriveLink(value) : value;
         setFormData(prev => ({ ...prev, [name]: processedValue }));
         if (name === 'image') setActiveImage(processedValue);
     };

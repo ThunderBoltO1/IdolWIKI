@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand-purple: #2E1065;
+  --color-brand-pink: #EC4899;
+  --color-brand-blue: #3B82F6;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply antialiased transition-colors duration-500 overflow-x-hidden;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  .dark body {
+    @apply bg-slate-950 text-white;
+  }
+
+  .light body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply backdrop-blur-lg border transition-all duration-300;
+  }
+
+  .dark .glass {
+    @apply bg-white/10 border-white/20 shadow-xl shadow-black/20;
+  }
+
+  .light .glass {
+    @apply bg-white/60 border-slate-200 shadow-lg shadow-slate-200/50;
+  }
+
+  .glass-card {
+    @apply backdrop-blur-md border transition-all duration-300;
+  }
+
+  .dark .glass-card {
+    @apply bg-slate-900/50 border-slate-700/50 hover:border-brand-pink/50 shadow-2xl shadow-black/40;
+  }
+
+  .light .glass-card {
+    @apply bg-white/80 border-slate-200 shadow-xl shadow-slate-200/50 hover:border-brand-pink/40 hover:shadow-2xl hover:shadow-brand-pink/5;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-brand-pink via-purple-500 to-brand-blue;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-800 hover:bg-slate-700;
+  }
+
+  .light .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 hover:bg-slate-300;
+  }
+}

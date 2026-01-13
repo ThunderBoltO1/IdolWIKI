@@ -78,12 +78,15 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (name, email, password) => {
         setIsLoading(true);
+        console.log("Starting registration for:", email);
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const firebaseUser = userCredential.user;
+            console.log("Firebase Auth user created:", firebaseUser.uid);
 
             // Update basic profile
             await updateProfile(firebaseUser, { displayName: name });
+            console.log("Auth profile updated with name:", name);
 
             // Create user document in Firestore
             const userData = {
@@ -95,10 +98,13 @@ export const AuthProvider = ({ children }) => {
             };
 
             await setDoc(doc(db, 'users', firebaseUser.uid), userData);
+            console.log("Firestore user document created for:", firebaseUser.uid);
 
             setUser({ uid: firebaseUser.uid, ...userData });
             return firebaseUser;
         } catch (error) {
+            console.error("Registration failed at step:", error.code || 'unknown');
+            console.error("Full error details:", error);
             throw error;
         } finally {
             setIsLoading(false);

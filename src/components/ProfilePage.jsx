@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Camera, Loader2, Save, ArrowLeft, CheckCircle2, Mail, Info } from 'lucide-react';
+import { User, Camera, Loader2, Save, ArrowLeft, CheckCircle2, Mail, Info, Globe, Lock, Rocket } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useGoogleDrive } from '../context/GoogleDriveContext';
+import { uploadToDrive, convertDriveLink } from '../lib/storage';
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
     const { theme } = useTheme();
+    const { accessToken, connectDrive, isConnected } = useGoogleDrive();
     const [formData, setFormData] = useState({
         name: user?.name || '',
         avatar: user?.avatar || '',
@@ -89,9 +92,49 @@ export const ProfilePage = ({ onBack }) => {
                             />
                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-20 backdrop-blur-[2px]">
                                 <Camera className="text-white" size={28} />
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                    disabled={!isConnected || loading}
+                                    onChange={async (e) => {
+                                        const file = e.target.files[0];
+                                        if (!file) return;
+                                        setLoading(true);
+                                        try {
+                                            const url = await uploadToDrive(file, accessToken);
+                                            const directUrl = convertDriveLink(url);
+                                            setFormData(prev => ({ ...prev, avatar: directUrl }));
+                                        } catch (err) {
+                                            console.error(err);
+                                            alert(err.message);
+                                        } finally {
+                                            setLoading(false);
+                                        }
+                                    }}
+                                />
                             </div>
                         </div>
-                        <p className="text-[10px] text-brand-pink uppercase font-black tracking-[0.2em]">Profile Identity</p>
+                        <div className="flex flex-col items-center gap-2">
+                            <p className="text-[10px] text-brand-pink uppercase font-black tracking-[0.2em]">Profile Identity</p>
+                            <div className="flex items-center gap-2">
+                                <span className={cn(
+                                    "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full transition-colors",
+                                    isConnected ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"
+                                )}>
+                                    {isConnected ? "Drive Connected" : "Drive Disconnected"}
+                                </span>
+                                {!isConnected && (
+                                    <button
+                                        type="button"
+                                        onClick={connectDrive}
+                                        className="text-[9px] font-black uppercase tracking-widest text-brand-blue hover:underline"
+                                    >
+                                        Connect
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="grid gap-8 md:grid-cols-2">

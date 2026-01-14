@@ -1,14 +1,15 @@
 import React from 'react';
-import { Sparkles, Plus, LogOut, User, Sun, Moon } from 'lucide-react';
+import { Sparkles, Plus, LogOut, User, Sun, Moon, Users, LayoutDashboard, Clock, Search } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
+import { NotificationDropdown } from './NotificationDropdown';
 
-export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }) {
+export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onHomeClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange }) {
     const { user, logout, isAdmin } = useAuth();
-    const { theme, toggleTheme } = useTheme();
+    const { theme, themeMode, toggleTheme } = useTheme();
 
     return (
         <nav className={cn(
@@ -17,9 +18,9 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
                 ? "border-white/10 bg-slate-950/80"
                 : "border-slate-200 bg-white/80 shadow-sm"
         )}>
-            <div className="container mx-auto px-4 h-16 flex justify-between items-center">
+            <div className="container mx-auto px-4 h-16 flex justify-between items-center gap-4">
                 <div
-                    className="flex items-center gap-2 cursor-pointer group"
+                    className="flex items-center gap-2 cursor-pointer group shrink-0"
                     onClick={onHomeClick}
                 >
                     <div className="p-2 bg-gradient-to-tr from-brand-pink to-brand-purple rounded-lg shadow-lg shadow-brand-pink/20 transition-transform group-hover:scale-110">
@@ -33,7 +34,26 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
                     </span>
                 </div>
 
-                <div className="flex items-center gap-2 sm:gap-4">
+                {/* Search Bar */}
+                <div className="flex-1 max-w-md hidden md:block">
+                    <div className="relative">
+                        <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors", theme === 'dark' ? "text-slate-500" : "text-slate-400")} />
+                        <input
+                            type="text"
+                            placeholder="Search groups or idols..."
+                            value={searchTerm}
+                            onChange={(e) => onSearchChange(e.target.value)}
+                            className={cn(
+                                "w-full pl-10 pr-4 py-2 rounded-full transition-all focus:outline-none border text-sm font-medium",
+                                theme === 'dark'
+                                    ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder-slate-500"
+                                    : "bg-slate-100 border-transparent focus:border-brand-pink text-slate-900 placeholder-slate-400"
+                            )}
+                        />
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
                     {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}
@@ -43,9 +63,11 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
                                 ? "bg-slate-900 text-yellow-400 hover:bg-slate-800 border border-white/5"
                                 : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
                         )}
-                        title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+                        title={`Current Mode: ${themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}`}
                     >
-                        {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                        {themeMode === 'light' && <Sun size={20} />}
+                        {themeMode === 'dark' && <Moon size={20} />}
+                        {themeMode === 'auto' && <Clock size={20} className={theme === 'dark' ? "text-blue-400" : "text-slate-600"} />}
                     </button>
 
                     <div className={cn(
@@ -55,7 +77,46 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
 
                     {user ? (
                         <div className="flex items-center gap-4">
+                            <NotificationDropdown onNotificationClick={onNotificationClick} />
+
                             {isAdmin && (
+                                <>
+                                <button
+                                    onClick={onDashboardClick}
+                                    className={cn(
+                                        "hidden sm:flex items-center gap-2 px-3 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
+                                        theme === 'dark'
+                                            ? "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+                                            : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                    )}
+                                    title="Dashboard"
+                                >
+                                    <LayoutDashboard size={18} />
+                                </button>
+                                <button
+                                    onClick={onManageUsersClick}
+                                    className={cn(
+                                        "hidden sm:flex items-center gap-2 px-3 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
+                                        theme === 'dark'
+                                            ? "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
+                                            : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                    )}
+                                    title="Manage Users"
+                                >
+                                    <Users size={18} />
+                                </button>
+                                <button
+                                    onClick={onAddGroupClick}
+                                    className={cn(
+                                        "hidden sm:flex items-center gap-2 px-4 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
+                                        theme === 'dark'
+                                            ? "bg-white/10 hover:bg-white/20 border border-white/10 text-white"
+                                            : "bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-200"
+                                    )}
+                                >
+                                    <Plus size={16} />
+                                    <span>Add Band</span>
+                                </button>
                                 <button
                                     onClick={onAddClick}
                                     className={cn(
@@ -68,6 +129,7 @@ export function Navbar({ onAddClick, onLoginClick, onProfileClick, onHomeClick }
                                     <Plus size={16} />
                                     <span>Add Idol</span>
                                 </button>
+                                </>
                             )}
 
                             <div className="flex items-center gap-3 pl-2 sm:pl-4">

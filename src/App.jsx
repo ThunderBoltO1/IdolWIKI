@@ -9,8 +9,13 @@ import { IdolModal } from './components/IdolModal';
 import { GroupPage } from './components/GroupPage';
 import { GroupSelection } from './components/GroupSelection';
 import { LoginPage } from './components/LoginPage';
+import { GroupModal } from './components/GroupModal';
+import { ConfirmationModal } from './components/ConfirmationModal';
 import { RegisterPage } from './components/RegisterPage';
+import { ForgotPasswordPage } from './components/ForgotPasswordPage';
 import { ProfilePage } from './components/ProfilePage';
+import { AdminUserManagement } from './components/AdminUserManagement';
+import { AdminDashboard } from './components/AdminDashboard';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -27,6 +32,7 @@ function AppContent() {
   const [error, setError] = useState(null);
   const [idols, setIdols] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({ group: '', company: '' });
@@ -37,6 +43,8 @@ function AppContent() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', 'create'
   const [selectedIdol, setSelectedIdol] = useState(null);
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   // Error Handler
   useEffect(() => {
@@ -55,6 +63,13 @@ function AppContent() {
 
   // Firestore Real-time Sync & Seeding
   useEffect(() => {
+    setLoading(true);
+    let groupsLoaded = false;
+    let idolsLoaded = false;
+    const checkLoading = () => {
+      if (groupsLoaded && idolsLoaded) setLoading(false);
+    };
+
     const seedDatabase = async () => {
       try {
         console.log("Checking database status...");
@@ -93,11 +108,15 @@ function AppContent() {
       (snap) => {
         const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         setGroups(data);
+        groupsLoaded = true;
+        checkLoading();
         setDbError(null);
       },
       (error) => {
         console.error("Firestore groups error:", error);
         setDbError("Firestore access denied. Please check your security rules or ensure the database is initialized.");
+        groupsLoaded = true;
+        checkLoading();
       }
     );
 
@@ -105,11 +124,15 @@ function AppContent() {
       (snap) => {
         const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         setIdols(data);
+        idolsLoaded = true;
+        checkLoading();
         setDbError(null);
       },
       (error) => {
         console.error("Firestore idols error:", error);
         setDbError("Firestore access denied. Please check your security rules or ensure the database is initialized.");
+        idolsLoaded = true;
+        checkLoading();
       }
     );
 
@@ -140,7 +163,13 @@ function AppContent() {
   }, [idols]);
 
   const filteredGroups = useMemo(() => {
-    return groups.filter(g => !filters.company || g.company.includes(filters.company));
+    return groups
+      .filter(g => !filters.company || g.company.includes(filters.company))
+      .sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+      });
   }, [groups, filters.company]);
 
   const groupCompanies = useMemo(() => {
@@ -159,6 +188,24 @@ function AppContent() {
     setModalOpen(true);
   };
 
+  const handleAddGroupClick = () => {
+    setGroupModalOpen(true);
+  };
+
+  const handleSaveGroup = async (groupData) => {
+    try {
+      await addDoc(collection(db, 'groups'), {
+        ...groupData,
+        createdAt: new Date().toISOString(),
+        members: []
+      });
+      setGroupModalOpen(false);
+    } catch (err) {
+      console.error("Error adding group: ", err);
+      alert("Failed to add group");
+    }
+  };
+
   const handleCardClick = (idol) => {
     setSelectedIdol(idol);
     setModalMode('view');
@@ -167,17 +214,19 @@ function AppContent() {
 
   const handleSave = async (idolData) => {
     try {
+      const timestamp = new Date().toISOString();
       if (modalMode === 'create') {
         const newIdol = {
           ...idolData,
           likes: 0,
           isFavorite: false,
-          createdAt: new Date().toISOString()
+          createdAt: timestamp,
+          updatedAt: timestamp
         };
         await addDoc(collection(db, 'idols'), newIdol);
       } else if (selectedIdol?.id) {
         const idolRef = doc(db, 'idols', selectedIdol.id);
-        await updateDoc(idolRef, idolData);
+        await updateDoc(idolRef, { ...idolData, updatedAt: timestamp });
       }
       setModalOpen(false);
     } catch (err) {
@@ -187,14 +236,19 @@ function AppContent() {
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this idol?')) {
-      try {
-        await deleteDoc(doc(db, 'idols', id));
-        setModalOpen(false);
-      } catch (err) {
-        console.error("Delete error:", err);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Idol',
+      message: 'Are you sure you want to delete this idol? This action cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'idols', id));
+          setModalOpen(false);
+        } catch (err) {
+          console.error("Delete error:", err);
+        }
       }
-    }
+    });
   };
 
   const handleLike = async (id) => {
@@ -208,6 +262,20 @@ function AppContent() {
       });
     } catch (err) {
       console.error("Like error:", err);
+    }
+  };
+
+  const handleFavoriteGroup = async (groupId) => {
+    if (!user) return;
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return;
+    try {
+      const groupRef = doc(db, 'groups', groupId);
+      await updateDoc(groupRef, {
+        isFavorite: !group.isFavorite
+      });
+    } catch (err) {
+      console.error("Favorite group error:", err);
     }
   };
 
@@ -226,37 +294,41 @@ function AppContent() {
     }
   };
 
-  const handleResetData = async () => {
+  const handleDeleteGroup = async (groupId) => {
     if (!isAdmin) return;
-    if (!window.confirm("⚠️ WARNING: This will clear all current Idols/Groups and re-sync with the latest data. This is recommended to fix the 'Missing Idols' issue. Proceed?")) return;
-
-    try {
-      setDbError("🔄 Re-syncing database... please wait.");
-
-      // Clear groups
-      const gSnap = await getDocs(collection(db, 'groups'));
-      const b1 = writeBatch(db);
-      gSnap.docs.forEach(d => b1.delete(d.ref));
-      await b1.commit();
-
-      // Clear idols
-      const iSnap = await getDocs(collection(db, 'idols'));
-      const b2 = writeBatch(db);
-      iSnap.docs.forEach(d => b2.delete(d.ref));
-      await b2.commit();
-
-      // Trigger reload
-      window.location.reload();
-    } catch (err) {
-      console.error("Reset error:", err);
-      alert("Reset failed: " + err.message);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Group',
+      message: 'Are you sure you want to delete this group? This cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, 'groups', groupId));
+          navigate('/');
+        } catch (err) {
+          console.error("Error deleting group:", err);
+          alert("Failed to delete group");
+        }
+      }
+    });
   };
 
   const handleMemberClick = (member) => {
     setSelectedIdol(member);
     setModalMode('view');
     setModalOpen(true);
+  };
+
+  const handleNotificationClick = (notification) => {
+    if (notification.targetType === 'group') {
+      navigate(`/group/${notification.targetId}`);
+    } else if (notification.targetType === 'idol') {
+      const idol = idols.find(i => i.id === notification.targetId);
+      if (idol) {
+        setSelectedIdol(idol);
+        setModalMode('view');
+        setModalOpen(true);
+      }
+    }
   };
 
   return (
@@ -283,9 +355,15 @@ function AppContent() {
 
       <Navbar
         onAddClick={handleAddClick}
+        onAddGroupClick={handleAddGroupClick}
         onLoginClick={() => navigate('/login')}
         onProfileClick={() => navigate('/profile')}
         onHomeClick={() => navigate('/')}
+        onNotificationClick={handleNotificationClick}
+        onManageUsersClick={() => navigate('/admin/users')}
+        onDashboardClick={() => navigate('/admin/dashboard')}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
       />
 
       {dbError && (
@@ -294,28 +372,7 @@ function AppContent() {
             <p className="text-red-500 font-black uppercase tracking-widest text-[10px] mb-2">System Alert: Database Connectivity</p>
             <p className="text-slate-900 dark:text-white text-sm font-bold mb-4">{dbError}</p>
             <p className="text-[10px] text-slate-500 uppercase font-bold mb-4">💡 Tip: Make sure you have created the 'Firestore Database' in your Firebase Console and applied the security rules.</p>
-            {isAdmin && (
-              <button
-                onClick={handleResetData}
-                className="px-6 py-2 rounded-xl bg-red-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg"
-              >
-                Perform System Re-Sync
-              </button>
-            )}
           </div>
-        </div>
-      )}
-
-      {/* Admin Quick Sync Tool (Optional, always visible for admin) */}
-      {!dbError && isAdmin && (
-        <div className="fixed bottom-6 left-6 z-50">
-          <button
-            onClick={handleResetData}
-            className="px-4 py-2 rounded-full bg-slate-900/50 backdrop-blur-md border border-white/10 text-white text-[9px] font-black uppercase tracking-widest hover:bg-red-500 transition-all shadow-2xl"
-            title="Fix Data Linking Issues"
-          >
-            🔄 Re-Sync Data
-          </button>
         </div>
       )}
 
@@ -332,10 +389,16 @@ function AppContent() {
               >
                 <GroupSelection
                   groups={filteredGroups}
+                  idols={idols}
                   companies={groupCompanies}
                   selectedCompany={filters.company}
                   onSelectCompany={(company) => setFilters(prev => ({ ...prev, company }))}
                   onSelectGroup={handleGroupClick}
+                  onSelectIdol={handleCardClick}
+                  onLikeIdol={handleLike}
+                  onFavoriteGroup={handleFavoriteGroup}
+                  loading={loading}
+                  searchTerm={searchTerm}
                 />
               </motion.div>
             } />
@@ -368,6 +431,19 @@ function AppContent() {
               </motion.div>
             } />
 
+            <Route path="/forgot-password" element={
+              <motion.div
+                key="forgot-password"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <ForgotPasswordPage
+                  onNavigate={(view) => navigate(`/${view}`)}
+                />
+              </motion.div>
+            } />
+
             <Route path="/profile" element={
               <motion.div
                 key="profile"
@@ -381,7 +457,33 @@ function AppContent() {
               </motion.div>
             } />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} navigate={navigate} />} />
+            <Route path="/admin/users" element={
+              <motion.div
+                key="admin-users"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <AdminUserManagement
+                  onBack={() => navigate('/')}
+                />
+              </motion.div>
+            } />
+
+            <Route path="/admin/dashboard" element={
+              <motion.div
+                key="admin-dashboard"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <AdminDashboard
+                  onBack={() => navigate('/')}
+                />
+              </motion.div>
+            } />
+
+            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} />} />
           </Routes>
         </AnimatePresence>
       </main>
@@ -396,11 +498,25 @@ function AppContent() {
         onLike={handleLike}
         onGroupClick={handleGroupClick}
       />
+
+      <GroupModal
+        isOpen={groupModalOpen}
+        onClose={() => setGroupModalOpen(false)}
+        onSave={handleSaveGroup}
+      />
+
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+      />
     </div>
   );
 }
 
-function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, navigate }) {
+function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate }) {
   const { groupId } = useParams();
   const group = groups.find(g => g.id === groupId);
   const members = idols.filter(i => i.groupId === groupId);
@@ -418,6 +534,7 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, na
         onBack={() => navigate('/')}
         onMemberClick={handleMemberClick}
         onUpdateGroup={onUpdateGroup}
+        onDeleteGroup={onDeleteGroup}
       />
     </motion.div>
   );

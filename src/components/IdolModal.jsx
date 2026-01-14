@@ -1,41 +1,156 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick }) {
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+
+const AWARD_DATA = {
+    "K-Pop & Music Awards": {
+        "MAMA Awards": [
+            "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
+            "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
+            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
+            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice"
+        ],
+        "Melon Music Awards (MMA)": [
+            "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
+            "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
+            "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
+        ],
+        "Golden Disc Awards (GDA)": [
+            "Digital Daesang (Song of the Year)", "Album Daesang (Album of the Year)",
+            "Digital Song Bonsang", "Album Bonsang", "Rookie Artist of the Year",
+            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award"
+        ],
+        "Korean Music Awards (KMA)": [
+            "Musician of the Year", "Song of the Year", "Album of the Year", "Rookie of the Year",
+            "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
+        ],
+        "Seoul Music Awards (SMA)": [
+            "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
+            "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
+            "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
+        ],
+        "Circle Chart Music Awards": [
+            "Artist of the Year (Global Digital)", "Artist of the Year (Physical Album)", "Artist of the Year (Unique Listeners)",
+            "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
+        ],
+        "The Fact Music Awards (TMA)": [
+            "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
+            "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
+        ],
+        "Asia Artist Awards (AAA)": [
+            "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
+            "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
+            "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
+        ]
+    },
+    "Acting & Arts Awards": {
+        "Baeksang Arts Awards": ["Grand Prize (Daesang) - TV", "Best Drama", "Best Director (TV)", "Best Actor (TV)", "Best Actress (TV)", "Best Supporting Actor (TV)", "Best Supporting Actress (TV)", "Best New Actor (TV)", "Best New Actress (TV)", "Grand Prize (Daesang) - Film", "Best Film", "Best Director (Film)", "Best Actor (Film)", "Best Actress (Film)", "Best Supporting Actor (Film)", "Best Supporting Actress (Film)", "Best New Actor (Film)", "Best New Actress (Film)", "Most Popular Actor", "Most Popular Actress"],
+        "Blue Dragon Series Awards": ["Blue Dragon's Choice (Daesang)", "Best Drama", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress", "Best Entertainer", "Popular Star Award"],
+        "Blue Dragon Film Awards": ["Best Film", "Best Director", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress", "Popular Star Award"],
+        "Grand Bell Awards": ["Best Film", "Best Director", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress"]
+    }
+};
+
+export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const [formData, setFormData] = useState(idol || {});
     const [editMode, setEditMode] = useState(mode === 'create');
     const [activeImage, setActiveImage] = useState('');
     const [loading, setLoading] = useState(false);
+    const [draggedItem, setDraggedItem] = useState(null);
+    const [floatingHearts, setFloatingHearts] = useState([]);
+    const [showSuccess, setShowSuccess] = useState(false);
+    const successTimeoutRef = useRef(null);
+    const [activeTab, setActiveTab] = useState('info');
+    const [comments, setComments] = useState([]);
+    const [newComment, setNewComment] = useState('');
+    const [visibleComments, setVisibleComments] = useState(5);
+    const [loadingComments, setLoadingComments] = useState(true);
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [replyText, setReplyText] = useState('');
+    const [newAward, setNewAward] = useState({
+        year: new Date().getFullYear(),
+        category: 'K-Pop & Music Awards',
+        show: '',
+        award: ''
+    });
+
+    useEffect(() => {
+        if (!idol?.id) return;
+        setLoadingComments(true);
+
+        const q = query(
+            collection(db, 'comments'),
+            where('targetId', '==', idol.id),
+            where('targetType', '==', 'idol')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedComments = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                isLiked: user ? (doc.data().likedBy || []).includes(user.uid || user.id) : false
+            }));
+            // Sort client-side to avoid Firestore index requirements
+            fetchedComments.sort((a, b) => {
+                const timeA = a.createdAt?.toMillis() || Date.now();
+                const timeB = b.createdAt?.toMillis() || Date.now();
+                return timeB - timeA;
+            });
+            setComments(fetchedComments);
+            setLoadingComments(false);
+        }, (error) => {
+            console.error("Error fetching comments:", error);
+            setLoadingComments(false);
+        });
+        return () => unsubscribe();
+    }, [idol?.id, user]);
 
     useEffect(() => {
         if (isOpen) {
-            setFormData(idol || {
-                name: '',
-                koreanName: '',
-                fullEnglishName: '',
-                group: '',
-                groupId: '',
-                positions: [],
-                company: '',
-                nationality: '',
-                debutDate: '',
-                birthDate: '',
-                height: '',
-                bloodType: '',
-                gender: 'F',
-                image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
-                gallery: [],
-                instagram: '',
-                likes: 0
+            // ตรวจสอบว่าต้องรีเซ็ตข้อมูลหรือไม่:
+            // 1. ถ้ามีข้อมูล idol ส่งมา และ ID ไม่ตรงกับที่มีอยู่ (เปลี่ยนคน)
+            // 2. หรือถ้าเป็นโหมด create และยังไม่มีข้อมูล (เพิ่งเปิด)
+            if ((idol && idol.id !== formData.id) || (mode === 'create' && !formData.name)) {
+                setFormData(idol || {
+                    name: '',
+                    koreanName: '',
+                    fullEnglishName: '',
+                    group: '',
+                    groupId: '',
+                    positions: [],
+                    company: '',
+                    nationality: '',
+                    debutDate: '',
+                    birthDate: '',
+                    height: '',
+                    bloodType: '',
+                    gender: 'F',
+                    otherNames: '',
+                    birthPlace: '',
+                    awards: [],
+                    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
+                    gallery: [],
+                    instagram: '',
+                    likes: 0
+                });
+                setEditMode(mode === 'create' || mode === 'edit');
+                setActiveImage(idol?.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60');
+            }
+            setNewAward({
+                year: new Date().getFullYear(),
+                category: 'K-Pop & Music Awards',
+                show: '',
+                award: ''
             });
-            setEditMode(mode === 'create' || mode === 'edit');
-            setActiveImage(idol?.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60');
+            setVisibleComments(5);
         }
     }, [isOpen, mode, idol]);
 
@@ -46,16 +161,73 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         if (name === 'image') setActiveImage(processedValue);
     };
 
+    const handleGalleryChange = (index, value) => {
+        const newGallery = [...(formData.gallery || [])];
+        newGallery[index] = value ? convertDriveLink(value) : value;
+        setFormData(prev => ({ ...prev, gallery: newGallery }));
+    };
+
+    const addGalleryImage = () => {
+        setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ''] }));
+    };
+
+    const removeGalleryImage = (index) => {
+        setFormData(prev => ({ ...prev, gallery: (prev.gallery || []).filter((_, i) => i !== index) }));
+    };
+
+    const handleDragStart = (index) => {
+        setDraggedItem(index);
+    };
+
+    const handleDragEnter = (index) => {
+        if (draggedItem === null || draggedItem === index) return;
+        const newGallery = [...(formData.gallery || [])];
+        const item = newGallery[draggedItem];
+        newGallery.splice(draggedItem, 1);
+        newGallery.splice(index, 0, item);
+        setFormData(prev => ({ ...prev, gallery: newGallery }));
+        setDraggedItem(index);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedItem(null);
+    };
+
     const handlePositionsChange = (e) => {
         const val = e.target.value;
         setFormData(prev => ({ ...prev, positions: val.split(',').map(s => s.trim()) }));
     };
 
+    const handleAddAward = () => {
+        if (!newAward.show || !newAward.award) return;
+        setFormData(prev => ({ ...prev, awards: [...(prev.awards || []), { ...newAward }] }));
+        setNewAward(prev => ({ ...prev, award: '' })); // Reset for next entry
+    };
+
+    const handleRemoveAward = (index) => {
+        setFormData(prev => ({ ...prev, awards: (prev.awards || []).filter((_, i) => i !== index) }));
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         onSave(formData);
-        if (mode === 'create') onClose();
-        else setEditMode(false);
+        setEditMode(false);
+
+        if (successTimeoutRef.current) {
+            clearTimeout(successTimeoutRef.current);
+        }
+        setShowSuccess(true);
+        successTimeoutRef.current = setTimeout(() => {
+            setShowSuccess(false);
+            successTimeoutRef.current = null;
+        }, 3000);
+    };
+
+    const handleCloseSuccess = () => {
+        if (successTimeoutRef.current) {
+            clearTimeout(successTimeoutRef.current);
+        }
+        setShowSuccess(false);
     };
 
     const handleSpeak = (text) => {
@@ -66,9 +238,125 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         window.speechSynthesis.speak(utterance);
     };
 
+    const createMentions = async (text, commentId) => {
+        const mentionRegex = /@([a-zA-Z0-9_]+)/g;
+        const mentions = [...text.matchAll(mentionRegex)].map(match => match[1]);
+        const uniqueMentions = [...new Set(mentions)];
+
+        if (uniqueMentions.length === 0) return;
+
+        try {
+            await Promise.all(uniqueMentions.map(async (username) => {
+                const q = query(collection(db, 'users'), where('username', '==', username));
+                const snapshot = await getDocs(q);
+                
+                if (!snapshot.empty) {
+                    const recipientDoc = snapshot.docs[0];
+                    if (recipientDoc.id !== (user.uid || user.id)) {
+                         await addDoc(collection(db, 'notifications'), {
+                            recipientId: recipientDoc.id,
+                            senderId: user.uid || user.id,
+                            senderName: user.name || 'Anonymous',
+                            senderAvatar: user.avatar || '',
+                            type: 'mention',
+                            targetId: idol.id,
+                            targetType: 'idol',
+                            targetName: idol.name,
+                            commentId: commentId,
+                            text: text,
+                            createdAt: serverTimestamp(),
+                            read: false
+                        });
+                    }
+                }
+            }));
+        } catch (error) {
+            console.error("Error creating notifications:", error);
+        }
+    };
+
+    const handlePostComment = async () => {
+        if (!newComment.trim() || !user) return;
+        try {
+            const docRef = await addDoc(collection(db, 'comments'), {
+                text: newComment,
+                userId: user.uid || user.id,
+                user: user.name || 'Anonymous',
+                avatar: user.avatar || '',
+                targetId: idol.id,
+                targetType: 'idol',
+                createdAt: serverTimestamp(),
+                likes: 0,
+                likedBy: []
+            });
+            await createMentions(newComment, docRef.id);
+            setNewComment('');
+        } catch (error) {
+            console.error("Error posting comment:", error);
+        }
+    };
+
+    const handlePostReply = async (parentId) => {
+        if (!replyText.trim() || !user) return;
+        try {
+            const docRef = await addDoc(collection(db, 'comments'), {
+                text: replyText,
+                userId: user.uid || user.id,
+                user: user.name || 'Anonymous',
+                avatar: user.avatar || '',
+                targetId: idol.id,
+                targetType: 'idol',
+                parentId: parentId,
+                createdAt: serverTimestamp(),
+                likes: 0,
+                likedBy: []
+            });
+            await createMentions(replyText, docRef.id);
+            setReplyText('');
+            setReplyingTo(null);
+        } catch (error) {
+            console.error("Error posting reply:", error);
+        }
+    };
+
+    const handleLikeComment = async (commentId) => {
+        if (!user) return alert('Please login to like comments!');
+        const comment = comments.find(c => c.id === commentId);
+        if (!comment) return;
+
+        const commentRef = doc(db, 'comments', commentId);
+        try {
+            if (comment.isLiked) {
+                await updateDoc(commentRef, { likes: increment(-1), likedBy: arrayRemove(user.uid || user.id) });
+            } else {
+                await updateDoc(commentRef, { likes: increment(1), likedBy: arrayUnion(user.uid || user.id) });
+            }
+        } catch (error) {
+            console.error("Error liking comment:", error);
+        }
+    };
+
+    const handleDeleteComment = async (commentId) => {
+        if (!window.confirm("Are you sure you want to delete this comment?")) return;
+        try {
+            await deleteDoc(doc(db, 'comments', commentId));
+        } catch (error) {
+            console.error("Error deleting comment:", error);
+        }
+    };
+
+    const handleMentionClick = (mention) => {
+        const username = mention.substring(1);
+        if (onUserClick) onUserClick(username);
+    };
+
     if (!isOpen) return null;
 
     const allImages = [formData.image, ...(formData.gallery || [])].filter(Boolean);
+
+    // Filter root comments and replies
+    const rootComments = comments.filter(c => !c.parentId);
+    const getReplies = (parentId) => comments.filter(c => c.parentId === parentId).sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
 
     return (
         <AnimatePresence>
@@ -83,6 +371,27 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                         theme === 'dark' ? "bg-slate-950/80" : "bg-slate-900/40"
                     )}
                 />
+
+                <AnimatePresence>
+                    {showSuccess && (
+                        <motion.div
+                            initial={{ opacity: 0, x: 100, scale: 0.9 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 100, scale: 0.9 }}
+                            className="fixed top-8 right-8 z-[60] bg-emerald-500 text-white pl-6 pr-3 py-3 rounded-2xl shadow-[0_20px_50px_-12px_rgba(16,185,129,0.5)] flex items-center justify-between gap-4 font-black uppercase text-xs tracking-widest border border-white/20 backdrop-blur-xl"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 bg-white/20 rounded-full">
+                                    <Check size={14} strokeWidth={4} />
+                                </div>
+                                <span>บันทึกสำเร็จ</span>
+                            </div>
+                            <button onClick={handleCloseSuccess} className="p-1.5 -mr-1 rounded-full hover:bg-white/20 transition-colors active:scale-90">
+                                <X size={16} strokeWidth={3} />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 40 }}
@@ -129,18 +438,44 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                             {!editMode && (
                                 <div className="absolute bottom-6 left-6 right-6 flex justify-between items-end z-10">
-                                    <button
-                                        onClick={() => user ? onLike(idol.id) : alert('Please login to like idols!')}
-                                        className={cn(
-                                            "p-4 rounded-3xl backdrop-blur-xl transition-all duration-500 group shadow-2xl border",
-                                            user ? "hover:scale-110 active:scale-90" : "opacity-50 cursor-not-allowed",
-                                            formData.isFavorite
-                                                ? "bg-brand-pink text-white border-brand-pink/50"
-                                                : "bg-white/10 text-white border-white/20 hover:bg-white/20"
-                                        )}
-                                    >
-                                        <Heart className={cn("w-7 h-7 transition-all", formData.isFavorite ? "fill-white scale-110" : "group-hover:text-brand-pink")} />
-                                    </button>
+                                    <div className="relative">
+                                        <AnimatePresence>
+                                            {floatingHearts.map(heart => (
+                                                <motion.div
+                                                    key={heart.id}
+                                                    initial={{ opacity: 1, y: 0, x: "-50%", scale: 0.5 }}
+                                                    animate={{ opacity: 0, y: -150, x: "-50%", scale: 1.5 }}
+                                                    exit={{ opacity: 0 }}
+                                                    transition={{ duration: 1, ease: "easeOut" }}
+                                                    className="absolute top-0 left-1/2 pointer-events-none"
+                                                >
+                                                    <Heart className="w-6 h-6 fill-brand-pink text-brand-pink" />
+                                                </motion.div>
+                                            ))}
+                                        </AnimatePresence>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (user) {
+                                                    onLike(idol.id);
+                                                    setFormData(prev => ({ ...prev, likes: (prev.likes || 0) + 1 }));
+                                                    const id = Date.now() + Math.random();
+                                                    setFloatingHearts(prev => [...prev, { id }]);
+                                                    setTimeout(() => setFloatingHearts(prev => prev.filter(h => h.id !== id)), 1000);
+                                                } else {
+                                                    alert('Please login to like idols!');
+                                                }
+                                            }}
+                                            className={cn(
+                                                "relative z-10 p-4 rounded-3xl backdrop-blur-xl transition-all duration-500 group shadow-2xl border",
+                                                user ? "hover:scale-110 active:scale-90" : "opacity-50 cursor-not-allowed",
+                                                "bg-white/10 text-white border-white/20 hover:bg-white/20 hover:border-brand-pink/50"
+                                            )}
+                                        >
+                                            <Heart className="w-7 h-7 transition-all group-hover:text-brand-pink group-active:scale-125" />
+                                        </button>
+                                    </div>
                                     <div className="text-right">
                                         <p className="text-[10px] text-white/60 uppercase font-black tracking-widest mb-1">Fan Love</p>
                                         <p className="text-2xl font-black text-white drop-shadow-lg">{(formData.likes || 0).toLocaleString()}</p>
@@ -221,7 +556,26 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             )}>
                                                 {formData.name}
                                             </h2>
-                                            {formData.isFavorite && <Star className="text-yellow-400 fill-yellow-400" size={24} />}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!user) return alert('Please login to manage favorites!');
+                                                    const newFav = !formData.isFavorite;
+                                                    setFormData(prev => ({ ...prev, isFavorite: newFav }));
+                                                    onSave({ ...formData, isFavorite: newFav });
+                                                }}
+                                                className="hover:scale-110 transition-transform focus:outline-none active:scale-90"
+                                                title={formData.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+                                            >
+                                                <motion.div
+                                                    initial={false}
+                                                    animate={{ rotate: formData.isFavorite ? 360 : 0 }}
+                                                    transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                                                >
+                                                    <Star className={cn("transition-colors", formData.isFavorite ? "text-yellow-400 fill-yellow-400" : "text-slate-300 hover:text-yellow-400")} size={24} />
+                                                </motion.div>
+                                            </button>
                                         </div>
                                         <button
                                             onClick={() => formData.groupId && onGroupClick(formData.groupId)}
@@ -262,8 +616,40 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                             )}
                         </div>
 
+                        {/* Tabs (Only in View Mode) */}
+                        {!editMode && (
+                            <div className={cn(
+                                "flex items-center gap-6 mb-8 border-b",
+                                theme === 'dark' ? "border-white/10" : "border-slate-100"
+                            )}>
+                                {['info', 'comments'].map((tab) => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => setActiveTab(tab)}
+                                        className={cn(
+                                            "pb-4 text-xs font-black uppercase tracking-[0.2em] transition-all relative",
+                                            activeTab === tab
+                                                ? (theme === 'dark' ? "text-white" : "text-slate-900")
+                                                : "text-slate-400 hover:text-slate-500"
+                                        )}
+                                    >
+                                        {tab === 'info' ? 'Artist Info' : (
+                                            <span>
+                                                Fan Comments
+                                                <span className="ml-1.5 opacity-50">({comments.length})</span>
+                                            </span>
+                                        )}
+                                        {activeTab === tab && (
+                                            <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-pink" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
                         <form onSubmit={handleSubmit} className="space-y-10 flex-1">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                            {/* Info Tab Content */}
+                            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-8", !editMode && activeTab !== 'info' && "hidden")}>
                                 <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
                                 <DetailItem
                                     icon={Globe}
@@ -275,11 +661,14 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     theme={theme}
                                     onAction={() => handleSpeak(formData.koreanName)}
                                 />
+                                <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
                                 <DetailItem icon={Building2} label="Company" value={formData.company} editMode={editMode} name="company" onChange={handleChange} theme={theme} />
                                 <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
+                                <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
                                 <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
                                 <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
                                 <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
+                                <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
 
                                 <div className="sm:col-span-2 space-y-3">
                                     <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
@@ -307,6 +696,79 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     {p}
                                                 </span>
                                             ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="sm:col-span-2 space-y-3">
+                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
+                                        <Trophy size={12} /> Awards
+                                    </label>
+                                    {editMode ? (
+                                        <div className="space-y-4">
+                                            <div className={cn("p-4 rounded-2xl border-2 space-y-3", theme === 'dark' ? "bg-slate-800/30 border-white/5" : "bg-slate-50 border-slate-100")}>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <select value={newAward.category} onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
+                                                        {Object.keys(AWARD_DATA).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                    </select>
+                                                    <input type="number" value={newAward.year} onChange={e => setNewAward({ ...newAward, year: e.target.value })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")} placeholder="Year" />
+                                                </div>
+                                                <div className="grid grid-cols-1 gap-3">
+                                                    <select value={newAward.show} onChange={e => setNewAward({ ...newAward, show: e.target.value, award: '' })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
+                                                        <option value="">Select Award Show</option>
+                                                        {newAward.category && Object.keys(AWARD_DATA[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
+                                                    </select>
+                                                    <select value={newAward.award} onChange={e => setNewAward({ ...newAward, award: e.target.value })} disabled={!newAward.show} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
+                                                        <option value="">Select Award</option>
+                                                        {newAward.show && AWARD_DATA[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
+                                                    </select>
+                                                </div>
+                                                <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={handleAddAward} disabled={!newAward.show || !newAward.award} className="w-full py-2 rounded-xl bg-brand-pink text-white text-xs font-black uppercase tracking-widest hover:bg-brand-pink/90 disabled:opacity-50">
+                                                    Add Award
+                                                </motion.button>
+                                            </div>
+                                            <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar">
+                                                <AnimatePresence mode="popLayout" initial={false}>
+                                                    {(formData.awards || []).map((item, idx) => (
+                                                        <motion.div layout key={`${item.year}-${item.show}-${item.award}-${idx}`} initial={{ opacity: 0, x: -20, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 20, scale: 0.9 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} className={cn("flex items-center justify-between p-3 rounded-xl border", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-white border-slate-100")}>
+                                                            <div className="text-xs">
+                                                                <span className="font-black text-brand-pink mr-2">{item.year}</span>
+                                                                <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
+                                                                <div className="text-[10px] text-slate-500 font-medium">{item.award}</div>
+                                                            </div>
+                                                            <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
+                                                        </motion.div>
+                                                    ))}
+                                                </AnimatePresence>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col gap-2">
+                                            {(formData.awards || []).length > 0 ? (
+                                                [...(formData.awards || [])].sort((a, b) => {
+                                                    const yearA = typeof a === 'object' ? Number(a.year) : 0;
+                                                    const yearB = typeof b === 'object' ? Number(b.year) : 0;
+                                                    if (yearB !== yearA) return yearB - yearA;
+                                                    const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
+                                                    const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
+                                                    return nameA.localeCompare(nameB);
+                                                }).map((award, i) => (
+                                                    <div key={i} className={cn("px-5 py-3 rounded-2xl text-sm font-medium border transition-all flex items-center gap-3", theme === 'dark' ? "bg-slate-800/50 border-white/5 text-slate-300" : "bg-white border-slate-200 text-slate-600")}>
+                                                        <Trophy size={14} className="text-yellow-500 shrink-0" />
+                                                        <div className="flex-1">
+                                                            {typeof award === 'object' ? (
+                                                                <>
+                                                                    <span className="font-bold text-brand-pink mr-2">{award.year}</span>
+                                                                    <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{award.show}</span>
+                                                                    <div className="text-xs text-slate-500">{award.award}</div>
+                                                                </>
+                                                            ) : award}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <p className="text-slate-500 italic text-sm">No awards recorded yet.</p>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -341,13 +803,243 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             <p className="text-[9px] text-slate-500 font-medium pl-1">
                                                 💡 Tip: คุณสามารถใช้ลิงก์จากเว็บฝากรูป เช่น <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a> ได้ครับ
                                             </p>
+
+                                            {/* Gallery Management */}
+                                            <div className="pt-4 space-y-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                        <Globe size={12} />
+                                                        Gallery Images
+                                                    </label>
+                                                    <button
+                                                        type="button"
+                                                        onClick={addGalleryImage}
+                                                        className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline"
+                                                    >
+                                                        <Plus size={12} /> Add Image
+                                                    </button>
+                                                </div>
+                                                {(formData.gallery || []).map((url, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className={cn(
+                                                            "flex gap-2 items-center transition-all duration-200",
+                                                            draggedItem === idx ? "opacity-50" : "opacity-100"
+                                                        )}
+                                                        draggable
+                                                        onDragStart={() => handleDragStart(idx)}
+                                                        onDragEnter={() => handleDragEnter(idx)}
+                                                        onDragEnd={handleDragEnd}
+                                                        onDragOver={(e) => e.preventDefault()}
+                                                    >
+                                                        <button type="button" className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                            <GripVertical size={16} />
+                                                        </button>
+                                                        <input
+                                                            value={url}
+                                                            onChange={(e) => handleGalleryChange(idx, e.target.value)}
+                                                            className={cn(
+                                                                "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
+                                                                theme === 'dark'
+                                                                    ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
+                                                                    : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                                                            )}
+                                                            placeholder={`Gallery Image ${idx + 1} URL...`}
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeGalleryImage(idx)}
+                                                            className={cn(
+                                                                "p-3 rounded-2xl transition-colors shrink-0",
+                                                                theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
+                                                            )}
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                         <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
                                     </>
                                 )}
                             </div>
 
-                            {!editMode && formData.instagram && (
+                            {/* Comments Tab Content */}
+                            {!editMode && activeTab === 'comments' && (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="flex gap-4">
+                                        <div className={cn("w-10 h-10 rounded-full shrink-0 flex items-center justify-center", theme === 'dark' ? "bg-slate-800" : "bg-slate-100")}>
+                                            {user?.avatar ? (
+                                                <img src={convertDriveLink(user.avatar)} className="w-full h-full rounded-full object-cover" alt="" />
+                                            ) : (
+                                                <User size={20} className="text-slate-400" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 relative">
+                                            <textarea
+                                                value={newComment}
+                                                onChange={(e) => setNewComment(e.target.value)}
+                                                placeholder={user ? "Write a comment..." : "Please login to comment"}
+                                                disabled={!user}
+                                                className={cn(
+                                                    "w-full rounded-2xl p-4 pr-12 text-sm font-medium resize-none focus:outline-none border-2 transition-all",
+                                                    theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white placeholder:text-slate-600" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+                                                )}
+                                                rows={3}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handlePostComment}
+                                                disabled={!user || !newComment.trim()}
+                                                className="absolute bottom-4 right-4 p-2 rounded-xl bg-brand-pink text-white hover:scale-110 active:scale-90 transition-all disabled:opacity-50 disabled:hover:scale-100"
+                                            >
+                                                <Send size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-6">
+                                        {loadingComments && rootComments.length === 0 ? (
+                                            Array.from({ length: 3 }).map((_, i) => (
+                                                <div key={i} className="flex gap-4 animate-pulse">
+                                                    <div className={cn("w-10 h-10 rounded-full shrink-0", theme === 'dark' ? "bg-slate-800" : "bg-slate-200")} />
+                                                    <div className="space-y-2 flex-1 py-1">
+                                                        <div className={cn("h-3 w-24 rounded-full", theme === 'dark' ? "bg-slate-800" : "bg-slate-200")} />
+                                                        <div className={cn("h-3 w-full rounded-full", theme === 'dark' ? "bg-slate-800" : "bg-slate-200")} />
+                                                        <div className={cn("h-3 w-2/3 rounded-full", theme === 'dark' ? "bg-slate-800" : "bg-slate-200")} />
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : rootComments.slice(0, visibleComments).map((comment) => (
+                                            <motion.div
+                                                key={comment.id}
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ duration: 0.4, ease: "easeOut" }}
+                                                className="space-y-4"
+                                            >
+                                                <div className="flex gap-4 group items-start">
+                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-pink/20 to-brand-purple/20 p-0.5 shrink-0">
+                                                        <img src={convertDriveLink(comment.avatar) || `https://ui-avatars.com/api/?name=${comment.user}&background=random`} className="w-full h-full rounded-full object-cover" alt="" />
+                                                    </div>
+                                                    <div className="space-y-1 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={cn("text-xs font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{comment.user}</span>
+                                                            <span className="text-[10px] text-slate-500 font-bold">{getRelativeTime(comment.createdAt?.toMillis())}</span>
+                                                        </div>
+                                                        <p className={cn("text-sm leading-relaxed", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>{renderWithMentions(comment.text, handleMentionClick)}</p>
+                                                        
+                                                        {/* Action Buttons */}
+                                                        <div className="flex items-center gap-4 pt-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
+                                                                className="text-[10px] font-bold text-slate-400 hover:text-brand-pink transition-colors flex items-center gap-1"
+                                                            >
+                                                                <MessageSquare size={12} /> Reply
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleLikeComment(comment.id)}
+                                                                className={cn("text-[10px] font-bold flex items-center gap-1 transition-colors", comment.isLiked ? "text-brand-pink" : "text-slate-400 hover:text-brand-pink")}
+                                                            >
+                                                                <Heart size={12} className={cn(comment.isLiked && "fill-current")} /> {comment.likes || 0}
+                                                            </button>
+                                                            {(isAdmin || (user && (user.uid === comment.userId || user.id === comment.userId))) && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteComment(comment.id)}
+                                                                    className="text-slate-400 hover:text-red-500 transition-colors"
+                                                                    title="Delete Comment"
+                                                                >
+                                                                    <Trash2 size={12} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Reply Input */}
+                                                {replyingTo === comment.id && (
+                                                    <div className="ml-14 flex gap-3 animate-in fade-in slide-in-from-top-2">
+                                                        <input
+                                                            value={replyText}
+                                                            onChange={(e) => setReplyText(e.target.value)}
+                                                            placeholder={`Reply to ${comment.user}...`}
+                                                            className={cn(
+                                                                "flex-1 bg-transparent border-b py-2 text-xs focus:outline-none transition-colors",
+                                                                theme === 'dark' ? "border-white/10 focus:border-brand-pink text-white" : "border-slate-200 focus:border-brand-pink text-slate-900"
+                                                            )}
+                                                            autoFocus
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handlePostReply(comment.id)}
+                                                            disabled={!replyText.trim()}
+                                                            className="text-brand-pink disabled:opacity-50"
+                                                        >
+                                                            <Send size={14} />
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Replies List */}
+                                                {getReplies(comment.id).map(reply => (
+                                                    <div key={reply.id} className="ml-14 flex gap-3 group/reply">
+                                                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden">
+                                                            <img src={convertDriveLink(reply.avatar) || `https://ui-avatars.com/api/?name=${reply.user}&background=random`} className="w-full h-full object-cover" alt="" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={cn("text-[10px] font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{reply.user}</span>
+                                                                <span className="text-[9px] text-slate-500">{getRelativeTime(reply.createdAt?.toMillis())}</span>
+                                                            </div>
+                                                            <p className={cn("text-xs mt-0.5", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>{renderWithMentions(reply.text, handleMentionClick)}</p>
+                                                            
+                                                            <div className="flex items-center gap-3 mt-1 opacity-0 group-hover/reply:opacity-100 transition-opacity">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleLikeComment(reply.id)}
+                                                                    className={cn("text-[9px] font-bold flex items-center gap-1 transition-colors", reply.isLiked ? "text-brand-pink" : "text-slate-400 hover:text-brand-pink")}
+                                                                >
+                                                                    <Heart size={10} className={cn(reply.isLiked && "fill-current")} /> {reply.likes || 0}
+                                                                </button>
+                                                                {(isAdmin || (user && (user.uid === reply.userId || user.id === reply.userId))) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteComment(reply.id)}
+                                                            className="text-slate-400 hover:text-red-500 transition-colors"
+                                                            title="Delete Comment"
+                                                        >
+                                                            <Trash2 size={10} />
+                                                        </button>
+                                                    )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                    {visibleComments < rootComments.length && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setVisibleComments(prev => prev + 5)}
+                                            className={cn(
+                                                "w-full py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-colors mt-4",
+                                                theme === 'dark'
+                                                    ? "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white"
+                                                    : "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                            )}
+                                        >
+                                            Load More Comments ({rootComments.length - visibleComments})
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {!editMode && activeTab === 'info' && formData.instagram && (
                                 <a
                                     href={formData.instagram}
                                     target="_blank"
@@ -428,6 +1120,7 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                 </p>
                 {onAction && value && (
                     <button
+                        type="button"
                         onClick={onAction}
                         className={cn(
                             "p-1.5 rounded-lg transition-all active:scale-90",
@@ -441,4 +1134,36 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
             </div>
         </div>
     );
+}
+
+function getRelativeTime(timestamp) {
+    if (!timestamp) return 'Just now';
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return 'Just now';
+}
+
+function renderWithMentions(text, onMentionClick) {
+    if (!text) return null;
+    const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
+    return parts.map((part, index) => {
+        if (part.startsWith('@')) {
+            return (
+                <span
+                    key={index}
+                    onClick={(e) => { e.stopPropagation(); onMentionClick && onMentionClick(part); }}
+                    className="text-brand-pink font-bold cursor-pointer hover:underline"
+                >
+                    {part}
+                </span>
+            );
+        }
+        return part;
+    });
 }

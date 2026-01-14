@@ -1,22 +1,110 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, TrendingUp, Users, Star } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useMotionTemplate } from 'framer-motion';
+import { ChevronRight, TrendingUp, Users, Star, LayoutGrid, Music, ZoomIn, ZoomOut, Sparkles, Loader2, X, Calendar, Globe, Building2, Share2, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
+import { IdolCard } from './IdolCard';
+import { useAuth } from '../context/AuthContext';
 
-export function GroupSelection({ groups, companies, selectedCompany, onSelectCompany, onSelectGroup }) {
+export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm }) {
     const { theme } = useTheme();
+    const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
+    const [cardSize, setCardSize] = useState(300);
+    const [visibleCount, setVisibleCount] = useState(24);
+    const loadMoreRef = useRef(null);
+    const [quickViewIdol, setQuickViewIdol] = useState(null);
+
+    useEffect(() => {
+        setVisibleCount(24);
+    }, [viewMode, searchTerm, selectedCompany]);
+
+    const filteredGroups = useMemo(() => groups.filter(group => {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+            group.name.toLowerCase().includes(searchLower) ||
+            (group.koreanName && group.koreanName.includes(searchTerm))
+        );
+    }), [groups, searchTerm]);
+
+    // Filter idols that are not in any of the displayed groups (Soloists or Orphans)
+    const displayIdols = useMemo(() => (idols || []).filter(idol => {
+        const matchesCompany = !selectedCompany || (idol.company || '').includes(selectedCompany);
+        const isGroupMember = idol.groupId && groups.some(g => g.id === idol.groupId);
+        
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = !searchTerm || (
+            idol.name.toLowerCase().includes(searchLower) ||
+            (idol.koreanName && idol.koreanName.includes(searchTerm)) ||
+            (idol.fullEnglishName && idol.fullEnglishName.toLowerCase().includes(searchLower))
+        );
+
+        return matchesCompany && !isGroupMember && matchesSearch;
+    }).sort((a, b) => {
+        if (a.isFavorite && !b.isFavorite) return -1;
+        if (!a.isFavorite && b.isFavorite) return 1;
+        return a.name.localeCompare(b.name);
+    }), [idols, groups, selectedCompany, searchTerm]);
+
+    const allItems = useMemo(() => [
+        ...((viewMode === 'all' || viewMode === 'groups') ? filteredGroups.map(g => ({ ...g, _type: 'group' })) : []),
+        ...((viewMode === 'all' || viewMode === 'soloists') ? displayIdols.map(i => ({ ...i, _type: 'idol' })) : [])
+    ], [viewMode, filteredGroups, displayIdols]);
+
+    const visibleItems = allItems.slice(0, visibleCount);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && !loading && visibleCount < allItems.length) {
+                    setVisibleCount(prev => prev + 12);
+                }
+            },
+            { threshold: 0.1, rootMargin: '400px' }
+        );
+
+        if (loadMoreRef.current) observer.observe(loadMoreRef.current);
+
+        return () => observer.disconnect();
+    }, [loading, visibleCount, allItems.length]);
+
+    // Background Floating Shapes
+    const BackgroundShapes = () => (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+            <motion.div
+                animate={{
+                    y: [0, -40, 0],
+                    rotate: [0, 10, 0],
+                    scale: [1, 1.1, 1]
+                }}
+                transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+                style={{ willChange: "transform" }}
+                className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-brand-pink/5 rounded-full blur-[100px]"
+            />
+            <motion.div
+                animate={{
+                    y: [0, 50, 0],
+                    rotate: [0, -10, 0],
+                    scale: [1, 1.2, 1]
+                }}
+                transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+                style={{ willChange: "transform" }}
+                className="absolute bottom-[-10%] right-[-10%] w-[700px] h-[700px] bg-brand-purple/5 rounded-full blur-[100px]"
+            />
+        </div>
+    );
 
     return (
-        <div className="space-y-16 py-12">
+        <div className="space-y-12 py-12 relative">
+            <BackgroundShapes />
+            
             {/* Hero Section */}
             <section className="text-center space-y-8 max-w-4xl mx-auto px-4">
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-brand-pink/10 border border-brand-pink/20 text-brand-pink text-sm font-black tracking-[0.2em] uppercase"
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink text-xs font-black tracking-[0.25em] uppercase shadow-lg shadow-brand-pink/5 backdrop-blur-sm"
                 >
-                    <TrendingUp size={16} />
+                    <Sparkles size={14} className="animate-pulse" />
                     <span>The Ultimate Idol Hub</span>
                 </motion.div>
 
@@ -24,12 +112,12 @@ export function GroupSelection({ groups, companies, selectedCompany, onSelectCom
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(
-                        "text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter leading-tight",
+                        "text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter leading-tight relative z-10",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}
                 >
                     Discover Your <br />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-pink via-brand-purple to-brand-blue animate-gradient">
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-pink via-brand-purple to-brand-blue animate-gradient bg-[length:200%_auto]">
                         K-Pop Destiny
                     </span>
                 </motion.h1>
@@ -46,61 +134,153 @@ export function GroupSelection({ groups, companies, selectedCompany, onSelectCom
                     Experience the next generation of idol discovery. Seamlessly browse, interact, and stay updated with your favorite artists.
                 </motion.p>
 
-                {/* Filter Chips */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    className="flex flex-wrap justify-center gap-2 md:gap-3 pt-6"
-                >
-                    <button
-                        onClick={() => onSelectCompany('')}
-                        className={cn(
-                            "px-6 md:px-8 py-2 md:py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-[0.25em] transition-all border outline-none group",
-                            !selectedCompany
-                                ? "bg-brand-pink border-brand-pink text-white shadow-[0_10px_30px_-10px_rgba(255,51,153,0.5)] scale-105"
-                                : theme === 'dark'
-                                    ? "bg-slate-900 border-white/5 text-slate-500 hover:text-white hover:border-white/10"
-                                    : "bg-white border-slate-100 text-slate-400 hover:text-slate-900 hover:border-slate-200 shadow-sm"
-                        )}
-                    >
-                        Total Roster
-                    </button>
-                    {companies.map(company => (
-                        <button
-                            key={company}
-                            onClick={() => onSelectCompany(company)}
-                            className={cn(
-                                "px-6 md:px-8 py-2 md:py-3 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase tracking-[0.25em] transition-all border outline-none",
-                                selectedCompany === company
-                                    ? "bg-brand-pink border-brand-pink text-white shadow-[0_10px_30px_-10px_rgba(255,51,153,0.5)] scale-105"
-                                    : theme === 'dark'
-                                        ? "bg-slate-900 border-white/5 text-slate-500 hover:text-white hover:border-white/10"
-                                        : "bg-white border-slate-100 text-slate-400 hover:text-slate-900 hover:border-slate-200 shadow-sm"
-                            )}
-                        >
-                            {company}
-                        </button>
-                    ))}
-                </motion.div>
             </section>
+
+            {/* Controls Section */}
+            <div className="space-y-6 max-w-[1600px] mx-auto px-4">
+                {/* Top Row: View Mode & Search */}
+                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                    {/* View Mode Toggle */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 }}
+                        className="flex justify-center md:justify-start gap-2 w-full md:w-auto"
+                    >
+                        {[
+                            { id: 'all', label: 'All', icon: LayoutGrid },
+                            { id: 'groups', label: 'Groups', icon: Users },
+                            { id: 'soloists', label: 'Soloists', icon: Music }
+                        ].map((mode) => (
+                            <button
+                                key={mode.id}
+                                onClick={() => setViewMode(mode.id)}
+                                className={cn(
+                                    "relative flex-1 md:flex-none justify-center flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all border overflow-hidden",
+                                    viewMode === mode.id
+                                        ? "text-white shadow-lg shadow-brand-purple/25 border-transparent"
+                                        : theme === 'dark'
+                                            ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20"
+                                            : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
+                                )}
+                            >
+                                {viewMode === mode.id && (
+                                    <motion.div
+                                        layoutId="activeViewMode"
+                                        className="absolute inset-0 bg-brand-purple"
+                                        initial={false}
+                                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                    />
+                                )}
+                                <span className="relative z-10 flex items-center gap-2">
+                                    <mode.icon size={14} />
+                                    <span>{mode.label}</span>
+                                </span>
+                            </button>
+                        ))}
+                    </motion.div>
+
+                </div>
+
+                {/* Bottom Row: Filters & Slider */}
+                <div className="flex flex-col-reverse md:flex-row items-start md:items-center justify-between gap-6">
+                    {/* Filter Chips */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="flex flex-wrap justify-start gap-2 md:gap-3 flex-1"
+                    >
+                        <FilterButton label="All" isActive={!selectedCompany} onClick={() => onSelectCompany('')} theme={theme} />
+                        {companies.map(company => (
+                            <FilterButton
+                                key={company}
+                                label={company}
+                                isActive={selectedCompany === company}
+                                onClick={() => onSelectCompany(company)}
+                                theme={theme}
+                            />
+                        ))}
+                    </motion.div>
+
+                    {/* Card Size Slider */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.25 }}
+                        className="w-full md:w-auto flex items-center gap-4 bg-slate-100 dark:bg-slate-900/50 p-2 pl-4 pr-3 rounded-2xl border border-slate-200 dark:border-white/5"
+                    >
+                        <span className={cn("text-[10px] font-black uppercase tracking-widest whitespace-nowrap", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                            Size
+                        </span>
+                        <div className="flex items-center gap-3 min-w-[100px]">
+                            <ZoomOut size={14} className="text-slate-400" />
+                            <input
+                                type="range"
+                                min="200" max="500" step="5"
+                                value={cardSize}
+                                onChange={(e) => setCardSize(Number(e.target.value))}
+                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-pink"
+                            />
+                            <ZoomIn size={14} className="text-slate-400" />
+                        </div>
+                    </motion.div>
+                </div>
+            </div>
 
             {/* Group Grid with Layout Transitions */}
             <motion.div
-                layout
-                className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 px-4"
+                className="grid gap-6 md:gap-8 px-4"
+                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
             >
                 <AnimatePresence mode='popLayout'>
-                    {groups.map((group) => (
-                        <GroupCard
-                            key={group.id}
-                            group={group}
-                            theme={theme}
-                            onClick={() => onSelectGroup(group.id)}
-                        />
-                    ))}
+                    {loading ? (
+                        Array.from({ length: 8 }).map((_, i) => (
+                            <SkeletonCard key={`skeleton-${i}`} theme={theme} />
+                        ))
+                    ) : (
+                        <>
+                            {/* Render Groups */}
+                            {(viewMode === 'all' || viewMode === 'groups') && visibleItems.filter(item => item._type === 'group').map((item) => (
+                                <GroupCard
+                                    key={item.id}
+                                    group={item}
+                                    onClick={() => onSelectGroup(item.id)}
+                                    onFavorite={() => onFavoriteGroup(item.id)}
+                                />
+                            ))}
+
+                            {/* Separator and Header for Solo Artists */}
+                            {viewMode === 'all' && visibleItems.some(i => i._type === 'group') && visibleItems.some(i => i._type === 'idol') && (
+                                <div className="col-span-full h-px bg-white/10 my-8" />
+                            )}
+
+                            {/* Render Solo Artists */}
+                            {(viewMode === 'all' || viewMode === 'soloists') && visibleItems.filter(item => item._type === 'idol').map((item) => (
+                                <IdolCard
+                                    key={item.id}
+                                    idol={item}
+                                    onLike={onLikeIdol}
+                                    onClick={onSelectIdol}
+                                    onQuickView={setQuickViewIdol}
+                                />
+                            ))}
+                        </>
+                    )}
                 </AnimatePresence>
             </motion.div>
+
+            {/* Load More Button */}
+            {!loading && visibleCount < allItems.length && (
+                <div ref={loadMoreRef} className="flex justify-center pt-12 pb-8">
+                    <div className={cn(
+                        "p-3 rounded-full shadow-lg",
+                        theme === 'dark' ? "bg-slate-800 text-brand-pink" : "bg-white text-brand-pink"
+                    )}>
+                        <Loader2 className="animate-spin" size={24} />
+                    </div>
+                </div>
+            )}
 
             {/* Features Stats */}
             <motion.div
@@ -126,7 +306,7 @@ export function GroupSelection({ groups, companies, selectedCompany, onSelectCom
                 </div>
                 <div className="text-center group relative z-10">
                     <p className={cn("text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-purple" : "text-slate-900 group-hover:text-brand-purple")}>
-                        {groups.reduce((acc, g) => acc + g.members.length, 0)}
+                        {groups.reduce((acc, g) => acc + g.members.length, 0) + displayIdols.length}
                     </p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Top Idols</p>
                 </div>
@@ -135,34 +315,42 @@ export function GroupSelection({ groups, companies, selectedCompany, onSelectCom
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Verified</p>
                 </div>
             </motion.div>
+
+            <AnimatePresence>
+                {quickViewIdol && (
+                    <QuickViewModal idol={quickViewIdol} onClose={() => setQuickViewIdol(null)} theme={theme} />
+                )}
+            </AnimatePresence>
         </div>
     );
 }
 
-function GroupCard({ group, theme, onClick }) {
-    const [rotate, setRotate] = useState({ x: 0, y: 0 });
-    const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
+function GroupCard({ group, onClick, onFavorite }) {
+    const { theme } = useTheme();
+    const { user } = useAuth();
+    
+    const mouseX = useMotionValue(0);
+    const mouseY = useMotionValue(0);
+
+    const rotateX = useTransform(mouseY, [-0.5, 0.5], [10, -10]);
+    const rotateY = useTransform(mouseX, [-0.5, 0.5], [-10, 10]);
+
+    const glowX = useTransform(mouseX, [-0.5, 0.5], [0, 100]);
+    const glowY = useTransform(mouseY, [-0.5, 0.5], [0, 100]);
+    const glowBackground = useMotionTemplate`radial-gradient(circle at ${glowX}% ${glowY}%, rgba(255,255,255,0.3) 0%, transparent 60%), radial-gradient(circle at ${useTransform(glowX, v => 100 - v)}% ${useTransform(glowY, v => 100 - v)}%, rgba(255,51,153,0.1) 0%, transparent 40%)`;
 
     const handleMouseMove = (e) => {
         const card = e.currentTarget;
         const rect = card.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
-
-        // Dynamic Glow Position
-        const glowX = (x / rect.width) * 100;
-        const glowY = (y / rect.height) * 100;
-        setGlowPos({ x: glowX, y: glowY });
-
-        const rotateX = (y - centerY) / 8;
-        const rotateY = (centerX - x) / 8;
-        setRotate({ x: rotateX, y: rotateY });
+        const xPct = (e.clientX - rect.left) / rect.width - 0.5;
+        const yPct = (e.clientY - rect.top) / rect.height - 0.5;
+        mouseX.set(xPct);
+        mouseY.set(yPct);
     };
 
     const handleMouseLeave = () => {
-        setRotate({ x: 0, y: 0 });
+        mouseX.set(0);
+        mouseY.set(0);
     };
 
     return (
@@ -172,9 +360,6 @@ function GroupCard({ group, theme, onClick }) {
             animate={{
                 opacity: 1,
                 scale: 1,
-                rotateX: rotate.x,
-                rotateY: rotate.y,
-                perspective: 1200
             }}
             exit={{ opacity: 0, scale: 0.8 }}
             transition={{
@@ -186,17 +371,44 @@ function GroupCard({ group, theme, onClick }) {
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
             onClick={onClick}
+            style={{
+                rotateX,
+                rotateY,
+                perspective: 1000,
+                transformStyle: "preserve-3d",
+                willChange: "transform"
+            }}
             className={cn(
                 "group relative aspect-[3/4.2] rounded-[48px] overflow-hidden cursor-pointer transition-all duration-300",
                 theme === 'dark' ? "bg-slate-900 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)]" : "bg-white shadow-2xl shadow-slate-200"
             )}
         >
+            <div className="absolute top-5 left-5 z-20">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
+                    <Users size={12} className="text-brand-pink" />
+                    <span>Group</span>
+                </div>
+            </div>
+
+            {user && (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onFavorite();
+                    }}
+                    className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 transition-colors active:scale-90"
+                    title={group.isFavorite ? "Unfavorite Group" : "Favorite Group"}
+                >
+                    <Star size={18} className={cn("transition-all", group.isFavorite && "fill-yellow-400 text-yellow-400")} />
+                </button>
+            )}
+
+
             {/* Holographic Glow Effect */}
-            <div
+            <motion.div
                 className="absolute inset-0 opacity-0 group-hover:opacity-40 transition-opacity duration-500 z-10 pointer-events-none"
                 style={{
-                    background: `radial-gradient(circle at ${glowPos.x}% ${glowPos.y}%, rgba(255,255,255,0.3) 0%, transparent 60%), 
-                                 radial-gradient(circle at ${100 - glowPos.x}% ${100 - glowPos.y}%, rgba(255,51,153,0.1) 0%, transparent 40%)`
+                    background: glowBackground
                 }}
             />
 
@@ -205,6 +417,7 @@ function GroupCard({ group, theme, onClick }) {
                 src={group.image}
                 alt={group.name}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                loading="lazy"
             />
 
             {/* Overlay */}
@@ -247,6 +460,160 @@ function GroupCard({ group, theme, onClick }) {
                     ? "border-white/5 group-hover:border-white/20"
                     : "border-black/5 group-hover:border-black/10"
             )} />
+        </motion.div>
+    );
+}
+
+function QuickViewModal({ idol, onClose, theme }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleShare = () => {
+        const text = `Check out ${idol.name} from ${idol.group} on K-Pop DB!`;
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={onClose}
+                className="absolute inset-0 bg-slate-950/60 backdrop-blur-md"
+            />
+            <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
+                className={cn(
+                    "relative w-full max-w-3xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col md:flex-row bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10",
+                    theme === 'dark' ? "text-white" : "text-slate-900"
+                )}
+            >
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 z-10 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors"
+                >
+                    <X size={20} />
+                </button>
+
+                <div className="w-full md:w-5/12 h-80 md:h-auto relative overflow-hidden group">
+                    <img
+                        src={idol.image}
+                        alt={idol.name}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent" />
+                    <div className="absolute bottom-6 left-6 text-white">
+                        <p className="text-xs font-bold text-brand-pink uppercase tracking-[0.2em] mb-2">{idol.group}</p>
+                        <h3 className="text-4xl font-black tracking-tight">{idol.name}</h3>
+                    </div>
+                </div>
+
+                <div className="w-full md:w-7/12 p-8 md:p-10 flex flex-col justify-center space-y-8">
+                    <div>
+                        <h4 className="text-sm font-black uppercase tracking-widest text-brand-pink mb-2">Profile</h4>
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-3 text-sm font-medium opacity-80">
+                                <Users size={16} />
+                                <span>{idol.fullEnglishName} ({idol.koreanName})</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm font-medium opacity-80">
+                                <Building2 size={16} />
+                                <span>{idol.company}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm font-medium opacity-80">
+                                <Globe size={16} />
+                                <span>{idol.nationality}</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm font-medium opacity-80">
+                                <Calendar size={16} />
+                                <span>Born: {idol.birthDate}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 className="text-sm font-black uppercase tracking-widest text-brand-purple mb-2">Positions</h4>
+                        <div className="flex flex-wrap gap-2">
+                            {idol.positions?.map((pos, i) => (
+                                <span key={i} className={cn(
+                                    "px-3 py-1 rounded-full text-xs font-bold border",
+                                    theme === 'dark' ? "bg-white/5 border-white/10" : "bg-slate-100 border-slate-200"
+                                )}>
+                                    {pos}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="pt-4 flex gap-3">
+                        <button
+                            onClick={handleShare}
+                            className={cn(
+                                "flex-1 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95",
+                                theme === 'dark' ? "bg-white text-slate-900 hover:bg-slate-200" : "bg-slate-900 text-white hover:bg-slate-800"
+                            )}
+                        >
+                            {copied ? <Check size={16} /> : <Share2 size={16} />}
+                            {copied ? "Copied!" : "Share Profile"}
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+        </div>
+    );
+}
+
+function FilterButton({ label, isActive, onClick, theme }) {
+    return (
+        <button
+            onClick={onClick}
+            className={cn(
+                "relative px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all outline-none overflow-hidden",
+                isActive
+                    ? "text-white shadow-lg shadow-brand-pink/25"
+                    : theme === 'dark'
+                        ? "bg-slate-900 border border-white/5 text-slate-500 hover:text-white hover:border-white/10"
+                        : "bg-white border border-slate-100 text-slate-400 hover:text-slate-900 hover:border-slate-200 shadow-sm"
+            )}
+        >
+            {isActive && (
+                <motion.div
+                    layoutId="activeCompany"
+                    className="absolute inset-0 bg-gradient-to-r from-brand-pink to-brand-purple"
+                    initial={false}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+            )}
+            <span className="relative z-10">{label}</span>
+        </button>
+    );
+}
+
+function SkeletonCard({ theme }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={cn(
+                "aspect-[3/4.2] rounded-[48px] overflow-hidden relative",
+                theme === 'dark' ? "bg-slate-900" : "bg-slate-100"
+            )}
+        >
+            <div className={cn(
+                "absolute inset-0 animate-pulse",
+                theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
+            )} />
+            <div className="absolute bottom-8 left-8 right-8 space-y-4 opacity-50">
+                <div className={cn("h-3 w-1/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
+                <div className={cn("h-8 w-2/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
+            </div>
         </motion.div>
     );
 }

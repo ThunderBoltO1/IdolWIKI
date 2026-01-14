@@ -92,10 +92,19 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                     </div>
 
                     <div className="space-y-2">
-                        <label className={cn(
-                            "text-[10px] font-black uppercase tracking-[0.2em] ml-1",
-                            theme === 'dark' ? "text-slate-500" : "text-slate-400"
-                        )}>Password</label>
+                        <div className="flex justify-between items-center ml-1">
+                            <label className={cn(
+                                "text-[10px] font-black uppercase tracking-[0.2em]",
+                                theme === 'dark' ? "text-slate-500" : "text-slate-400"
+                            )}>Password</label>
+                            <button
+                                type="button"
+                                onClick={() => onNavigate('forgot-password')}
+                                className="text-[10px] font-bold text-brand-pink hover:underline uppercase tracking-wider"
+                            >
+                                Forgot Password?
+                            </button>
+                        </div>
                         <div className="relative">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input

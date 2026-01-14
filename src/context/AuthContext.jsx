@@ -4,7 +4,8 @@ import {
     createUserWithEmailAndPassword,
     signOut,
     onAuthStateChanged,
-    updateProfile
+    updateProfile,
+    sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -166,6 +167,17 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const resetPassword = async (email) => {
+        setIsLoading(true);
+        try {
+            await sendPasswordResetEmail(auth, email);
+        } catch (error) {
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const isAdmin = user?.role === 'admin';
 
     const value = {
@@ -175,7 +187,8 @@ export const AuthProvider = ({ children }) => {
         register,
         updateUser,
         logout,
-        isAdmin
+        isAdmin,
+        resetPassword
     };
 
     return (

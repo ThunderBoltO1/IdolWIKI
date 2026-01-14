@@ -12,6 +12,7 @@ export const initialGroups = [
             'https://lastfm.freetls.fastly.net/i/u/770x0/6c213822c8458c91fb848f2cbf21ba69.jpg'
         ],
         description: 'BTS, also known as the Bangtan Boys, is a South Korean boy band formed in 2010. The septet—consisting of RM, Jin, Suga, J-Hope, Jimin, V, and Jungkook—co-write and co-produce much of their own material.',
+        isFavorite: false,
         members: ['1', '9', '11', '12', '13', '14', '15']
     },
     {
@@ -26,6 +27,7 @@ export const initialGroups = [
             'https://lastfm.freetls.fastly.net/i/u/770x0/583b49162985ca09c8504f7b6b6b6b6b.jpg'
         ],
         description: 'BLACKPINK is a South Korean girl group formed by YG Entertainment, consisting of members Jisoo, Jennie, Rosé, and Lisa. The group debuted in August 2016 with their single album Square One.',
+        isFavorite: false,
         members: ['2', '10', '16', '17']
     },
     {
@@ -38,6 +40,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/683b49162985ca09c8504f7b6b6b6b6b.jpg',
         gallery: [],
         description: 'IVE is a South Korean girl group formed by Starship Entertainment. The group consists of six members: Gaeul, Yujin, Rei, Wonyoung, Liz, and Leeseo.',
+        isFavorite: false,
         members: ['3', '18', '19', '20', '21', '22']
     },
     {
@@ -50,6 +53,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/783b49162985ca09c8504f7b6b6b6b6b.jpg',
         gallery: [],
         description: 'NewJeans is a South Korean girl group formed by ADOR. The group is composed of five members: Minji, Hanni, Danielle, Haerin, and Hyein.',
+        isFavorite: false,
         members: ['4', '23', '24', '25', '26']
     },
     {
@@ -62,6 +66,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/02a6bf9f26fa6ff0d0bd64f31803602e.jpg',
         gallery: [],
         description: 'aespa is a South Korean girl group formed by SM Entertainment. The group consists of four members: Karina, Giselle, Winter, and Ningning.',
+        isFavorite: false,
         members: ['8', '27', '28', '29']
     },
     {
@@ -74,6 +79,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/c128866c476505aa9d28cc058fca1050.jpg',
         gallery: [],
         description: 'TWICE is a South Korean girl group formed by JYP Entertainment. The group is composed of nine members: Nayeon, Jeongyeon, Momo, Sana, Jihyo, Mina, Dahyun, Chaeyoung, and Tzuyu.',
+        isFavorite: false,
         members: ['6', '30', '31', '32', '33', '34', '35', '36', '37']
     },
     {
@@ -86,6 +92,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/2ee3e6544a32b81320b2b8d7e08b0f6d.jpg',
         gallery: [],
         description: 'Stray Kids is a South Korean boy band formed by JYP Entertainment. The group is composed of eight members: Bang Chan, Lee Know, Changbin, Hyunjin, Han, Felix, Seungmin, and I.N.',
+        isFavorite: false,
         members: ['7', '38', '39', '40', '41', '42', '43', '44']
     },
     {
@@ -98,6 +105,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/abd03efb56827a1caf97813a7033dca3.jpg',
         gallery: [],
         description: 'SEVENTEEN is a South Korean boy band formed by Pledis Entertainment. The group consists of thirteen members: S.Coups, Jeonghan, Joshua, Jun, Hoshi, Wonwoo, Woozi, DK, Mingyu, The8, Seungkwan, Vernon, and Dino.',
+        isFavorite: false,
         members: ['5', '45', '46', '47', '48', '49', '50', '51', '52', '53', '54', '55', '56']
     },
     {
@@ -110,6 +118,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/4e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: 'LE SSERAFIM is a girl group consisting of five members: Kim Chaewon, Sakura, Huh Yunjin, Kazuha, and Hong Eunchae. They are known for their confident and fearless concept.',
+        isFavorite: false,
         members: ['57', '58', '59', '60', '61']
     },
     {
@@ -122,6 +131,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/5e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: 'BABYMONSTER is YG Entertainment\'s first girl group in seven years. The group consists of seven multitalented members from South Korea, Japan, and Thailand.',
+        isFavorite: false,
         members: ['62', '63', '64', '65', '66', '67', '68']
     },
     {
@@ -134,6 +144,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/6e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: '(G)I-DLE is a self-producing girl group known for their unique concepts and direct involvement in songwriting and production.',
+        isFavorite: false,
         members: ['69', '70', '71', '72', '73']
     },
     {
@@ -146,6 +157,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/7e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: 'NMIXX is known for their "MIXX POP" genre, which blends multiple styles into a single track, showcasing their versatility and vocal power.',
+        isFavorite: false,
         members: ['74', '75', '76', '77', '78', '79']
     },
     {
@@ -158,6 +170,7 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/8e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: 'ITZY is a girl group known for their "teen crush" concept, powerful choreography, and messages of self-love and confidence.',
+        isFavorite: false,
         members: ['80', '81', '82', '83', '84']
     },
     {
@@ -170,19 +183,8 @@ export const initialGroups = [
         image: 'https://lastfm.freetls.fastly.net/i/u/770x0/9e10091ef7488052f11816e999c07e0c.jpg',
         gallery: [],
         description: 'ILLIT is a girl group formed through the survival show "R U Next?". They represent a youthful and whimsical "magical realism" concept.',
+        isFavorite: false,
         members: ['85', '86', '87', '88', '89']
-    },
-    {
-        id: 'soloists',
-        name: 'SOLOISTS',
-        koreanName: '솔로 아티스트',
-        company: 'Various',
-        debutDate: 'Various',
-        fanclub: 'Various',
-        image: 'https://lastfm.freetls.fastly.net/i/u/770x0/87243cb8d203598d41816e999c07e0c.jpg',
-        gallery: [],
-        description: 'Iconic solo artists who have made a significant impact on the K-Pop industry with their unique voices and artistic vision.',
-        members: ['90', '91']
     }
 ];
 
@@ -2080,8 +2082,8 @@ export const initialIdols = [
         name: 'IU',
         koreanName: '아이유',
         fullEnglishName: 'Lee Ji-eun',
-        group: 'SOLOISTS',
-        groupId: 'soloists',
+        group: '',
+        groupId: '',
         positions: ['Soloist', 'Actress'],
         company: 'EDAM Entertainment',
         nationality: 'South Korean',
@@ -2104,8 +2106,8 @@ export const initialIdols = [
         name: 'BIBI',
         koreanName: '비비',
         fullEnglishName: 'Kim Hyung-seo',
-        group: 'SOLOISTS',
-        groupId: 'soloists',
+        group: '',
+        groupId: '',
         positions: ['Soloist', 'Rapper', 'Actress'],
         company: 'Feel Ghood Music',
         nationality: 'South Korean',
@@ -2121,4 +2123,3 @@ export const initialIdols = [
         isFavorite: false
     }
 ];
-

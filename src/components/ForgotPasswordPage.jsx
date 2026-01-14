@@ -99,10 +99,9 @@ export const ForgotPasswordPage = ({ onNavigate }) => {
 
                 <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
                     <div className="space-y-2">
-                        <label className={cn(
-                            "text-[10px] font-black uppercase tracking-[0.2em] ml-1",
-                            theme === 'dark' ? "text-slate-500" : "text-slate-400"
-                        )}>Email Address</label>
+                        <label className={cn("text-xs font-black uppercase tracking-[0.2em] ml-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                            Email Address
+                        </label>
                         <div className="relative">
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input

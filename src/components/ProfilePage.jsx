@@ -5,6 +5,8 @@ import { useTheme } from '../context/ThemeContext';
 import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
+import { ImageCropper } from './ImageCropper';
+import { createImage, isDataUrl } from '../lib/cropImage';
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
@@ -29,6 +31,15 @@ export const ProfilePage = ({ onBack }) => {
     }, [user]);
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 1 });
+
+    const startCropping = (url, callback, aspect = 1) => {
+        if (!url || isDataUrl(url)) {
+            callback(url);
+            return;
+        }
+        setCropState({ src: url, callback, aspect });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -114,7 +125,11 @@ export const ProfilePage = ({ onBack }) => {
                                 label="Avatar URL"
                                 name="avatar"
                                 value={formData.avatar}
-                                onChange={e => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
+                                onChange={e => {
+                                    startCropping(e.target.value, (newUrl) => {
+                                        setFormData(prev => ({ ...prev, avatar: newUrl }));
+                                    }, 1);
+                                }}
                                 theme={theme}
                                 placeholder="https://example.com/image.jpg"
                             />
@@ -146,10 +161,7 @@ export const ProfilePage = ({ onBack }) => {
                         </div>
 
                         <div className="md:col-span-2 space-y-3">
-                            <label className={cn(
-                                "text-[10px] uppercase font-black tracking-[0.2em] flex items-center gap-2",
-                                theme === 'dark' ? "text-slate-500" : "text-slate-400"
-                            )}>
+                            <label className={cn("text-xs uppercase font-black tracking-[0.2em] flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                 <Info size={14} />
                                 Personal Bio
                             </label>
@@ -194,7 +206,7 @@ export const ProfilePage = ({ onBack }) => {
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0 }}
-                                    className="flex items-center gap-2 text-green-500 font-black uppercase text-[10px] tracking-widest p-3 rounded-xl bg-green-500/5 border border-green-500/20"
+                                    className="flex items-center gap-2 text-green-500 font-black uppercase text-xs tracking-widest p-3 rounded-xl bg-green-500/5 border border-green-500/20"
                                 >
                                     <CheckCircle2 size={16} />
                                     <span>Database Updated Successfully!</span>
@@ -204,6 +216,21 @@ export const ProfilePage = ({ onBack }) => {
                     </div>
                 </form>
             </motion.div>
+
+            {cropState.src && (
+                <ImageCropper
+                    imageSrc={cropState.src}
+                    aspect={cropState.aspect}
+                    onCropComplete={(croppedUrl) => {
+                        cropState.callback(croppedUrl);
+                        setCropState({ src: null, callback: null, aspect: 1 });
+                    }}
+                    onCancel={() => {
+                        cropState.callback(cropState.src);
+                        setCropState({ src: null, callback: null, aspect: 1 });
+                    }}
+                />
+            )}
         </div>
     );
 };
@@ -211,10 +238,7 @@ export const ProfilePage = ({ onBack }) => {
 function InputGroup({ icon: Icon, label, value, onChange, theme, placeholder, type = "text", isMono }) {
     return (
         <div className="space-y-3">
-            <label className={cn(
-                "text-[10px] uppercase font-black tracking-[0.2em] flex items-center gap-2",
-                theme === 'dark' ? "text-slate-500" : "text-slate-400"
-            )}>
+            <label className={cn("text-xs uppercase font-black tracking-[0.2em] flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                 <Icon size={14} />
                 {label}
             </label>

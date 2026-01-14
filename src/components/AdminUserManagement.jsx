@@ -188,11 +188,7 @@ export function AdminUserManagement({ onBack }) {
                             <div className="flex-1 text-center md:text-left min-w-0">
                                 <h3 className={cn("text-lg font-black truncate flex items-center gap-2 justify-center md:justify-start", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                     {userItem.name}
-                                    {userItem.banned && (
-                                        <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 text-[10px] uppercase tracking-widest border border-red-500/20">
-                                            Banned
-                                        </span>
-                                    )}
+                                    {userItem.banned && <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 text-xs uppercase tracking-widest border border-red-500/20">Banned</span>}
                                 </h3>
                                 <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-3 text-sm text-slate-500 font-medium">
                                     <span className="text-brand-pink">@{userItem.username}</span>

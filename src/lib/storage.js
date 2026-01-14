@@ -1,20 +1,30 @@
-/**
- * Utility to convert Google Drive shareable links to direct download/view URLs
- * Example: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
- * to: https://drive.google.com/uc?export=view&id=FILE_ID
- */
-export const convertDriveLink = (url) => {
-    if (!url) return null;
+export function convertDriveLink(url) {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
 
-    // Basic regex for Google Drive "file/d/ID/view" format
-    const driveFileRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
-    const match = url.match(driveFileRegex);
+  // If not a Google Drive link, just return as-is
+  if (!trimmed.includes('drive.google.com')) {
+    return trimmed;
+  }
 
-    if (match && match[1]) {
-        // Thumbnail URL is often more reliable for direct embedding than uc
-        // Added timestamp cache buster to ensure images update instantly
-        return `https://drive.google.com/thumbnail?id=${match[1]}&sz=w1000&t=${new Date().getTime()}`;
+  try {
+    // Pattern: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+    const fileIdMatch = trimmed.match(/\/d\/([^/]+)/);
+    let id = fileIdMatch ? fileIdMatch[1] : null;
+
+    // Pattern: https://drive.google.com/uc?id=FILE_ID or open?id=FILE_ID
+    if (!id) {
+      const u = new URL(trimmed);
+      id = u.searchParams.get('id');
     }
 
-    return url;
-};
+    if (!id) return trimmed;
+
+    // Use Google image CDN style URL for better performance
+    return `https://lh3.googleusercontent.com/d/${id}=w1000`;
+  } catch {
+    return trimmed;
+  }
+}
+

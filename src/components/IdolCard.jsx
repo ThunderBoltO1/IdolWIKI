@@ -5,7 +5,31 @@ import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 
-export function IdolCard({ idol, onLike, onClick, onQuickView }) {
+const Highlight = ({ text = '', highlight = '' }) => {
+    if (!highlight?.trim() || !text) {
+        return <>{text}</>;
+    }
+    // Escape special characters in the highlight string for use in regex
+    const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedHighlight})`, 'gi');
+    const parts = text.split(regex);
+
+    return (
+        <>
+            {parts.filter(String).map((part, i) =>
+                regex.test(part) ? (
+                    <mark key={i} className="bg-brand-pink/50 text-white rounded not-italic px-0.5 mx-0">
+                        {part}
+                    </mark>
+                ) : (
+                    <span key={i}>{part}</span>
+                )
+            )}
+        </>
+    );
+};
+
+export function IdolCard({ idol, onLike, onClick, onQuickView, searchTerm }) {
     const { theme } = useTheme();
     const mouseX = useMotionValue(0);
     const mouseY = useMotionValue(0);
@@ -38,6 +62,13 @@ export function IdolCard({ idol, onLike, onClick, onQuickView }) {
             style={{ willChange: "transform" }}
             onClick={() => onClick(idol)}
         >
+            {/* Animated Border on Hover */}
+            <div className={cn(
+                "absolute -inset-px rounded-[40px] z-0 transition-opacity duration-500",
+                "opacity-0 group-hover:opacity-100",
+                "bg-gradient-to-br from-brand-pink via-brand-purple to-brand-blue"
+            )} />
+
             {/* Holographic Glow */}
             <motion.div
                 className="absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity duration-500 pointer-events-none z-10"
@@ -46,7 +77,7 @@ export function IdolCard({ idol, onLike, onClick, onQuickView }) {
                 }}
             />
             {/* Image Container */}
-            <div className="aspect-[3/4] overflow-hidden relative">
+            <div className="aspect-[3/4] overflow-hidden relative rounded-[38px]">
                 <img
                     src={convertDriveLink(idol.image)}
                     alt={idol.name}
@@ -93,10 +124,7 @@ export function IdolCard({ idol, onLike, onClick, onQuickView }) {
                 {/* Content Overlay */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 transform translate-y-2 group-hover:translate-y-0 transition-all duration-500">
                     <div className="flex items-center gap-2 mb-2">
-                        <span className={cn(
-                            "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full text-white shadow-lg backdrop-blur-md flex items-center gap-1.5",
-                            (!idol.group || idol.group === 'SOLOISTS') ? "bg-brand-purple/90" : "bg-brand-pink/90"
-                        )}>
+                        <span className={cn("px-3 py-1 text-xs font-black uppercase tracking-widest rounded-full text-white shadow-lg backdrop-blur-md flex items-center gap-1.5", !idol.group || idol.group === 'SOLOISTS' ? "bg-brand-purple/90" : "bg-brand-pink/90")}>
                             {(!idol.group || idol.group === 'SOLOISTS') ? (
                                 <>
                                     <Music size={10} />
@@ -110,12 +138,16 @@ export function IdolCard({ idol, onLike, onClick, onQuickView }) {
                             )}
                         </span>
                     </div>
-                    <h3 className="text-2xl font-black text-white mb-1 tracking-tight drop-shadow-md">{idol.name}</h3>
-                    <p className="text-xs font-bold text-slate-300 mb-3 truncate opacity-80">{idol.company}</p>
+                    <h3 className="text-2xl font-black text-white mb-1 tracking-tight drop-shadow-md">
+                        <Highlight text={idol.name} highlight={searchTerm} />
+                    </h3>
+                    <p className="text-xs font-bold text-slate-300 mb-3 truncate opacity-80">
+                        <Highlight text={idol.company} highlight={searchTerm} />
+                    </p>
 
-                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-brand-pink opacity-0 group-hover:opacity-100 transition-all duration-500 delay-100">
+                    <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-brand-pink opacity-0 group-hover:opacity-100 transition-all duration-500 delay-100">
                         <Users size={12} />
-                        <span>{idol.positions[0]}</span>
+                        <span>{(idol.positions && idol.positions[0]) || 'Member'}</span>
                     </div>
                 </div>
             </div>

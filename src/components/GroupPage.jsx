@@ -1,23 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ImageCropper } from './ImageCropper';
+import { createImage, isDataUrl } from '../lib/cropImage';
+import { MusicPlayer } from './MusicPlayer';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
         "MAMA Awards": [
             "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
             "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice"
+            "Best New Male Artist", "Best New Female Artist",
+            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
+            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
+            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
         ],
         "Melon Music Awards (MMA)": [
+            "Record of the Year (Daesang)",
+            "Song of the Year (Daesang)",
+            "Album of the Year (Daesang)",
+            "Artist of the Year (Daesang)",
+            "Best Group (Female)",
+            "New Artist of the Year",
             "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
             "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
             "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
@@ -32,6 +43,10 @@ const AWARD_DATA = {
             "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
         ],
         "Seoul Music Awards (SMA)": [
+            "Rookie of the Year",
+            "Main Award (Bonsang)",
+            "Best Performance Award",
+            "World Best Artist Award",
             "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
             "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
             "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
@@ -41,13 +56,43 @@ const AWARD_DATA = {
             "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
         ],
         "The Fact Music Awards (TMA)": [
+            "Artist of the Year (Bonsang)",
+            "Worldwide Icon",
+            "Hot Trend Award",
+            "Next Leader Award",
             "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
             "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
         ],
         "Asia Artist Awards (AAA)": [
+            "Stage of the Year (Daesang)",
+            "Hot Trend Award",
+            "Rookie of the Year",
+            "Best New Artist (Singer)",
             "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
             "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
             "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
+        ],
+        "Hanteo Music Awards": [
+            "Artist of the Year (Bonsang)",
+            "Best Performance (Group)",
+            "Rookie of the Year (Female)"
+        ],
+        "K-World Dream Awards": [
+            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
+            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
+        ],
+        "Korea Grand Music Awards": [
+            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
+            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
+        ],
+        "TikTok Awards Korea": [
+            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
+        ],
+        "Billboard Music Awards": [
+            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
+        ],
+        "MTV Video Music Awards": [
+            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
         ]
     },
     "Acting & Arts Awards": {
@@ -86,7 +131,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [activeTab, setActiveTab] = useState('members');
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
+    const [selectedAlbum, setSelectedAlbum] = useState(null);
     const [visibleComments, setVisibleComments] = useState(5);
+    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 16 / 9 });
     const [loadingComments, setLoadingComments] = useState(true);
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
@@ -242,11 +289,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
     // Sync activeImage when group data changes from Firestore
     useEffect(() => {
-        if (group?.image) {
+        if (group) {
             setActiveImage(group.image);
             setFormData(group);
         }
-    }, [group?.image]);
+    }, [group]);
 
     useEffect(() => {
         setVisibleComments(5);
@@ -278,6 +325,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         if (currentImageIndex === -1) return;
         const prevIndex = (currentImageIndex - 1 + allImages.length) % allImages.length;
         setLightboxImage(allImages[prevIndex]);
+    };
+
+    const startCropping = (url, callback, aspect = 16 / 9) => {
+        if (!url || isDataUrl(url)) {
+            callback(url);
+            return;
+        }
+        setCropState({ src: url, callback, aspect });
     };
 
     useEffect(() => {
@@ -314,9 +369,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const handleGalleryChange = (index, value) => {
-        const newGallery = [...(formData.gallery || [])];
-        newGallery[index] = value;
-        setFormData({ ...formData, gallery: newGallery });
+        startCropping(value, (newUrl) => {
+            const newGallery = [...(formData.gallery || [])];
+            newGallery[index] = newUrl;
+            setFormData({ ...formData, gallery: newGallery });
+        }, 1 / 1);
     };
 
     const addGalleryImage = () => {
@@ -326,6 +383,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const removeGalleryImage = (index) => {
         const newGallery = (formData.gallery || []).filter((_, i) => i !== index);
         setFormData({ ...formData, gallery: newGallery });
+    };
+
+    const handleAlbumChange = (index, field, value) => {
+        const newAlbums = [...(formData.albums || [])];
+        if (!newAlbums[index]) newAlbums[index] = {};
+        newAlbums[index][field] = value;
+        setFormData({ ...formData, albums: newAlbums });
+    };
+
+    const addAlbum = () => {
+        setFormData({
+            ...formData,
+            albums: [...(formData.albums || []), { title: '', cover: '', date: '', youtube: '', tracks: [] }]
+        });
+    };
+
+    const removeAlbum = (index) => {
+        const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
+        setFormData({ ...formData, albums: newAlbums });
     };
 
     return (
@@ -410,13 +486,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         {isEditing ? (
                             <div className="space-y-4 bg-black/40 p-6 rounded-3xl backdrop-blur-md border border-white/10">
                                 <input
-                                    value={formData.name}
+                                    value={formData.name || ''}
                                     onChange={e => setFormData({...formData, name: e.target.value})}
                                     className="w-full bg-transparent text-5xl md:text-7xl font-black text-white border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-white/20"
                                     placeholder="Group Name"
                                 />
                                 <input
-                                    value={formData.koreanName}
+                                    value={formData.koreanName || ''}
                                     onChange={e => setFormData({...formData, koreanName: e.target.value})}
                                     className="w-full bg-transparent text-xl md:text-3xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
                                     placeholder="Korean Name"
@@ -424,13 +500,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <div className="flex items-center gap-2">
                                     <Globe size={16} className="text-white/50" />
                                     <input
-                                        value={formData.image}
-                                        onChange={e => {
-                                            setFormData({...formData, image: e.target.value});
-                                            setActiveImage(e.target.value);
+                                        value={formData.image || ''}
+                                        onChange={(e) => {
+                                            const newUrl = e.target.value;
+                                            startCropping(newUrl, (url) => {
+                                                setFormData({ ...formData, image: url });
+                                                setActiveImage(url);
+                                            });
                                         }}
                                         className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
                                         placeholder="Hero Image URL"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Youtube size={16} className="text-white/50" />
+                                    <input
+                                        value={formData.themeSongUrl || ''}
+                                        onChange={e => setFormData({...formData, themeSongUrl: e.target.value})}
+                                        className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
+                                        placeholder="Theme Song URL (YouTube)"
                                     />
                                 </div>
                             </div>
@@ -448,14 +536,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                     <div className="flex gap-4 md:gap-6">
                         <div className="px-6 md:px-8 py-4 md:py-6 rounded-[24px] md:rounded-[32px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[100px] md:min-w-[140px] group/stat hover:border-brand-pink/50 transition-colors">
-                            <p className="text-[9px] md:text-[10px] text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-pink transition-colors">Members</p>
+                            <p className="text-xs text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-pink transition-colors">Members</p>
                             <p className="text-2xl md:text-4xl font-black text-white">{members.length}</p>
                         </div>
                         <div className="px-6 md:px-8 py-4 md:py-6 rounded-[24px] md:rounded-[32px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[100px] md:min-w-[140px] group/stat hover:border-brand-blue/50 transition-colors">
-                            <p className="text-[9px] md:text-[10px] text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
+                            <p className="text-xs text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
                             {isEditing ? (
                                 <input
-                                    value={formData.fanclub}
+                                    value={formData.fanclub || ''}
                                     onChange={e => setFormData({...formData, fanclub: e.target.value})}
                                     className="w-full bg-transparent text-2xl md:text-4xl font-black text-brand-blue text-center border-b border-white/20 focus:border-brand-blue focus:outline-none"
                                 />
@@ -499,7 +587,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 label="Foundation"
                                 value={isEditing ? (
                                     <input 
-                                        value={formData.company} 
+                                        value={formData.company || ''} 
                                         onChange={e => setFormData({...formData, company: e.target.value})}
                                         className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                     />
@@ -512,7 +600,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 value={isEditing ? (
                                     <input 
                                         type="date"
-                                        value={formData.debutDate} 
+                                        value={formData.debutDate || ''} 
                                         onChange={e => setFormData({...formData, debutDate: e.target.value})}
                                         className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                     />
@@ -597,7 +685,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                             <>
                                                                 <span className="font-black text-brand-pink mr-2">{item.year}</span>
                                                                 <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
-                                                                <div className="text-[10px] text-slate-500 font-medium">{item.award}</div>
+                                                                <div className="text-xs text-slate-500 font-medium">{item.award}</div>
                                                             </>
                                                         ) : (
                                                             <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item}</span>
@@ -612,13 +700,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 ) : (
                                     <div className="flex flex-wrap gap-2">
                                         {(group.awards || []).length > 0 ? (
-                                            [...(group.awards || [])].sort((a, b) => {
+                                            [...(group.awards || [])].sort((a, b) => { // Sorting logic updated here
                                                 const yearA = typeof a === 'object' ? Number(a.year) : 0;
                                                 const yearB = typeof b === 'object' ? Number(b.year) : 0;
-                                                return yearA - yearB;
+                                                if (yearB !== yearA) return yearB - yearA;
+                                                const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
+                                                const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
+                                                return nameA.localeCompare(nameB);
                                             }).map((award, i) => (
                                                 <span key={i} className={cn(
-                                                    "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border flex items-center gap-2",
+                                                    "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border flex items-center gap-2",
                                                     theme === 'dark' ? "bg-slate-800 border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"
                                                 )}>
                                                     {typeof award === 'object' ? (
@@ -643,7 +734,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         )}>
                             {isEditing ? (
                                 <textarea
-                                    value={formData.description}
+                                    value={formData.description || ''}
                                     onChange={e => setFormData({...formData, description: e.target.value})}
                                     className={cn(
                                         "w-full h-40 bg-transparent border-2 rounded-xl p-4 focus:outline-none resize-none",
@@ -673,9 +764,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             )}
                         >
                             <div className="flex items-center justify-between mb-6">
-                                <h3 className={cn("text-xl font-black tracking-tight uppercase tracking-[0.2em] text-[10px]", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Official Archives</h3>
+                                <h3 className={cn("text-xl font-black tracking-tight uppercase tracking-[0.2em] text-xs", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Official Archives</h3>
                                 {isEditing && (
-                                    <button onClick={addGalleryImage} className="text-[10px] font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline">
+                                    <button onClick={addGalleryImage} className="text-xs font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline">
                                         <Plus size={12} /> Add Image
                                     </button>
                                 )}
@@ -685,7 +776,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <div className="space-y-3">
                                     {(formData.gallery || []).map((url, idx) => (
                                         <div key={idx} className="flex gap-2">
-                                            <input 
+                                            <input
                                                 value={url}
                                                 onChange={(e) => handleGalleryChange(idx, e.target.value)}
                                                 className={cn("w-full bg-transparent border-b p-2 text-xs font-medium focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
@@ -720,12 +811,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                 {/* Right Column: Members List */}
                 <div className="lg:col-span-8 space-y-12">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-8">
+                    <div className="flex items-center justify-between flex-wrap gap-y-4">
+                        <div className="flex items-center gap-4 sm:gap-8 flex-wrap">
                             <button
                                 onClick={() => setActiveTab('members')}
                                 className={cn(
-                                    "text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
                                     activeTab === 'members'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
@@ -739,9 +830,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 The Stars
                             </button>
                             <button
+                                onClick={() => setActiveTab('discography')}
+                                className={cn(
+                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    activeTab === 'discography'
+                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
+                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
+                                )}
+                            >
+                                {activeTab === 'discography' && (
+                                    <motion.div layoutId="tab-icon" className="p-3 md:p-4 rounded-3xl bg-brand-purple/10 text-brand-purple shadow-inner">
+                                        <Disc size={32} fill="currentColor" />
+                                    </motion.div>
+                                )}
+                                Discography
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('comments')}
                                 className={cn(
-                                    "text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
                                     activeTab === 'comments'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
@@ -760,6 +867,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                     {activeTab === 'members' ? (
                         <motion.div
+                            key="members"
                             variants={{
                                 hidden: { opacity: 0 },
                                 show: { opacity: 1, transition: { staggerChildren: 0.1 } }
@@ -777,8 +885,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 />
                             ))}
                         </motion.div>
-                    ) : (
+                    ) : activeTab === 'comments' ? (
                         <motion.div
+                            key="comments"
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             className={cn(
@@ -846,7 +955,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
                                                         <span className={cn("text-base font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{comment.user}</span>
-                                                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">{getRelativeTime(comment.createdAt?.toMillis())}</span>
+                                                        <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-500 uppercase tracking-wider">{getRelativeTime(comment.createdAt?.toMillis())}</span>
                                                     </div>
                                                 </div>
                                                 <p className={cn("text-lg leading-relaxed font-medium", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>{renderWithMentions(comment.text, handleMentionClick)}</p>
@@ -952,6 +1061,76 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </button>
                             )}
                         </motion.div>
+                    ) : (
+                        /* Discography Tab */
+                        <motion.div
+                            key="discography"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-8"
+                        >
+                            {isEditing ? (
+                                <div className="space-y-6">
+                                    {(formData.albums || []).map((album, idx) => (
+                                        <div key={idx} className={cn("p-6 rounded-3xl border space-y-4", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="font-black text-sm uppercase tracking-widest text-brand-pink">Album #{idx + 1}</h4>
+                                                <button onClick={() => removeAlbum(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl"><Trash2 size={18} /></button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <input placeholder="Album Title" value={album.title || ''} onChange={e => handleAlbumChange(idx, 'title', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <input type="date" value={album.date || ''} onChange={e => handleAlbumChange(idx, 'date', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <input placeholder="Cover Image URL" value={album.cover || ''} onChange={e => handleAlbumChange(idx, 'cover', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <input placeholder="YouTube Playlist/Video URL" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <div className="md:col-span-2">
+                                                    <textarea 
+                                                        placeholder="Tracklist (one song per line)" 
+                                                        value={Array.isArray(album.tracks) ? album.tracks.join('\n') : (album.tracks || '')} 
+                                                        onChange={e => handleAlbumChange(idx, 'tracks', e.target.value.split('\n'))}
+                                                        className={cn("w-full p-3 rounded-xl border bg-transparent outline-none font-bold min-h-[100px]", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button onClick={addAlbum} className="w-full py-4 rounded-2xl border-2 border-dashed border-brand-pink/30 text-brand-pink font-black uppercase tracking-widest hover:bg-brand-pink/5 transition-colors flex items-center justify-center gap-2">
+                                        <Plus size={20} /> Add Album
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                                    {(group.albums || []).length > 0 ? (
+                                        (group.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
+                                            <motion.div
+                                                key={idx}
+                                                whileHover={{ y: -10 }}
+                                                onClick={() => setSelectedAlbum(album)}
+                                                className={cn(
+                                                    "group cursor-pointer rounded-3xl overflow-hidden border shadow-lg transition-all",
+                                                    theme === 'dark' ? "bg-slate-900 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
+                                                )}
+                                            >
+                                                <div className="aspect-square overflow-hidden relative">
+                                                    <img src={convertDriveLink(album.cover)} alt={album.title} className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75" />
+                                                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                        <PlayCircle size={48} className="text-white drop-shadow-lg transition-transform scale-75 group-hover:scale-100" />
+                                                    </div>
+                                                </div>
+                                                <div className="p-4">
+                                                    <h4 className={cn("font-black text-lg leading-tight mb-1 truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{album.title}</h4>
+                                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{album.date ? new Date(album.date).getFullYear() : 'Unknown'}</p>
+                                                </div>
+                                            </motion.div>
+                                        ))
+                                    ) : (
+                                        <div className="col-span-full text-center py-20">
+                                            <Disc size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
+                                            <p className="text-slate-500 font-medium">No discography added yet.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </motion.div>
                     )}
                 </div>
             </div>
@@ -1006,6 +1185,81 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 </AnimatePresence>,
                 document.body
             )}
+
+            {cropState.src && (
+                <ImageCropper
+                    imageSrc={cropState.src}
+                    aspect={cropState.aspect}
+                    onCropComplete={(croppedUrl) => {
+                        cropState.callback(croppedUrl);
+                        setCropState({ src: null, callback: null, aspect: 16/9 });
+                    }}
+                    onCancel={() => {
+                        cropState.callback(cropState.src);
+                        setCropState({ src: null, callback: null, aspect: 16/9 });
+                    }}
+                />
+            )}
+
+            {/* Album Detail Modal */}
+            <AnimatePresence>
+                {selectedAlbum && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedAlbum(null)}
+                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={e => e.stopPropagation()}
+                            className={cn("w-full max-w-4xl rounded-[40px] overflow-hidden flex flex-col md:flex-row shadow-2xl max-h-[80vh]", theme === 'dark' ? "bg-slate-900" : "bg-white")}
+                        >
+                            <div className="w-full md:w-1/2 aspect-square md:aspect-auto relative">
+                                <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title} />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent md:hidden" />
+                                <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
+                            </div>
+                            <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <h3 className={cn("text-3xl font-black leading-tight mb-2", theme === 'dark' ? "text-white" : "text-slate-900")}>{selectedAlbum.title}</h3>
+                                        <p className="text-sm font-bold text-brand-pink uppercase tracking-widest">{selectedAlbum.date}</p>
+                                    </div>
+                                    <button onClick={() => setSelectedAlbum(null)} className="hidden md:block p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"><X size={24} className={theme === 'dark' ? "text-white" : "text-slate-900"} /></button>
+                                </div>
+                                
+                                <div className="flex-1 space-y-4 mb-8">
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><ListMusic size={14} /> Tracklist</h4>
+                                    <div className="space-y-2">
+                                        {(selectedAlbum.tracks || []).map((track, i) => (
+                                            <div key={i} className={cn("flex items-center gap-4 p-3 rounded-xl transition-colors", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")}>
+                                                <span className="text-xs font-bold text-slate-500 w-6">{String(i + 1).padStart(2, '0')}</span>
+                                                <span className={cn("font-bold text-sm", theme === 'dark' ? "text-slate-300" : "text-slate-700")}>{track}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {selectedAlbum.youtube && (
+                                    <a href={selectedAlbum.youtube} target="_blank" rel="noopener noreferrer" className="w-full py-4 rounded-2xl bg-[#FF0000] text-white font-black uppercase tracking-widest hover:bg-[#CC0000] transition-colors flex items-center justify-center gap-3 shadow-lg shadow-red-500/20">
+                                        <PlayCircle size={20} /> Listen on YouTube
+                                    </a>
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <MusicPlayer 
+                url={group.themeSongUrl} 
+                groupName={group.name} 
+                groupImage={convertDriveLink(group.image)} 
+            />
         </div>
     );
 }
@@ -1094,7 +1348,7 @@ function MemberCard({ member, theme, onClick }) {
                 </div>
 
                 <div className="flex-1 space-y-3">
-                    <p className="text-[11px] text-brand-pink font-black uppercase tracking-[0.4em]">
+                    <p className="text-xs text-brand-pink font-black uppercase tracking-[0.4em]">
                         {(member.positions && member.positions[0]) || 'Member'}
                     </p>
                     <h4 className={cn(
@@ -1106,7 +1360,7 @@ function MemberCard({ member, theme, onClick }) {
                     <div className="flex flex-wrap gap-2 pt-3">
                         {(member.positions || []).slice(1, 3).map((pos, i) => (
                             <span key={i} className={cn(
-                                "text-[9px] px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border transition-colors",
+                                "text-xs px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border transition-colors",
                                 theme === 'dark'
                                     ? "bg-slate-800/80 text-slate-500 border-white/5 group-hover:border-brand-pink/20"
                                     : "bg-slate-50 text-slate-400 border-slate-100 group-hover:border-brand-pink/10"
@@ -1140,7 +1394,7 @@ function InfoRow({ icon: Icon, label, value, theme, isHighlight, valueClass }) {
                 <Icon size={24} />
             </div>
             <div>
-                <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.3em] mb-1">{label}</p>
+                <p className="text-xs text-slate-500 uppercase font-black tracking-[0.3em] mb-1">{label}</p>
                 <p className={cn(
                     "font-black text-xl tracking-tight",
                     valueClass,

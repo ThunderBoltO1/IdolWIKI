@@ -135,7 +135,7 @@ export function NotificationDropdown({ onNotificationClick }) {
                             {unreadCount > 0 && (
                                 <button
                                     onClick={handleMarkAllAsRead}
-                                    className="text-[10px] font-bold text-brand-pink hover:underline flex items-center gap-1"
+                                    className="text-xs font-bold text-brand-pink hover:underline flex items-center gap-1"
                                 >
                                     <Check size={12} /> Mark all read
                                 </button>
@@ -144,7 +144,7 @@ export function NotificationDropdown({ onNotificationClick }) {
 
                         <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
                             {notifications.length === 0 ? (
-                                <div className="p-8 text-center">
+                                <div className="p-8 text-center"> 
                                     <Bell size={32} className="mx-auto mb-3 text-slate-300 opacity-50" />
                                     <p className="text-xs font-bold text-slate-400">No notifications yet</p>
                                 </div>
@@ -181,10 +181,10 @@ export function NotificationDropdown({ onNotificationClick }) {
                                                     {notification.targetName}
                                                 </span>
                                             </p>
-                                            <p className={cn("text-[10px] mt-1 font-medium truncate opacity-70", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                            <p className={cn("text-xs mt-1 font-medium truncate opacity-70", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                                 "{notification.text}"
                                             </p>
-                                            <p className="text-[9px] text-slate-500 font-bold mt-2 uppercase tracking-wider">
+                                            <p className="text-xs text-slate-500 font-bold mt-2 uppercase tracking-wider">
                                                 {getRelativeTime(notification.createdAt?.toMillis())}
                                             </p>
                                         </div>

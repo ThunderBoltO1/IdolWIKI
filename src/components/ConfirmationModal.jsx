@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 
-export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }) {
+export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirm', confirmButtonClass }) {
     const { theme } = useTheme();
 
     if (!isOpen) return null;
@@ -51,9 +51,12 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message }
                             </button>
                             <button
                                 onClick={() => { onConfirm(); onClose(); }}
-                                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold text-xs uppercase tracking-widest hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                                className={cn(
+                                    "flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors",
+                                    confirmButtonClass || "bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20"
+                                )}
                             >
-                                Confirm Delete
+                                {confirmText}
                             </button>
                         </div>
                     </div>

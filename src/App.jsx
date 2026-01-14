@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
-import { initialIdols, initialGroups } from './data/idols';
 import { Navbar } from './components/Navbar';
 import { StatsDashboard } from './components/StatsDashboard';
 import { FilterBar } from './components/FilterBar';
@@ -14,13 +13,14 @@ import { ConfirmationModal } from './components/ConfirmationModal';
 import { RegisterPage } from './components/RegisterPage';
 import { ForgotPasswordPage } from './components/ForgotPasswordPage';
 import { ProfilePage } from './components/ProfilePage';
+import { FavoritesPage } from './components/FavoritesPage';
 import { AdminUserManagement } from './components/AdminUserManagement';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 
@@ -70,43 +70,15 @@ function AppContent() {
       if (groupsLoaded && idolsLoaded) setLoading(false);
     };
 
-    const seedDatabase = async () => {
-      try {
-        console.log("Checking database status...");
-        const groupsSnap = await getDocs(query(collection(db, 'groups'), limit(1)));
-        if (groupsSnap.empty && initialGroups?.length > 0) {
-          console.log("Seeding groups...");
-          const batch = writeBatch(db);
-          initialGroups.forEach((g) => {
-            const docRef = doc(db, 'groups', g.id);
-            batch.set(docRef, g);
-          });
-          await batch.commit();
-        }
-
-        const idolsSnap = await getDocs(query(collection(db, 'idols'), limit(1)));
-        if (idolsSnap.empty && initialIdols?.length > 0) {
-          console.log("Seeding idols...");
-          const batch = writeBatch(db);
-          initialIdols.forEach((idol) => {
-            const docRef = doc(db, 'idols', idol.id);
-            batch.set(docRef, idol);
-          });
-          await batch.commit();
-        }
-      } catch (err) {
-        console.error("Seeding failed critical check:", err);
-        if (err.code === 'permission-denied') {
-          setDbError("Seeding failed: Missing permissions. Please ensure your account has the 'admin' role in Firestore.");
-        }
-      }
-    };
-
-    seedDatabase();
-
     const unsubGroups = onSnapshot(collection(db, 'groups'),
       (snap) => {
-        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        const data = snap.docs.map(doc => {
+          const groupData = doc.data();
+          return {
+            ...groupData, id: doc.id,
+            isFavorite: user ? (groupData.favoritedBy || []).includes(user.uid) : false
+          };
+        });
         setGroups(data);
         groupsLoaded = true;
         checkLoading();
@@ -122,7 +94,13 @@ function AppContent() {
 
     const unsubIdols = onSnapshot(collection(db, 'idols'),
       (snap) => {
-        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        const data = snap.docs.map(doc => {
+          const idolData = doc.data();
+          return {
+            ...idolData, id: doc.id,
+            isFavorite: user ? (idolData.favoritedBy || []).includes(user.uid) : false
+          };
+        });
         setIdols(data);
         idolsLoaded = true;
         checkLoading();
@@ -143,28 +121,9 @@ function AppContent() {
   }, [user]);
 
 
-  // Derived Data
-  const uniqueGroups = useMemo(() => {
-    try {
-      return [...new Set((idols || []).map(i => i.group))].filter(Boolean).sort();
-    } catch (e) {
-      console.error('Error calculating uniqueGroups', e);
-      return [];
-    }
-  }, [idols]);
-
-  const uniqueCompanies = useMemo(() => {
-    try {
-      return [...new Set((idols || []).map(i => i.company))].filter(Boolean).sort();
-    } catch (e) {
-      console.error('Error calculating uniqueCompanies', e);
-      return [];
-    }
-  }, [idols]);
-
   const filteredGroups = useMemo(() => {
     return groups
-      .filter(g => !filters.company || g.company.includes(filters.company))
+      .filter(g => !filters.company || (g.company || '').split(' (')[0] === filters.company)
       .sort((a, b) => {
         if (a.isFavorite && !b.isFavorite) return -1;
         if (!a.isFavorite && b.isFavorite) return 1;
@@ -173,8 +132,10 @@ function AppContent() {
   }, [groups, filters.company]);
 
   const groupCompanies = useMemo(() => {
-    return [...new Set(groups.map(g => (g.company || '').split(' (')[0]))].sort();
-  }, [groups]);
+    const fromGroups = groups.map(g => (g.company || '').split(' (')[0]);
+    const fromIdols = idols.map(i => (i.company || '').split(' (')[0]);
+    return [...new Set([...fromGroups, ...fromIdols])].filter(Boolean).sort();
+  }, [groups, idols]);
 
   // Navigation Scroll Fix
   useEffect(() => {
@@ -251,28 +212,33 @@ function AppContent() {
     });
   };
 
-  const handleLike = async (id) => {
+  const handleFavoriteIdol = async (id) => {
+    if (!user) {
+      alert('Please log in to favorite idols.');
+      return;
+    }
     const idol = idols.find(i => i.id === id);
     if (!idol) return;
     try {
       const idolRef = doc(db, 'idols', id);
+      const isCurrentlyFavorite = (idol.favoritedBy || []).includes(user.uid);
       await updateDoc(idolRef, {
-        likes: idol.isFavorite ? (idol.likes || 0) - 1 : (idol.likes || 0) + 1,
-        isFavorite: !idol.isFavorite
+        favoritedBy: isCurrentlyFavorite ? arrayRemove(user.uid) : arrayUnion(user.uid)
       });
     } catch (err) {
-      console.error("Like error:", err);
+      console.error("Favorite idol error:", err);
     }
   };
 
   const handleFavoriteGroup = async (groupId) => {
-    if (!user) return;
+    if (!user) return alert('Please log in to favorite groups.');
     const group = groups.find(g => g.id === groupId);
     if (!group) return;
     try {
       const groupRef = doc(db, 'groups', groupId);
+      const isCurrentlyFavorite = (group.favoritedBy || []).includes(user.uid);
       await updateDoc(groupRef, {
-        isFavorite: !group.isFavorite
+        favoritedBy: isCurrentlyFavorite ? arrayRemove(user.uid) : arrayUnion(user.uid)
       });
     } catch (err) {
       console.error("Favorite group error:", err);
@@ -331,6 +297,20 @@ function AppContent() {
     }
   };
 
+  const handleLogoutRequest = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Confirm Logout',
+      message: 'Are you sure you want to sign out of your account?',
+      onConfirm: () => {
+        logout();
+        navigate('/');
+      },
+      confirmText: 'Logout',
+      confirmButtonClass: 'bg-brand-pink text-white hover:bg-brand-pink/90 shadow-lg shadow-brand-pink/20'
+    });
+  };
+
   return (
     <div className={cn(
       "min-h-screen transition-colors duration-500 font-sans selection:bg-brand-pink/30 relative",
@@ -359,11 +339,13 @@ function AppContent() {
         onLoginClick={() => navigate('/login')}
         onProfileClick={() => navigate('/profile')}
         onHomeClick={() => navigate('/')}
+        onFavoritesClick={() => navigate('/favorites')}
         onNotificationClick={handleNotificationClick}
         onManageUsersClick={() => navigate('/admin/users')}
         onDashboardClick={() => navigate('/admin/dashboard')}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
+        onLogoutRequest={handleLogoutRequest}
       />
 
       {dbError && (
@@ -395,7 +377,7 @@ function AppContent() {
                   onSelectCompany={(company) => setFilters(prev => ({ ...prev, company }))}
                   onSelectGroup={handleGroupClick}
                   onSelectIdol={handleCardClick}
-                  onLikeIdol={handleLike}
+                  onLikeIdol={handleFavoriteIdol}
                   onFavoriteGroup={handleFavoriteGroup}
                   loading={loading}
                   searchTerm={searchTerm}
@@ -457,6 +439,25 @@ function AppContent() {
               </motion.div>
             } />
 
+            <Route path="/favorites" element={
+              <motion.div
+                key="favorites"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+              >
+                <FavoritesPage
+                  idols={idols}
+                  groups={groups}
+                  onBack={() => navigate('/')}
+                  onSelectIdol={handleCardClick}
+                  onSelectGroup={handleGroupClick}
+                  onFavoriteIdol={handleFavoriteIdol}
+                  onFavoriteGroup={handleFavoriteGroup}
+                />
+              </motion.div>
+            } />
+
             <Route path="/admin/users" element={
               <motion.div
                 key="admin-users"
@@ -495,7 +496,7 @@ function AppContent() {
         onClose={() => setModalOpen(false)}
         onSave={handleSave}
         onDelete={handleDelete}
-        onLike={handleLike}
+        onLike={handleFavoriteIdol}
         onGroupClick={handleGroupClick}
       />
 
@@ -511,6 +512,8 @@ function AppContent() {
         onConfirm={confirmModal.onConfirm}
         title={confirmModal.title}
         message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        confirmButtonClass={confirmModal.confirmButtonClass}
       />
     </div>
   );

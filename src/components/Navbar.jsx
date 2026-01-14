@@ -1,15 +1,17 @@
-import React from 'react';
-import { Sparkles, Plus, LogOut, User, Sun, Moon, Users, LayoutDashboard, Clock, Search } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sparkles, Sun, Moon, Clock, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
-import { convertDriveLink } from '../lib/storage';
 import { NotificationDropdown } from './NotificationDropdown';
+import { AddMenu } from './AddMenu';
+import { UserDropdown } from './UserDropdown';
 
-export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onHomeClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange }) {
-    const { user, logout, isAdmin } = useAuth();
+export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
+    const { user, isAdmin } = useAuth();
     const { theme, themeMode, toggleTheme } = useTheme();
+    const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
 
     return (
         <nav className={cn(
@@ -18,7 +20,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                 ? "border-white/10 bg-slate-950/80"
                 : "border-slate-200 bg-white/80 shadow-sm"
         )}>
-            <div className="container mx-auto px-4 h-16 flex justify-between items-center gap-4">
+            <div className="container mx-auto px-4 h-16 flex justify-between items-center gap-2 md:gap-4">
                 <div
                     className="flex items-center gap-2 cursor-pointer group shrink-0"
                     onClick={onHomeClick}
@@ -35,7 +37,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                 </div>
 
                 {/* Search Bar */}
-                <div className="flex-1 max-w-md hidden md:block">
+                <div className="flex-1 max-w-xl hidden md:block">
                     <div className="relative">
                         <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors", theme === 'dark' ? "text-slate-500" : "text-slate-400")} />
                         <input
@@ -53,7 +55,20 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                <div className="flex items-center gap-1 sm:gap-4 shrink-0">
+                    {/* Mobile Search Button */}
+                    <button
+                        onClick={() => setIsMobileSearchOpen(true)}
+                        className={cn(
+                            "p-2.5 rounded-full transition-all duration-300 active:scale-95 md:hidden",
+                            theme === 'dark'
+                                ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                                : "text-slate-500 hover:bg-slate-200 hover:text-slate-900"
+                        )}
+                        title="Search"
+                    >
+                        <Search size={20} />
+                    </button>
                     {/* Theme Toggle */}
                     <button
                         onClick={toggleTheme}
@@ -76,95 +91,20 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     )} />
 
                     {user ? (
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2 sm:gap-4">
                             <NotificationDropdown onNotificationClick={onNotificationClick} />
 
-                            {isAdmin && (
-                                <>
-                                <button
-                                    onClick={onDashboardClick}
-                                    className={cn(
-                                        "hidden sm:flex items-center gap-2 px-3 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
-                                        theme === 'dark'
-                                            ? "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
-                                            : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                    )}
-                                    title="Dashboard"
-                                >
-                                    <LayoutDashboard size={18} />
-                                </button>
-                                <button
-                                    onClick={onManageUsersClick}
-                                    className={cn(
-                                        "hidden sm:flex items-center gap-2 px-3 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
-                                        theme === 'dark'
-                                            ? "bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300"
-                                            : "bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                    )}
-                                    title="Manage Users"
-                                >
-                                    <Users size={18} />
-                                </button>
-                                <button
-                                    onClick={onAddGroupClick}
-                                    className={cn(
-                                        "hidden sm:flex items-center gap-2 px-4 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
-                                        theme === 'dark'
-                                            ? "bg-white/10 hover:bg-white/20 border border-white/10 text-white"
-                                            : "bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-200"
-                                    )}
-                                >
-                                    <Plus size={16} />
-                                    <span>Add Band</span>
-                                </button>
-                                <button
-                                    onClick={onAddClick}
-                                    className={cn(
-                                        "hidden sm:flex items-center gap-2 px-4 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
-                                        theme === 'dark'
-                                            ? "bg-white/10 hover:bg-white/20 border border-white/10 text-white"
-                                            : "bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-200"
-                                    )}
-                                >
-                                    <Plus size={16} />
-                                    <span>Add Idol</span>
-                                </button>
-                                </>
-                            )}
+                            {isAdmin && <AddMenu onAddClick={onAddClick} onAddGroupClick={onAddGroupClick} />}
 
-                            <div className="flex items-center gap-3 pl-2 sm:pl-4">
-                                <div
-                                    className="text-right hidden sm:block cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={onProfileClick}
-                                >
-                                    <p className={cn(
-                                        "text-sm font-bold",
-                                        theme === 'dark' ? "text-white" : "text-slate-900"
-                                    )}>{user.name}</p>
-                                    <p className="text-[10px] text-brand-pink uppercase font-black tracking-widest">{user.role}</p>
-                                </div>
-                                <img
-                                    src={convertDriveLink(user.avatar)}
-                                    alt={user.name}
-                                    className={cn(
-                                        "w-9 h-9 rounded-full border object-cover cursor-pointer hover:scale-110 transition-transform shadow-sm",
-                                        theme === 'dark' ? "border-white/20" : "border-slate-200"
-                                    )}
-                                    onClick={onProfileClick}
-                                />
-                                <button
-                                    onClick={logout}
-                                    className={cn(
-                                        "p-2 rounded-full transition-colors",
-                                        theme === 'dark'
-                                            ? "hover:bg-white/10 text-slate-400 hover:text-white"
-                                            : "hover:bg-slate-100 text-slate-500 hover:text-slate-900"
-                                    )}
-                                    title="Logout"
-                                >
-                                    <LogOut size={18} />
-                                </button>
-                            </div>
+                            <UserDropdown
+                                user={user}
+                                isAdmin={isAdmin}
+                                onProfileClick={onProfileClick}
+                                onFavoritesClick={onFavoritesClick}
+                                onDashboardClick={onDashboardClick}
+                                onManageUsersClick={onManageUsersClick}
+                                onLogoutRequest={onLogoutRequest}
+                            />
                         </div>
                     ) : (
                         <button
@@ -176,6 +116,44 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     )}
                 </div>
             </div>
+            <AnimatePresence>
+                {isMobileSearchOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -50 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className={cn(
+                            "absolute top-0 left-0 right-0 h-16 px-4 flex items-center gap-2 md:hidden z-50",
+                            theme === 'dark' ? "bg-slate-900 border-b border-white/10" : "bg-white border-b border-slate-200"
+                        )}
+                    >
+                        <div className="relative w-full">
+                            <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors", theme === 'dark' ? "text-slate-500" : "text-slate-400")} />
+                            <input
+                                type="text"
+                                placeholder="Search groups or idols..."
+                                value={searchTerm}
+                                onChange={(e) => onSearchChange(e.target.value)}
+                                autoFocus
+                                className={cn(
+                                    "w-full pl-10 pr-4 py-2 rounded-full transition-all focus:outline-none border text-sm font-medium",
+                                    theme === 'dark'
+                                        ? "bg-slate-800 border-white/10 focus:border-brand-pink text-white placeholder-slate-500"
+                                        : "bg-slate-100 border-slate-200 focus:border-brand-pink text-slate-900 placeholder-slate-400"
+                                )}
+                            />
+                        </div>
+                        <button
+                            onClick={() => setIsMobileSearchOpen(false)}
+                            className="p-2 rounded-full"
+                            title="Close search"
+                        >
+                            <X size={24} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </nav>
     );
 }

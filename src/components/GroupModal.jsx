@@ -1,18 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2 } from 'lucide-react';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
+import { ImageCropper } from './ImageCropper';
+import { createImage, isDataUrl } from '../lib/cropImage';
+
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
         "MAMA Awards": [
             "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
             "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice"
+            "Best New Male Artist", "Best New Female Artist",
+            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
+            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
+            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
         ],
         "Melon Music Awards (MMA)": [
+            "Record of the Year (Daesang)",
+            "Song of the Year (Daesang)",
+            "Album of the Year (Daesang)",
+            "Artist of the Year (Daesang)",
+            "Best Group (Female)",
+            "New Artist of the Year",
             "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
             "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
             "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
@@ -27,6 +38,10 @@ const AWARD_DATA = {
             "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
         ],
         "Seoul Music Awards (SMA)": [
+            "Rookie of the Year",
+            "Main Award (Bonsang)",
+            "Best Performance Award",
+            "World Best Artist Award",
             "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
             "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
             "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
@@ -36,13 +51,43 @@ const AWARD_DATA = {
             "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
         ],
         "The Fact Music Awards (TMA)": [
+            "Artist of the Year (Bonsang)",
+            "Worldwide Icon",
+            "Hot Trend Award",
+            "Next Leader Award",
             "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
             "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
         ],
         "Asia Artist Awards (AAA)": [
+            "Stage of the Year (Daesang)",
+            "Hot Trend Award",
+            "Rookie of the Year",
+            "Best New Artist (Singer)",
             "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
             "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
             "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
+        ],
+        "Hanteo Music Awards": [
+            "Artist of the Year (Bonsang)",
+            "Best Performance (Group)",
+            "Rookie of the Year (Female)"
+        ],
+        "K-World Dream Awards": [
+            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
+            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
+        ],
+        "Korea Grand Music Awards": [
+            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
+            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
+        ],
+        "TikTok Awards Korea": [
+            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
+        ],
+        "Billboard Music Awards": [
+            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
+        ],
+        "MTV Video Music Awards": [
+            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
         ]
     },
     "Acting & Arts Awards": {
@@ -73,6 +118,7 @@ const AWARD_DATA = {
 export function GroupModal({ isOpen, onClose, onSave }) {
     const { theme } = useTheme();
     const [loading, setLoading] = useState(false);
+    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4.2 });
     const [formData, setFormData] = useState({
         name: '',
         koreanName: '',
@@ -81,9 +127,11 @@ export function GroupModal({ isOpen, onClose, onSave }) {
         debutDate: '',
         fanclub: '',
         image: '',
+        themeSongUrl: '',
         members: [], // Initialize empty members
         gallery: [],
-        awards: []
+        awards: [],
+        albums: []
     });
 
     const [newAward, setNewAward] = useState({
@@ -103,9 +151,11 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                 debutDate: '',
                 fanclub: '',
                 image: '',
+                themeSongUrl: '',
                 members: [],
                 gallery: [],
-                awards: []
+                awards: [],
+                albums: []
             });
             setNewAward({
                 year: new Date().getFullYear(),
@@ -115,6 +165,14 @@ export function GroupModal({ isOpen, onClose, onSave }) {
             });
         }
     }, [isOpen]);
+
+    const startCropping = (url, callback, aspect = 3 / 4.2) => {
+        if (!url || isDataUrl(url)) {
+            callback(url);
+            return;
+        }
+        setCropState({ src: url, callback, aspect });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -127,6 +185,12 @@ export function GroupModal({ isOpen, onClose, onSave }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleImageChange = (value) => {
+        startCropping(value, (newUrl) => {
+            setFormData(prev => ({ ...prev, image: newUrl || '' }));
+        }, 3 / 4.2);
     };
 
     const handleGalleryChange = (index, value) => {
@@ -155,7 +219,7 @@ export function GroupModal({ isOpen, onClose, onSave }) {
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -175,8 +239,8 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                         theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white border border-slate-200"
                     )}
                 >
-                    <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center">
-                        <h2 className={cn("text-2xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                    <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center shrink-0">
+                        <h2 className={cn("text-xl md:text-2xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
                             Add New Group
                         </h2>
                         <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
@@ -184,13 +248,17 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="p-8 overflow-y-auto custom-scrollbar space-y-6">
+                    <form onSubmit={handleSubmit} className="p-6 md:p-8 overflow-y-auto custom-scrollbar space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <InputGroup label="Group Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLACKPINK" required />
                             <InputGroup label="Korean Name" value={formData.koreanName} onChange={e => setFormData({...formData, koreanName: e.target.value})} theme={theme} icon={Globe} placeholder="e.g. 블랙핑크" />
                             
                             <div className="md:col-span-2">
-                                <InputGroup label="Image URL" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} theme={theme} icon={ImageIcon} placeholder="https://..." />
+                                <InputGroup label="Image URL" value={formData.image} onChange={e => handleImageChange(e.target.value)} theme={theme} icon={ImageIcon} placeholder="https://..." />
+                            </div>
+
+                            <div className="md:col-span-2">
+                                <InputGroup label="Theme Song URL (YouTube)" value={formData.themeSongUrl} onChange={e => setFormData({...formData, themeSongUrl: e.target.value})} theme={theme} icon={Youtube} placeholder="https://youtube.com/watch?v=..." />
                             </div>
 
                             <InputGroup label="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
@@ -198,9 +266,9 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                             <InputGroup label="Fanclub Name" value={formData.fanclub} onChange={e => setFormData({...formData, fanclub: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLINK" />
                             
                             <div className="md:col-span-2 space-y-2">
-                                <label className={cn("text-[10px] font-black uppercase tracking-widest ml-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Description</label>
+                                <label className={cn("text-xs font-black uppercase tracking-widest ml-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Description</label>
                                 <textarea
-                                    value={formData.description}
+                                    value={formData.description || ''}
                                     onChange={e => setFormData({...formData, description: e.target.value})}
                                     className={cn(
                                         "w-full rounded-2xl p-4 border-2 focus:outline-none transition-all text-sm font-medium min-h-[100px] resize-none",
@@ -213,7 +281,7 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                             </div>
 
                             <div className="md:col-span-2 space-y-3">
-                                <label className={cn("text-[10px] font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                     <Trophy size={12} /> Awards (Comma separated)
                                 </label>
                                 
@@ -279,7 +347,7 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                                             <div className="text-xs">
                                                 <span className="font-black text-brand-pink mr-2">{item.year}</span>
                                                 <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
-                                                <div className="text-[10px] text-slate-500 font-medium">{item.award}</div>
+                                                <div className="text-xs text-slate-500 font-medium">{item.award}</div>
                                             </div>
                                             <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
                                         </motion.div>
@@ -290,13 +358,13 @@ export function GroupModal({ isOpen, onClose, onSave }) {
 
                             <div className="md:col-span-2 space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
                                 <div className="flex items-center justify-between">
-                                    <label className={cn("text-[10px] font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                    <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                         <ImageIcon size={12} /> Gallery Images
                                     </label>
                                     <button
                                         type="button"
                                         onClick={addGalleryImage}
-                                        className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline"
+                                        className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
                                     >
                                         <Plus size={12} /> Add Image
                                     </button>
@@ -347,6 +415,21 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                     </form>
                 </motion.div>
             </div>
+
+            {cropState.src && (
+                <ImageCropper
+                    imageSrc={cropState.src}
+                    aspect={cropState.aspect}
+                    onCropComplete={(croppedUrl) => {
+                        cropState.callback(croppedUrl);
+                        setCropState({ src: null, callback: null, aspect: 3 / 4.2 });
+                    }}
+                    onCancel={() => {
+                        cropState.callback(cropState.src);
+                        setCropState({ src: null, callback: null, aspect: 3 / 4.2 });
+                    }}
+                />
+            )}
         </AnimatePresence>
     );
 }
@@ -354,21 +437,16 @@ export function GroupModal({ isOpen, onClose, onSave }) {
 function InputGroup({ label, value, onChange, theme, icon: Icon, type = "text", placeholder, required }) {
     return (
         <div className="space-y-2">
-            <label className={cn("text-[10px] font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+            <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                 <Icon size={12} /> {label}
             </label>
             <input
                 type={type}
-                value={value}
+                value={value || ''}
                 onChange={onChange}
                 required={required}
                 placeholder={placeholder}
-                className={cn(
-                    "w-full rounded-2xl p-4 border-2 focus:outline-none transition-all text-sm font-bold",
-                    theme === 'dark' 
-                        ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" 
-                        : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
-                )}
+                className={cn("w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")}
             />
         </div>
     );

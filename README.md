@@ -1,17 +1,35 @@
-# React + Vite
+## IdolWIKI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+แอป React + Vite สำหรับจัดการฐานข้อมูล Idol / Group แบบเชื่อมต่อ Firebase Firestore และ Auth
 
-Currently, two official plugins are available:
+### การรันโปรเจกต์
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **ติดตั้ง dependencies**
+  - `npm install`
+- **รันโหมดพัฒนา**
+  - `npm run dev`
+- **รัน build production**
+  - `npm run build`
 
-## React Compiler
+### การตั้งค่า Firebase (สำคัญ)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- สร้างโปรเจกต์ใน Firebase Console และเปิดใช้:
+  - Authentication (Email/Password)
+  - Firestore Database
+  - Storage (ถ้าต้องการเก็บรูปเอง)
+- แก้ค่าคอนฟิกใน `src/lib/firebase.js` ให้ตรงกับโปรเจกต์ของคุณ
+- สร้าง collection ตามที่แอปใช้:
+  - `users` – โปรไฟล์ผู้ใช้ (field หลัก: `name`, `username`, `email`, `role`, `avatar`, `bio`)
+  - `usernames` – map `username` → `email`, `uid`
+  - `groups` – ข้อมูลเกิร์ลกรุ๊ป/บอยแบนด์ (field หลัก: `name`, `koreanName`, `company`, `debutDate`, `fanclub`, `image`, `gallery`, `members`, `albums`, `awards`, `themeSongUrl`, `favoritedBy`)
+  - `idols` – ข้อมูลสมาชิก/ศิลปิน (field หลัก: `name`, `koreanName`, `fullEnglishName`, `group`, `groupId`, `positions`, `company`, `nationality`, `birthDate`, `debutDate`, `height`, `bloodType`, `birthPlace`, `otherNames`, `image`, `gallery`, `instagram`, `likes`, `albums`, `awards`, `favoritedBy`)
+  - `comments` – คอมเมนต์ต่อทั้ง group / idol (ใช้ `targetId`, `targetType`, `parentId`, `userId`, `user`, `avatar`, `text`, `createdAt`, `likes`, `likedBy`)
+  - `notifications` – แจ้งเตือน mention (@username) (field หลัก: `recipientId`, `senderId`, `senderName`, `senderAvatar`, `type`, `targetId`, `targetType`, `targetName`, `commentId`, `text`, `createdAt`, `read`)
 
-## Expanding the ESLint configuration
+### หมายเหตุเรื่องรูปภาพ / Google Drive
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-# IdolWIKI
+- แอปใช้ฟังก์ชัน `convertDriveLink` ใน `src/lib/storage.js` เพื่อแปลงลิงก์ Google Drive ให้แสดงผลเป็นรูป
+- รองรับลิงก์รูปแบบ:
+  - `https://drive.google.com/file/d/FILE_ID/view?...`
+  - `https://drive.google.com/uc?id=FILE_ID...`
+- ถ้าใช้ลิงก์เว็บฝากรูปอื่น ๆ (เช่น `https://images.unsplash.com/...`) แอปจะแสดงได้ทันทีไม่ต้องแปลง

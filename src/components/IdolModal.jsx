@@ -1,22 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ImageCropper } from './ImageCropper';
+import { createImage, isDataUrl } from '../lib/cropImage';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
         "MAMA Awards": [
             "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
             "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice"
+            "Best New Male Artist", "Best New Female Artist",
+            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
+            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
+            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
         ],
         "Melon Music Awards (MMA)": [
+            "Record of the Year (Daesang)",
+            "Song of the Year (Daesang)",
+            "Album of the Year (Daesang)",
+            "Artist of the Year (Daesang)",
+            "Best Group (Female)",
+            "New Artist of the Year",
             "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
             "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
             "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
@@ -31,6 +41,10 @@ const AWARD_DATA = {
             "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
         ],
         "Seoul Music Awards (SMA)": [
+            "Rookie of the Year",
+            "Main Award (Bonsang)",
+            "Best Performance Award",
+            "World Best Artist Award",
             "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
             "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
             "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
@@ -40,13 +54,43 @@ const AWARD_DATA = {
             "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
         ],
         "The Fact Music Awards (TMA)": [
+            "Artist of the Year (Bonsang)",
+            "Worldwide Icon",
+            "Hot Trend Award",
+            "Next Leader Award",
             "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
             "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
         ],
         "Asia Artist Awards (AAA)": [
+            "Stage of the Year (Daesang)",
+            "Hot Trend Award",
+            "Rookie of the Year",
+            "Best New Artist (Singer)",
             "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
             "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
             "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
+        ],
+        "Hanteo Music Awards": [
+            "Artist of the Year (Bonsang)",
+            "Best Performance (Group)",
+            "Rookie of the Year (Female)"
+        ],
+        "K-World Dream Awards": [
+            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
+            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
+        ],
+        "Korea Grand Music Awards": [
+            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
+            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
+        ],
+        "TikTok Awards Korea": [
+            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
+        ],
+        "Billboard Music Awards": [
+            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
+        ],
+        "MTV Video Music Awards": [
+            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
         ]
     },
     "Acting & Arts Awards": {
@@ -57,14 +101,36 @@ const AWARD_DATA = {
     }
 };
 
+const defaultIdolData = {
+    name: '',
+    koreanName: '',
+    fullEnglishName: '',
+    group: '',
+    groupId: '',
+    positions: [],
+    company: '',
+    nationality: '',
+    debutDate: '',
+    birthDate: '',
+    height: '',
+    bloodType: '',
+    gender: 'F',
+    otherNames: '',
+    birthPlace: '',
+    awards: [],
+    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
+    gallery: [],
+    instagram: '',
+    likes: 0,
+    albums: []
+};
+
 export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const [formData, setFormData] = useState(idol || {});
     const [editMode, setEditMode] = useState(mode === 'create');
     const [activeImage, setActiveImage] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [draggedItem, setDraggedItem] = useState(null);
     const [floatingHearts, setFloatingHearts] = useState([]);
     const [showSuccess, setShowSuccess] = useState(false);
     const successTimeoutRef = useRef(null);
@@ -75,6 +141,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [loadingComments, setLoadingComments] = useState(true);
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
+    const [selectedAlbum, setSelectedAlbum] = useState(null);
+    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4 });
     const [newAward, setNewAward] = useState({
         year: new Date().getFullYear(),
         category: 'K-Pop & Music Awards',
@@ -115,35 +183,17 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     useEffect(() => {
         if (isOpen) {
-            // ตรวจสอบว่าต้องรีเซ็ตข้อมูลหรือไม่:
-            // 1. ถ้ามีข้อมูล idol ส่งมา และ ID ไม่ตรงกับที่มีอยู่ (เปลี่ยนคน)
-            // 2. หรือถ้าเป็นโหมด create และยังไม่มีข้อมูล (เพิ่งเปิด)
-            if ((idol && idol.id !== formData.id) || (mode === 'create' && !formData.name)) {
-                setFormData(idol || {
-                    name: '',
-                    koreanName: '',
-                    fullEnglishName: '',
-                    group: '',
-                    groupId: '',
-                    positions: [],
-                    company: '',
-                    nationality: '',
-                    debutDate: '',
-                    birthDate: '',
-                    height: '',
-                    bloodType: '',
-                    gender: 'F',
-                    otherNames: '',
-                    birthPlace: '',
-                    awards: [],
-                    image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
-                    gallery: [],
-                    instagram: '',
-                    likes: 0
-                });
+            const shouldReset = (mode === 'create' && !formData.id) || (idol && idol.id !== formData.id);
+
+            if (shouldReset) {
+                const initialData = mode === 'create' ? defaultIdolData : idol;
+                setFormData(initialData);
                 setEditMode(mode === 'create' || mode === 'edit');
-                setActiveImage(idol?.image || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60');
+                setActiveImage(initialData.image || defaultIdolData.image);
+                setActiveTab('info');
             }
+
+            // Always reset these on open
             setNewAward({
                 year: new Date().getFullYear(),
                 category: 'K-Pop & Music Awards',
@@ -152,19 +202,35 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
             });
             setVisibleComments(5);
         }
-    }, [isOpen, mode, idol]);
+    }, [isOpen, mode, idol, formData.id]);
+
+    const startCropping = (url, callback, aspect = 3 / 4) => {
+        if (!url || isDataUrl(url)) {
+            callback(url);
+            return;
+        }
+        setCropState({ src: url, callback, aspect });
+    };
 
     const handleChange = (e) => {
         const { name, value } = e.target;
-        const processedValue = name === 'image' && value ? convertDriveLink(value) : value;
-        setFormData(prev => ({ ...prev, [name]: processedValue }));
-        if (name === 'image') setActiveImage(processedValue);
+        if (name === 'image') {
+            startCropping(value, (newUrl) => {
+                const processedValue = newUrl ? convertDriveLink(newUrl) : newUrl;
+                setFormData(prev => ({ ...prev, image: processedValue }));
+                setActiveImage(processedValue);
+            }, 3 / 4);
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     };
 
     const handleGalleryChange = (index, value) => {
-        const newGallery = [...(formData.gallery || [])];
-        newGallery[index] = value ? convertDriveLink(value) : value;
-        setFormData(prev => ({ ...prev, gallery: newGallery }));
+        startCropping(value, (newUrl) => {
+            const newGallery = [...(formData.gallery || [])];
+            newGallery[index] = newUrl ? convertDriveLink(newUrl) : newUrl;
+            setFormData(prev => ({ ...prev, gallery: newGallery }));
+        }, 1 / 1);
     };
 
     const addGalleryImage = () => {
@@ -173,24 +239,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const removeGalleryImage = (index) => {
         setFormData(prev => ({ ...prev, gallery: (prev.gallery || []).filter((_, i) => i !== index) }));
-    };
-
-    const handleDragStart = (index) => {
-        setDraggedItem(index);
-    };
-
-    const handleDragEnter = (index) => {
-        if (draggedItem === null || draggedItem === index) return;
-        const newGallery = [...(formData.gallery || [])];
-        const item = newGallery[draggedItem];
-        newGallery.splice(draggedItem, 1);
-        newGallery.splice(index, 0, item);
-        setFormData(prev => ({ ...prev, gallery: newGallery }));
-        setDraggedItem(index);
-    };
-
-    const handleDragEnd = () => {
-        setDraggedItem(null);
     };
 
     const handlePositionsChange = (e) => {
@@ -206,6 +254,25 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const handleRemoveAward = (index) => {
         setFormData(prev => ({ ...prev, awards: (prev.awards || []).filter((_, i) => i !== index) }));
+    };
+
+    const handleAlbumChange = (index, field, value) => {
+        const newAlbums = [...(formData.albums || [])];
+        if (!newAlbums[index]) newAlbums[index] = {};
+        newAlbums[index][field] = value;
+        setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
+    const addAlbum = () => {
+        setFormData(prev => ({
+            ...prev,
+            albums: [...(prev.albums || []), { title: '', cover: '', date: '', youtube: '', tracks: [] }]
+        }));
+    };
+
+    const removeAlbum = (index) => {
+        const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
+        setFormData(prev => ({ ...prev, albums: newAlbums }));
     };
 
     const handleSubmit = (e) => {
@@ -360,7 +427,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     return (
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -425,10 +492,13 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     initial={{ opacity: 0, scale: 1.15 }}
                                     animate={{ opacity: 1, scale: 1 }}
                                     exit={{ opacity: 0 }}
-                                    src={activeImage || null}
+                                    src={convertDriveLink(activeImage) || null}
                                     alt={formData.name}
                                     className="w-full h-full object-cover"
-                                    onError={(e) => e.target.src = 'https://via.placeholder.com/500x800?text=No+Image'}
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
+                                    }}
                                 />
                             </AnimatePresence>
                             <div className={cn(
@@ -459,7 +529,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 e.stopPropagation();
                                                 if (user) {
                                                     onLike(idol.id);
-                                                    setFormData(prev => ({ ...prev, likes: (prev.likes || 0) + 1 }));
                                                     const id = Date.now() + Math.random();
                                                     setFloatingHearts(prev => [...prev, { id }]);
                                                     setTimeout(() => setFloatingHearts(prev => prev.filter(h => h.id !== id)), 1000);
@@ -501,7 +570,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 : "border-transparent opacity-50 hover:opacity-100 hover:scale-105"
                                         )}
                                     >
-                                        <img src={img} className="w-full h-full object-cover" alt={`Gallery ${idx}`} />
+                                        <img src={convertDriveLink(img)} className="w-full h-full object-cover" alt={`Gallery ${idx}`} />
                                     </button>
                                 ))}
                             </div>
@@ -509,14 +578,14 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     </div>
 
                     {/* Right Column: Details or Form */}
-                    <div className="w-full md:w-7/12 p-8 md:p-12 overflow-y-auto custom-scrollbar flex flex-col">
+                    <div className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col">
                         <div className="flex justify-between items-start mb-10">
                             <div className="flex-1 mr-4">
                                 {editMode ? (
                                     <div className="space-y-4">
                                         <input
                                             name="name"
-                                            value={formData.name}
+                                            value={formData.name || ''}
                                             onChange={handleChange}
                                             className={cn(
                                                 "bg-transparent text-5xl font-black border-b-2 focus:outline-none w-full transition-colors",
@@ -527,7 +596,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         <div className="space-y-3">
                                             <input
                                                 name="group"
-                                                value={formData.group}
+                                                value={formData.group || ''}
                                                 onChange={handleChange}
                                                 className={cn(
                                                     "bg-transparent text-lg font-black tracking-widest uppercase border-b w-full focus:outline-none",
@@ -537,7 +606,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             />
                                             <input
                                                 name="groupId"
-                                                value={formData.groupId}
+                                                value={formData.groupId || ''}
                                                 onChange={handleChange}
                                                 className={cn(
                                                     "bg-transparent text-xs font-mono border-b w-full focus:outline-none",
@@ -550,10 +619,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 ) : (
                                     <div className="space-y-2">
                                         <div className="flex items-center gap-3">
-                                            <h2 className={cn(
-                                                "text-5xl font-black tracking-tight drop-shadow-sm",
-                                                theme === 'dark' ? "text-white" : "text-slate-900"
-                                            )}>
+                                            <h2 className={cn("text-4xl md:text-5xl font-black tracking-tight drop-shadow-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                                 {formData.name}
                                             </h2>
                                             <button
@@ -561,9 +627,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     if (!user) return alert('Please login to manage favorites!');
-                                                    const newFav = !formData.isFavorite;
-                                                    setFormData(prev => ({ ...prev, isFavorite: newFav }));
-                                                    onSave({ ...formData, isFavorite: newFav });
+                                                    onLike(idol.id);
                                                 }}
                                                 className="hover:scale-110 transition-transform focus:outline-none active:scale-90"
                                                 title={formData.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
@@ -619,10 +683,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                         {/* Tabs (Only in View Mode) */}
                         {!editMode && (
                             <div className={cn(
-                                "flex items-center gap-6 mb-8 border-b",
+                                "flex items-center flex-wrap gap-x-6 gap-y-2 mb-8 border-b",
                                 theme === 'dark' ? "border-white/10" : "border-slate-100"
                             )}>
-                                {['info', 'comments'].map((tab) => (
+                                {['info', 'discography', 'comments'].map((tab) => (
                                     <button
                                         key={tab}
                                         onClick={() => setActiveTab(tab)}
@@ -633,7 +697,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 : "text-slate-400 hover:text-slate-500"
                                         )}
                                     >
-                                        {tab === 'info' ? 'Artist Info' : (
+                                        {tab === 'info' ? 'Artist Info' : tab === 'discography' ? 'Discography' : (
                                             <span>
                                                 Fan Comments
                                                 <span className="ml-1.5 opacity-50">({comments.length})</span>
@@ -649,7 +713,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                         <form onSubmit={handleSubmit} className="space-y-10 flex-1">
                             {/* Info Tab Content */}
-                            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-8", !editMode && activeTab !== 'info' && "hidden")}>
+                            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-8", !editMode && activeTab !== 'info' && "hidden", editMode && "block")}>
                                 <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
                                 <DetailItem
                                     icon={Globe}
@@ -671,10 +735,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
 
                                 <div className="sm:col-span-2 space-y-3">
-                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
+                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
                                     {editMode ? (
                                         <input
-                                            value={formData.positions?.join(', ')}
+                                            value={formData.positions?.join(', ') || ''}
                                             onChange={handlePositionsChange}
                                             className={cn(
                                                 "w-full rounded-2xl p-4 transition-all duration-300 focus:outline-none border-2",
@@ -701,7 +765,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 </div>
 
                                 <div className="sm:col-span-2 space-y-3">
-                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
+                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
                                         <Trophy size={12} /> Awards
                                     </label>
                                     {editMode ? (
@@ -734,7 +798,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                             <div className="text-xs">
                                                                 <span className="font-black text-brand-pink mr-2">{item.year}</span>
                                                                 <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
-                                                                <div className="text-[10px] text-slate-500 font-medium">{item.award}</div>
+                                                                <div className="text-xs text-slate-500 font-medium">{item.award}</div>
                                                             </div>
                                                             <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
                                                         </motion.div>
@@ -776,8 +840,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 {editMode && (
                                     <>
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between mb-1">
-                                                <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                            <div className="flex items-center justify-between mb-1"> 
+                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
                                                     <Instagram size={12} />
                                                     Photo URL
                                                 </label>
@@ -800,41 +864,35 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     placeholder="Paste image URL..."
                                                 />
                                             </div>
-                                            <p className="text-[9px] text-slate-500 font-medium pl-1">
+                                            <p className="text-xs text-slate-500 font-medium pl-1">
                                                 💡 Tip: คุณสามารถใช้ลิงก์จากเว็บฝากรูป เช่น <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a> ได้ครับ
                                             </p>
 
                                             {/* Gallery Management */}
                                             <div className="pt-4 space-y-3 border-t border-dashed border-slate-200 dark:border-slate-800">
-                                                <div className="flex items-center justify-between">
-                                                    <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                <div className="flex items-center justify-between"> 
+                                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
                                                         <Globe size={12} />
                                                         Gallery Images
                                                     </label>
                                                     <button
                                                         type="button"
                                                         onClick={addGalleryImage}
-                                                        className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline"
+                                                        className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
                                                     >
                                                         <Plus size={12} /> Add Image
                                                     </button>
                                                 </div>
+                                                <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({...prev, gallery: newGallery}))} className="space-y-2">
                                                 {(formData.gallery || []).map((url, idx) => (
-                                                    <div
+                                                    <Reorder.Item
                                                         key={idx}
-                                                        className={cn(
-                                                            "flex gap-2 items-center transition-all duration-200",
-                                                            draggedItem === idx ? "opacity-50" : "opacity-100"
-                                                        )}
-                                                        draggable
-                                                        onDragStart={() => handleDragStart(idx)}
-                                                        onDragEnter={() => handleDragEnter(idx)}
-                                                        onDragEnd={handleDragEnd}
-                                                        onDragOver={(e) => e.preventDefault()}
+                                                        value={url}
+                                                        className="flex gap-2 items-center"
                                                     >
-                                                        <button type="button" className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                        <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
                                                             <GripVertical size={16} />
-                                                        </button>
+                                                        </div>
                                                         <input
                                                             value={url}
                                                             onChange={(e) => handleGalleryChange(idx, e.target.value)}
@@ -856,14 +914,89 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         >
                                                             <Trash2 size={16} />
                                                         </button>
-                                                    </div>
+                                                    </Reorder.Item>
                                                 ))}
+                                                </Reorder.Group>
                                             </div>
                                         </div>
                                         <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
                                     </>
                                 )}
                             </div>
+
+                            {/* Discography Tab Content */}
+                            {!editMode && activeTab === 'discography' && (
+                                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {(formData.albums || []).length > 0 ? (
+                                            (formData.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
+                                                <motion.div
+                                                    key={idx}
+                                                    whileHover={{ y: -5 }}
+                                                    onClick={() => setSelectedAlbum(album)}
+                                                    className={cn(
+                                                        "group cursor-pointer rounded-2xl overflow-hidden border shadow-md transition-all",
+                                                        theme === 'dark' ? "bg-slate-900 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
+                                                    )}
+                                                >
+                                                    <div className="aspect-square overflow-hidden relative">
+                                                        <img src={convertDriveLink(album.cover)} alt={album.title} className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75" />
+                                                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <PlayCircle size={32} className="text-white drop-shadow-lg transition-transform scale-75 group-hover:scale-100" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3">
+                                                        <h4 className={cn("font-black text-sm leading-tight mb-1 truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{album.title}</h4>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{album.date ? new Date(album.date).getFullYear() : 'Unknown'}</p>
+                                                    </div>
+                                                </motion.div>
+                                            ))
+                                        ) : (
+                                            <div className="col-span-full text-center py-10">
+                                                <Disc size={32} className="mx-auto text-slate-300 mb-3 opacity-50" />
+                                                <p className="text-sm text-slate-500 font-medium">No discography added yet.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Edit Mode Discography Section */}
+                            {editMode && (
+                                <div className="space-y-6 pt-8 border-t border-dashed border-slate-200 dark:border-slate-800"> 
+                                    <div className="flex items-center justify-between"> 
+                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                            <Disc size={12} /> Discography
+                                        </label>
+                                        <button type="button" onClick={addAlbum} className="text-xs font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline">
+                                            <Plus size={12} /> Add Album
+                                        </button>
+                                    </div>
+                                    
+                                    {(formData.albums || []).map((album, idx) => (
+                                        <div key={idx} className={cn("p-4 rounded-2xl border space-y-3", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                            <div className="flex justify-between items-center">
+                                                <h4 className="font-black text-xs uppercase tracking-widest text-brand-pink">Album #{idx + 1}</h4>
+                                                <button type="button" onClick={() => removeAlbum(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-3">
+                                                <input placeholder="Album Title" value={album.title || ''} onChange={e => handleAlbumChange(idx, 'title', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <input type="date" value={album.date || ''} onChange={e => handleAlbumChange(idx, 'date', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                    <input placeholder="Cover URL" value={album.cover || ''} onChange={e => handleAlbumChange(idx, 'cover', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                </div>
+                                                <input placeholder="YouTube Link" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <textarea 
+                                                    placeholder="Tracklist (one song per line)" 
+                                                    value={Array.isArray(album.tracks) ? album.tracks.join('\n') : (album.tracks || '')} 
+                                                    onChange={e => handleAlbumChange(idx, 'tracks', e.target.value.split('\n'))}
+                                                    className={cn("w-full p-2 rounded-xl border bg-transparent outline-none text-xs font-bold min-h-[60px]", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
                             {/* Comments Tab Content */}
                             {!editMode && activeTab === 'comments' && (
@@ -926,24 +1059,24 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     <div className="space-y-1 flex-1">
                                                         <div className="flex items-center gap-2">
                                                             <span className={cn("text-xs font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{comment.user}</span>
-                                                            <span className="text-[10px] text-slate-500 font-bold">{getRelativeTime(comment.createdAt?.toMillis())}</span>
+                                                            <span className="text-xs text-slate-500 font-bold">{getRelativeTime(comment.createdAt?.toMillis())}</span>
                                                         </div>
                                                         <p className={cn("text-sm leading-relaxed", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>{renderWithMentions(comment.text, handleMentionClick)}</p>
                                                         
                                                         {/* Action Buttons */}
                                                         <div className="flex items-center gap-4 pt-1">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
-                                                                className="text-[10px] font-bold text-slate-400 hover:text-brand-pink transition-colors flex items-center gap-1"
-                                                            >
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)} 
+                                                                className="text-xs font-bold text-slate-400 hover:text-brand-pink transition-colors flex items-center gap-1" 
+                                                            > 
                                                                 <MessageSquare size={12} /> Reply
                                                             </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleLikeComment(comment.id)}
-                                                                className={cn("text-[10px] font-bold flex items-center gap-1 transition-colors", comment.isLiked ? "text-brand-pink" : "text-slate-400 hover:text-brand-pink")}
-                                                            >
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={() => handleLikeComment(comment.id)} 
+                                                                className={cn("text-xs font-bold flex items-center gap-1 transition-colors", comment.isLiked ? "text-brand-pink" : "text-slate-400 hover:text-brand-pink")} 
+                                                            > 
                                                                 <Heart size={12} className={cn(comment.isLiked && "fill-current")} /> {comment.likes || 0}
                                                             </button>
                                                             {(isAdmin || (user && (user.uid === comment.userId || user.id === comment.userId))) && (
@@ -1077,6 +1210,77 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     </div>
                 </motion.div>
             </div>
+
+            {/* Album Detail Modal */}
+            <AnimatePresence>
+                {selectedAlbum && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedAlbum(null)}
+                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={e => e.stopPropagation()}
+                            className={cn("w-full max-w-2xl rounded-[32px] overflow-hidden flex flex-col shadow-2xl max-h-[80vh]", theme === 'dark' ? "bg-slate-900" : "bg-white")}
+                        >
+                            <div className="relative h-48 sm:h-64 shrink-0">
+                                <img
+                                    src={convertDriveLink(selectedAlbum.cover)}
+                                    className="w-full h-full object-cover"
+                                    alt={selectedAlbum.title}
+                                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/500x500?text=No+Cover'; }}
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                                <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60"><X size={20} /></button>
+                                <div className="absolute bottom-6 left-6 right-6">
+                                    <h3 className="text-2xl font-black text-white leading-tight mb-1">{selectedAlbum.title}</h3>
+                                    <p className="text-xs font-bold text-brand-pink uppercase tracking-widest">{selectedAlbum.date}</p>
+                                </div>
+                            </div>
+                            
+                            <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                                <div className="space-y-4 mb-6"> 
+                                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2"><ListMusic size={12} /> Tracklist</h4>
+                                    <div className="space-y-1">
+                                        {(selectedAlbum.tracks || []).map((track, i) => (
+                                            <div key={i} className={cn("flex items-center gap-3 p-2 rounded-lg transition-colors", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")}>
+                                                <span className="text-sm font-bold text-slate-500 w-5">{String(i + 1).padStart(2, '0')}</span>
+                                                <span className={cn("font-bold text-xs", theme === 'dark' ? "text-slate-300" : "text-slate-700")}>{track}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {selectedAlbum.youtube && (
+                                    <a href={selectedAlbum.youtube} target="_blank" rel="noopener noreferrer" className="w-full py-3 rounded-xl bg-[#FF0000] text-white font-black uppercase text-xs tracking-widest hover:bg-[#CC0000] transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-500/20">
+                                        <PlayCircle size={16} /> Listen on YouTube
+                                    </a>
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {cropState.src && (
+                <ImageCropper
+                    imageSrc={cropState.src}
+                    aspect={cropState.aspect}
+                    onCropComplete={(croppedUrl) => {
+                        cropState.callback(croppedUrl);
+                        setCropState({ src: null, callback: null, aspect: 3 / 4 });
+                    }}
+                    onCancel={() => {
+                        cropState.callback(cropState.src);
+                        setCropState({ src: null, callback: null, aspect: 3 / 4 });
+                    }}
+                />
+            )}
         </AnimatePresence>
     );
 }
@@ -1084,22 +1288,17 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction }) {
     if (editMode) {
         return (
-            <div className="space-y-2">
-                <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+            <div className="space-y-2"> 
+                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
                     <Icon size={12} />
                     {label}
                 </label>
                 <input
                     type={type}
                     name={name}
-                    value={value}
+                    value={value || ''}
                     onChange={onChange}
-                    className={cn(
-                        "w-full rounded-2xl p-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold",
-                        theme === 'dark'
-                            ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
-                            : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink"
-                    )}
+                    className={cn("w-full rounded-2xl py-3 px-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink" : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink")}
                 />
             </div>
         );
@@ -1107,7 +1306,7 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
 
     return (
         <div className="group/detail">
-            <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
+            <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
                 <Icon size={12} className="group-hover/detail:text-brand-pink transition-colors" />
                 {label}
             </p>
@@ -1131,6 +1330,22 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                         <Volume2 size={16} />
                     </button>
                 )}
+            </div>
+        </div>
+    );
+}
+
+function Tracklist({ tracks, theme }) {
+    return (
+        <div>
+            <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 mb-4"><ListMusic size={14} /> Tracklist</h4>
+            <div className="space-y-2">
+                {(tracks || []).map((track, i) => (
+                    <div key={i} className={cn("flex items-center gap-4 p-3 rounded-xl transition-colors", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")}>
+                        <span className="text-sm font-bold text-slate-500 w-6 text-center">{String(i + 1).padStart(2, '0')}</span>
+                        <span className={cn("font-bold text-sm", theme === 'dark' ? "text-slate-300" : "text-slate-700")}>{track}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );

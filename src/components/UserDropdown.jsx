@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Star, LayoutDashboard, Users as UsersIcon, LogOut } from 'lucide-react';
+import { Settings, User, Star, LayoutDashboard, Users as UsersIcon, LogOut } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 
-export function UserDropdown({ user, isAdmin, onProfileClick, onFavoritesClick, onDashboardClick, onManageUsersClick, onLogoutRequest }) {
+export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick, onFavoritesClick, onDashboardClick, onManageUsersClick, onLogoutRequest }) {
     const { theme } = useTheme();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -22,6 +22,7 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onFavoritesClick, 
 
     const menuItems = [
         { label: 'Profile', icon: User, action: onProfileClick, admin: false },
+        { label: 'Edit Profile', icon: Settings, action: onEditProfileClick, admin: false },
         { label: 'Favorites', icon: Star, action: onFavoritesClick, admin: false },
         { label: 'Dashboard', icon: LayoutDashboard, action: onDashboardClick, admin: true },
         { label: 'Manage Users', icon: UsersIcon, action: onManageUsersClick, admin: true },
@@ -59,6 +60,7 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onFavoritesClick, 
                         <div className="p-2">
                             {menuItems.map(item => {
                                 if (item.admin && !isAdmin) return null;
+                                if (!item.action) return null;
                                 return (
                                     <button key={item.label} onClick={() => { item.action(); setIsOpen(false); }} className={cn("w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors", theme === 'dark' ? "hover:bg-white/5 text-slate-300" : "hover:bg-slate-100 text-slate-700")}>
                                         <item.icon size={16} />

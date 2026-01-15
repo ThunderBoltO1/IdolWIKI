@@ -6,7 +6,7 @@ import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2 } from 
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { ImageCropper } from './ImageCropper';
-import { createImage, isDataUrl } from '../lib/cropImage';
+import { isDataUrl } from '../lib/cropImage';
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
@@ -99,6 +99,9 @@ export const ProfilePage = ({ onBack }) => {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-10 relative z-10">
+                    <div className="grid gap-4">
+                    </div>
+
                     {/* Avatar Preview */}
                     <div className="flex flex-col items-center gap-5">
                         <div className="relative group">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -128,6 +129,7 @@ const defaultIdolData = {
 export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const navigate = useNavigate();
     const [formData, setFormData] = useState(idol || {});
     const [editMode, setEditMode] = useState(mode === 'create');
     const [activeImage, setActiveImage] = useState('');
@@ -349,6 +351,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 text: newComment,
                 userId: user.uid || user.id,
                 user: user.name || 'Anonymous',
+                username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
                 targetId: idol.id,
                 targetType: 'idol',
@@ -370,6 +373,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 text: replyText,
                 userId: user.uid || user.id,
                 user: user.name || 'Anonymous',
+                username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
                 targetId: idol.id,
                 targetType: 'idol',
@@ -413,8 +417,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     };
 
     const handleMentionClick = (mention) => {
-        const username = mention.substring(1);
-        if (onUserClick) onUserClick(username);
+        const u = mention.substring(1).toLowerCase().trim();
+        if (!u) return;
+        navigate(`/u/${u}`);
+        if (onUserClick) onUserClick(u);
     };
 
     if (!isOpen) return null;
@@ -652,6 +658,25 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             {formData.group || 'Soloist'}
                                             {formData.groupId && <Activity size={16} className="opacity-0 group-hover:opacity-100 transition-opacity" />}
                                         </button>
+
+                                        {!editMode && idol?.id && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    navigate(`/idol/${idol.id}`);
+                                                    onClose();
+                                                }}
+                                                className={cn(
+                                                    "mt-4 inline-flex items-center gap-2 px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 shadow-lg",
+                                                    theme === 'dark'
+                                                        ? "bg-white text-slate-900 hover:bg-slate-200"
+                                                        : "bg-slate-900 text-white hover:bg-slate-800"
+                                                )}
+                                            >
+                                                <Rocket size={16} />
+                                                <span>View more</span>
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1053,12 +1078,38 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 className="space-y-4"
                                             >
                                                 <div className="flex gap-4 group items-start">
-                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-pink/20 to-brand-purple/20 p-0.5 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const u = (comment.username || '').toLowerCase().trim();
+                                                            if (!u) return;
+                                                            navigate(`/u/${u}`);
+                                                        }}
+                                                        className={cn(
+                                                            "w-10 h-10 rounded-full bg-gradient-to-tr from-brand-pink/20 to-brand-purple/20 p-0.5 shrink-0",
+                                                            !(comment.username || '').trim() && "pointer-events-none"
+                                                        )}
+                                                        title={comment.username ? `View @${comment.username}` : ''}
+                                                    >
                                                         <img src={convertDriveLink(comment.avatar) || `https://ui-avatars.com/api/?name=${comment.user}&background=random`} className="w-full h-full rounded-full object-cover" alt="" />
-                                                    </div>
+                                                    </button>
                                                     <div className="space-y-1 flex-1">
                                                         <div className="flex items-center gap-2">
-                                                            <span className={cn("text-xs font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{comment.user}</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const u = (comment.username || '').toLowerCase().trim();
+                                                                    if (!u) return;
+                                                                    navigate(`/u/${u}`);
+                                                                }}
+                                                                className={cn(
+                                                                    "text-xs font-black hover:underline",
+                                                                    theme === 'dark' ? "text-white" : "text-slate-900",
+                                                                    !(comment.username || '').trim() && "pointer-events-none"
+                                                                )}
+                                                            >
+                                                                {comment.user}
+                                                            </button>
                                                             <span className="text-xs text-slate-500 font-bold">{getRelativeTime(comment.createdAt?.toMillis())}</span>
                                                         </div>
                                                         <p className={cn("text-sm leading-relaxed", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>{renderWithMentions(comment.text, handleMentionClick)}</p>
@@ -1120,12 +1171,38 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 {/* Replies List */}
                                                 {getReplies(comment.id).map(reply => (
                                                     <div key={reply.id} className="ml-14 flex gap-3 group/reply">
-                                                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const u = (reply.username || '').toLowerCase().trim();
+                                                                if (!u) return;
+                                                                navigate(`/u/${u}`);
+                                                            }}
+                                                            className={cn(
+                                                                "w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden",
+                                                                !(reply.username || '').trim() && "pointer-events-none"
+                                                            )}
+                                                            title={reply.username ? `View @${reply.username}` : ''}
+                                                        >
                                                             <img src={convertDriveLink(reply.avatar) || `https://ui-avatars.com/api/?name=${reply.user}&background=random`} className="w-full h-full object-cover" alt="" />
-                                                        </div>
+                                                        </button>
                                                         <div className="flex-1">
                                                             <div className="flex items-center gap-2">
-                                                                <span className={cn("text-[10px] font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{reply.user}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const u = (reply.username || '').toLowerCase().trim();
+                                                                        if (!u) return;
+                                                                        navigate(`/u/${u}`);
+                                                                    }}
+                                                                    className={cn(
+                                                                        "text-[10px] font-black hover:underline",
+                                                                        theme === 'dark' ? "text-white" : "text-slate-900",
+                                                                        !(reply.username || '').trim() && "pointer-events-none"
+                                                                    )}
+                                                                >
+                                                                    {reply.user}
+                                                                </button>
                                                                 <span className="text-[9px] text-slate-500">{getRelativeTime(reply.createdAt?.toMillis())}</span>
                                                             </div>
                                                             <p className={cn("text-xs mt-0.5", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>{renderWithMentions(reply.text, handleMentionClick)}</p>

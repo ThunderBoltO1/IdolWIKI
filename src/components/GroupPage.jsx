@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion';
 import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -10,7 +11,6 @@ import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, upd
 import { db } from '../lib/firebase';
 import { ImageCropper } from './ImageCropper';
 import { createImage, isDataUrl } from '../lib/cropImage';
-import { MusicPlayer } from './MusicPlayer';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -123,6 +123,7 @@ const AWARD_DATA = {
 export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const navigate = useNavigate();
     const containerRef = useRef(null);
     const [activeImage, setActiveImage] = useState(group?.image || '');
     const [lightboxImage, setLightboxImage] = useState(null);
@@ -219,6 +220,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 text: newComment,
                 userId: user.uid || user.id,
                 user: user.name || 'Anonymous',
+                username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
                 targetId: group.id,
                 targetType: 'group',
@@ -240,6 +242,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 text: replyText,
                 userId: user.uid || user.id,
                 user: user.name || 'Anonymous',
+                username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
                 targetId: group.id,
                 targetType: 'group',
@@ -283,8 +286,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const handleMentionClick = (mention) => {
-        const username = mention.substring(1);
-        if (onUserClick) onUserClick(username);
+        const u = mention.substring(1).toLowerCase().trim();
+        if (!u) return;
+        navigate(`/u/${u}`);
+        if (onUserClick) onUserClick(u);
     };
 
     // Sync activeImage when group data changes from Firestore
@@ -948,13 +953,39 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         className="space-y-6"
                                     >
                                         <div className="flex gap-6 group items-start">
-                                            <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-blue/20 to-brand-purple/20 p-0.5 shrink-0 shadow-lg">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const u = (comment.username || '').toLowerCase().trim();
+                                                    if (!u) return;
+                                                    navigate(`/u/${u}`);
+                                                }}
+                                                className={cn(
+                                                    "w-14 h-14 rounded-full bg-gradient-to-tr from-brand-blue/20 to-brand-purple/20 p-0.5 shrink-0 shadow-lg",
+                                                    !(comment.username || '').trim() && "pointer-events-none"
+                                                )}
+                                                title={comment.username ? `View @${comment.username}` : ''}
+                                            >
                                                 <img src={convertDriveLink(comment.avatar) || `https://ui-avatars.com/api/?name=${comment.user}&background=random`} className="w-full h-full rounded-full object-cover" alt="" />
-                                            </div>
+                                            </button>
                                             <div className="space-y-2 flex-1">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3">
-                                                        <span className={cn("text-base font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{comment.user}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const u = (comment.username || '').toLowerCase().trim();
+                                                                if (!u) return;
+                                                                navigate(`/u/${u}`);
+                                                            }}
+                                                            className={cn(
+                                                                "text-base font-black hover:underline",
+                                                                theme === 'dark' ? "text-white" : "text-slate-900",
+                                                                !(comment.username || '').trim() && "pointer-events-none"
+                                                            )}
+                                                        >
+                                                            {comment.user}
+                                                        </button>
                                                         <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-500 uppercase tracking-wider">{getRelativeTime(comment.createdAt?.toMillis())}</span>
                                                     </div>
                                                 </div>
@@ -1013,12 +1044,38 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         {/* Replies List */}
                                         {getReplies(comment.id).map(reply => (
                                             <div key={reply.id} className="ml-20 flex gap-4 group/reply">
-                                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden shadow-md">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const u = (reply.username || '').toLowerCase().trim();
+                                                        if (!u) return;
+                                                        navigate(`/u/${u}`);
+                                                    }}
+                                                    className={cn(
+                                                        "w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 shrink-0 overflow-hidden shadow-md",
+                                                        !(reply.username || '').trim() && "pointer-events-none"
+                                                    )}
+                                                    title={reply.username ? `View @${reply.username}` : ''}
+                                                >
                                                     <img src={convertDriveLink(reply.avatar) || `https://ui-avatars.com/api/?name=${reply.user}&background=random`} className="w-full h-full object-cover" alt="" />
-                                                </div>
+                                                </button>
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-3">
-                                                        <span className={cn("text-sm font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>{reply.user}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const u = (reply.username || '').toLowerCase().trim();
+                                                                if (!u) return;
+                                                                navigate(`/u/${u}`);
+                                                            }}
+                                                            className={cn(
+                                                                "text-sm font-black hover:underline",
+                                                                theme === 'dark' ? "text-white" : "text-slate-900",
+                                                                !(reply.username || '').trim() && "pointer-events-none"
+                                                            )}
+                                                        >
+                                                            {reply.user}
+                                                        </button>
                                                         <span className="text-xs text-slate-500 font-medium">{getRelativeTime(reply.createdAt?.toMillis())}</span>
                                                     </div>
                                                     <p className={cn("text-base mt-1 font-medium", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>{renderWithMentions(reply.text, handleMentionClick)}</p>
@@ -1254,12 +1311,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            <MusicPlayer 
-                url={group.themeSongUrl} 
-                groupName={group.name} 
-                groupImage={convertDriveLink(group.image)} 
-            />
         </div>
     );
 }

@@ -1,9 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
-import { StatsDashboard } from './components/StatsDashboard';
-import { FilterBar } from './components/FilterBar';
-import { IdolCard } from './components/IdolCard';
 import { IdolModal } from './components/IdolModal';
 import { GroupPage } from './components/GroupPage';
 import { GroupSelection } from './components/GroupSelection';
@@ -14,22 +11,39 @@ import { RegisterPage } from './components/RegisterPage';
 import { ForgotPasswordPage } from './components/ForgotPasswordPage';
 import { ProfilePage } from './components/ProfilePage';
 import { FavoritesPage } from './components/FavoritesPage';
+import { IdolDetailPage } from './components/IdolDetailPage';
+import { PublicProfilePage } from './components/PublicProfilePage';
 import { AdminUserManagement } from './components/AdminUserManagement';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, writeBatch, getDocs, query, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
+
+function RequireAdmin({ children }) {
+  const location = useLocation();
+  const { user, isAdmin } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
 
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAdmin, logout } = useAuth();
 
-  const [error, setError] = useState(null);
+  const [_error, setError] = useState(null);
   const [idols, setIdols] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -139,7 +153,7 @@ function AppContent() {
 
   // Navigation Scroll Fix
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, [location.pathname]);
 
   // Handlers
@@ -171,6 +185,10 @@ function AppContent() {
     setSelectedIdol(idol);
     setModalMode('view');
     setModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setModalOpen(false);
   };
 
   const handleSave = async (idolData) => {
@@ -337,7 +355,15 @@ function AppContent() {
         onAddClick={handleAddClick}
         onAddGroupClick={handleAddGroupClick}
         onLoginClick={() => navigate('/login')}
-        onProfileClick={() => navigate('/profile')}
+        onProfileClick={() => {
+          const u = (user?.username || '').toLowerCase().trim();
+          if (u) {
+            navigate(`/u/${u}`);
+            return;
+          }
+          navigate('/profile');
+        }}
+        onEditProfileClick={() => navigate('/profile')}
         onHomeClick={() => navigate('/')}
         onFavoritesClick={() => navigate('/favorites')}
         onNotificationClick={handleNotificationClick}
@@ -458,31 +484,65 @@ function AppContent() {
               </motion.div>
             } />
 
-            <Route path="/admin/users" element={
-              <motion.div
-                key="admin-users"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <AdminUserManagement
-                  onBack={() => navigate('/')}
-                />
-              </motion.div>
-            } />
+            <Route
+              path="/idol/:idolId"
+              element={
+                <motion.div
+                  key="idol-detail"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                >
+                  <IdolDetailPage />
+                </motion.div>
+              }
+            />
 
-            <Route path="/admin/dashboard" element={
-              <motion.div
-                key="admin-dashboard"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <AdminDashboard
-                  onBack={() => navigate('/')}
-                />
-              </motion.div>
-            } />
+            <Route
+              path="/u/:username"
+              element={
+                <motion.div
+                  key="public-profile"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                >
+                  <PublicProfilePage />
+                </motion.div>
+              }
+            />
+
+            <Route
+              path="/admin/users"
+              element={
+                <RequireAdmin>
+                  <motion.div
+                    key="admin-users"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                  >
+                    <AdminUserManagement onBack={() => navigate('/')} />
+                  </motion.div>
+                </RequireAdmin>
+              }
+            />
+
+            <Route
+              path="/admin/dashboard"
+              element={
+                <RequireAdmin>
+                  <motion.div
+                    key="admin-dashboard"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                  >
+                    <AdminDashboard onBack={() => navigate('/')} />
+                  </motion.div>
+                </RequireAdmin>
+              }
+            />
 
             <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} />} />
           </Routes>
@@ -493,7 +553,7 @@ function AppContent() {
         isOpen={modalOpen}
         mode={modalMode}
         idol={selectedIdol}
-        onClose={() => setModalOpen(false)}
+        onClose={handleCloseModal}
         onSave={handleSave}
         onDelete={handleDelete}
         onLike={handleFavoriteIdol}

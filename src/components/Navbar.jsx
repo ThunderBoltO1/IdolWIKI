@@ -5,10 +5,11 @@ import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { NotificationDropdown } from './NotificationDropdown';
+import { FriendDropdown } from './FriendDropdown';
 import { AddMenu } from './AddMenu';
 import { UserDropdown } from './UserDropdown';
 
-export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
+export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onEditProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
     const { user, isAdmin } = useAuth();
     const { theme, themeMode, toggleTheme } = useTheme();
     const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -21,9 +22,11 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                 : "border-slate-200 bg-white/80 shadow-sm"
         )}>
             <div className="container mx-auto px-4 h-16 flex justify-between items-center gap-2 md:gap-4">
-                <div
+                <button
+                    type="button"
                     className="flex items-center gap-2 cursor-pointer group shrink-0"
                     onClick={onHomeClick}
+                    aria-label="Go to home"
                 >
                     <div className="p-2 bg-gradient-to-tr from-brand-pink to-brand-purple rounded-lg shadow-lg shadow-brand-pink/20 transition-transform group-hover:scale-110">
                         <Sparkles className="text-white w-6 h-6" />
@@ -34,7 +37,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     )}>
                         K-Pop<span className="text-brand-pink">DB</span>
                     </span>
-                </div>
+                </button>
 
                 {/* Search Bar */}
                 <div className="flex-1 max-w-xl hidden md:block">
@@ -65,6 +68,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                 ? "text-slate-400 hover:bg-slate-800 hover:text-white"
                                 : "text-slate-500 hover:bg-slate-200 hover:text-slate-900"
                         )}
+                        aria-label="Search"
                         title="Search"
                     >
                         <Search size={20} />
@@ -78,6 +82,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                 ? "bg-slate-900 text-yellow-400 hover:bg-slate-800 border border-white/5"
                                 : "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200"
                         )}
+                        aria-label="Toggle theme"
                         title={`Current Mode: ${themeMode.charAt(0).toUpperCase() + themeMode.slice(1)}`}
                     >
                         {themeMode === 'light' && <Sun size={20} />}
@@ -93,6 +98,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     {user ? (
                         <div className="flex items-center gap-2 sm:gap-4">
                             <NotificationDropdown onNotificationClick={onNotificationClick} />
+                            <FriendDropdown />
 
                             {isAdmin && <AddMenu onAddClick={onAddClick} onAddGroupClick={onAddGroupClick} />}
 
@@ -100,6 +106,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                 user={user}
                                 isAdmin={isAdmin}
                                 onProfileClick={onProfileClick}
+                                onEditProfileClick={onEditProfileClick}
                                 onFavoritesClick={onFavoritesClick}
                                 onDashboardClick={onDashboardClick}
                                 onManageUsersClick={onManageUsersClick}

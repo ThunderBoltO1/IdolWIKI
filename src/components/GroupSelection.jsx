@@ -33,10 +33,10 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         const matchesCompany = !selectedCompany || (idol.company || '').split(' (')[0] === selectedCompany;
         const isGroupMember = idol.groupId && groups.some(g => g.id === idol.groupId);
         
-        const searchLower = searchTerm.toLowerCase();
+        const searchLower = (searchTerm || '').toLowerCase();
         const matchesSearch = !searchTerm || (
-            idol.name.toLowerCase().includes(searchLower) ||
-            (idol.koreanName && idol.koreanName.includes(searchTerm)) ||
+            (idol.name || '').toLowerCase().includes(searchLower) ||
+            (idol.koreanName && idol.koreanName.includes(searchTerm || '')) ||
             (idol.fullEnglishName && idol.fullEnglishName.toLowerCase().includes(searchLower)) ||
             (idol.company && idol.company.toLowerCase().includes(searchLower))
         );
@@ -282,6 +282,30 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     )}
                 </AnimatePresence>
             </motion.div>
+
+            {!loading && allItems.length === 0 && (
+                <div className="px-4">
+                    <div className={cn(
+                        "max-w-2xl mx-auto text-center rounded-[40px] p-10 border",
+                        theme === 'dark'
+                            ? "bg-slate-900/40 border-white/10 text-white"
+                            : "bg-white border-slate-200 text-slate-900"
+                    )}>
+                        <p className={cn(
+                            "text-sm font-black uppercase tracking-widest",
+                            theme === 'dark' ? "text-slate-400" : "text-slate-500"
+                        )}>
+                            No results found
+                        </p>
+                        <p className={cn(
+                            "mt-3 text-sm font-medium",
+                            theme === 'dark' ? "text-slate-300" : "text-slate-600"
+                        )}>
+                            Try adjusting your search or filters.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Load More Button */}
             {!loading && visibleCount < allItems.length && (

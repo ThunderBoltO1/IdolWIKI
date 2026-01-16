@@ -9,7 +9,7 @@ import { FriendDropdown } from './FriendDropdown';
 import { AddMenu } from './AddMenu';
 import { UserDropdown } from './UserDropdown';
 
-export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onEditProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
+export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onEditProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onManageReportsClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
     const { user, isAdmin } = useAuth();
     const { theme, themeMode, toggleTheme } = useTheme();
     const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -110,6 +110,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                 onFavoritesClick={onFavoritesClick}
                                 onDashboardClick={onDashboardClick}
                                 onManageUsersClick={onManageUsersClick}
+                                onManageReportsClick={onManageReportsClick}
                                 onLogoutRequest={onLogoutRequest}
                             />
                         </div>

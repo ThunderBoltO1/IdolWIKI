@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic } from 'lucide-react';
+import ReactPlayer from 'react-player';
+import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ImageCropper } from './ImageCropper';
 import { createImage, isDataUrl } from '../lib/cropImage';
+import { ConfirmationModal } from './ConfirmationModal';
+import { IdolCard } from './IdolCard';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -122,11 +125,13 @@ const defaultIdolData = {
     image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
     gallery: [],
     instagram: '',
+    twitter: '',
+    youtube: '',
     likes: 0,
     albums: []
 };
 
-export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick }) {
+export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
@@ -145,11 +150,23 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [replyText, setReplyText] = useState('');
     const [selectedAlbum, setSelectedAlbum] = useState(null);
     const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4 });
+    const heartIdCounter = useRef(0);
     const [newAward, setNewAward] = useState({
         year: new Date().getFullYear(),
         category: 'K-Pop & Music Awards',
         show: '',
         award: ''
+    });
+    const [similarIdols, setSimilarIdols] = useState([]);
+    
+    const [modalConfig, setModalConfig] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        singleButton: true,
+        onConfirm: null,
+        confirmText: 'OK'
     });
 
     useEffect(() => {
@@ -205,6 +222,71 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
             setVisibleComments(5);
         }
     }, [isOpen, mode, idol, formData.id]);
+
+    useEffect(() => {
+        if (!idol?.id) return;
+
+        const unsub = onSnapshot(doc(db, 'idols', idol.id), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setFormData(prev => ({
+                    ...prev,
+                    likes: data.likes || 0
+                }));
+            }
+        });
+
+        return () => unsub();
+    }, [idol?.id]);
+
+    useEffect(() => {
+        if (!idol?.id) return;
+
+        const fetchSimilar = async () => {
+            try {
+                let candidates = [];
+                const seenIds = new Set([idol.id]);
+
+                // 1. Fetch by Company
+                if (idol.company) {
+                    const qCompany = query(
+                        collection(db, 'idols'),
+                        where('company', '==', idol.company),
+                        limit(10)
+                    );
+                    const snapCompany = await getDocs(qCompany);
+                    snapCompany.docs.forEach(d => {
+                        if (!seenIds.has(d.id)) {
+                            seenIds.add(d.id);
+                            candidates.push({ id: d.id, ...d.data() });
+                        }
+                    });
+                }
+
+                // 2. Fetch by Position (if needed to fill up)
+                if (candidates.length < 4 && idol.positions && idol.positions.length > 0) {
+                    const searchPositions = idol.positions.slice(0, 10);
+                    const qPos = query(
+                        collection(db, 'idols'),
+                        where('positions', 'array-contains-any', searchPositions),
+                        limit(10)
+                    );
+                    const snapPos = await getDocs(qPos);
+                    snapPos.docs.forEach(d => {
+                        if (candidates.length < 4 && !seenIds.has(d.id)) {
+                            seenIds.add(d.id);
+                            candidates.push({ id: d.id, ...d.data() });
+                        }
+                    });
+                }
+
+                setSimilarIdols(candidates.slice(0, 4));
+            } catch (err) {
+                console.error("Error fetching similar idols", err);
+            }
+        };
+        fetchSimilar();
+    }, [idol?.company, idol?.id, idol?.positions]);
 
     const startCropping = (url, callback, aspect = 3 / 4) => {
         if (!url || isDataUrl(url)) {
@@ -299,10 +381,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         setShowSuccess(false);
     };
 
-    const handleSpeak = (text) => {
+    const handleSpeak = (text, lang = 'ko-KR') => {
         if (!text) return;
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'ko-KR';
+        utterance.lang = lang;
         utterance.rate = 0.9;
         window.speechSynthesis.speak(utterance);
     };
@@ -391,7 +473,15 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     };
 
     const handleLikeComment = async (commentId) => {
-        if (!user) return alert('Please login to like comments!');
+        if (!user) {
+            setModalConfig({
+                isOpen: true,
+                title: 'Login Required',
+                message: 'Please login to like comments!',
+                type: 'info'
+            });
+            return;
+        }
         const comment = comments.find(c => c.id === commentId);
         if (!comment) return;
 
@@ -407,8 +497,31 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         }
     };
 
-    const handleDeleteComment = async (commentId) => {
-        if (!window.confirm("Are you sure you want to delete this comment?")) return;
+    const handleSendLove = async () => {
+        if (!user || !idol?.id) return;
+        try {
+            const idolRef = doc(db, 'idols', idol.id);
+            await updateDoc(idolRef, {
+                likes: increment(1)
+            });
+        } catch (error) {
+            console.error("Error sending love:", error);
+        }
+    };
+
+    const handleDeleteComment = (commentId) => {
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Comment',
+            message: 'Are you sure you want to delete this comment?',
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Delete',
+            onConfirm: () => executeDeleteComment(commentId)
+        });
+    };
+
+    const executeDeleteComment = async (commentId) => {
         try {
             await deleteDoc(doc(db, 'comments', commentId));
         } catch (error) {
@@ -471,7 +584,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 40 }}
                     className={cn(
-                        "relative w-full max-w-5xl rounded-[40px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col md:flex-row border transition-colors duration-500",
+                        "relative w-full max-w-5xl rounded-[40px] shadow-2xl overflow-hidden h-[90vh] flex flex-col md:flex-row border transition-colors duration-500",
                         theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
                     )}
                 >
@@ -519,10 +632,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             {floatingHearts.map(heart => (
                                                 <motion.div
                                                     key={heart.id}
-                                                    initial={{ opacity: 1, y: 0, x: "-50%", scale: 0.5 }}
-                                                    animate={{ opacity: 0, y: -150, x: "-50%", scale: 1.5 }}
+                                                    initial={{ opacity: 1, y: 0, x: "-50%", scale: 0.5, rotate: 0 }}
+                                                    animate={{ 
+                                                        opacity: 0, 
+                                                        y: heart.y || -150, 
+                                                        x: `calc(-50% + ${heart.x || 0}px)`, 
+                                                        scale: heart.scale || 1.5,
+                                                        rotate: heart.rotate || 0
+                                                    }}
                                                     exit={{ opacity: 0 }}
-                                                    transition={{ duration: 1, ease: "easeOut" }}
+                                                    transition={{ duration: 2.5, ease: "easeOut" }}
                                                     className="absolute top-0 left-1/2 pointer-events-none"
                                                 >
                                                     <Heart className="w-6 h-6 fill-brand-pink text-brand-pink" />
@@ -534,12 +653,27 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (user) {
-                                                    onLike(idol.id);
-                                                    const id = Date.now() + Math.random();
-                                                    setFloatingHearts(prev => [...prev, { id }]);
-                                                    setTimeout(() => setFloatingHearts(prev => prev.filter(h => h.id !== id)), 1000);
+                                                    handleSendLove();
+                                                    const burstCount = 8 + Math.floor(Math.random() * 5);
+                                                    const newHearts = Array.from({ length: burstCount }).map((_, i) => {
+                                                        heartIdCounter.current += 1;
+                                                        return {
+                                                            id: `heart-${Date.now()}-${heartIdCounter.current}`,
+                                                            x: (Math.random() - 0.5) * 100,
+                                                            y: -100 - Math.random() * 100,
+                                                            scale: 0.5 + Math.random() * 1,
+                                                            rotate: (Math.random() - 0.5) * 60
+                                                        };
+                                                    });
+                                                    setFloatingHearts(prev => [...prev, ...newHearts]);
+                                                    setTimeout(() => setFloatingHearts(prev => prev.filter(h => !newHearts.find(nh => nh.id === h.id))), 2500);
                                                 } else {
-                                                    alert('Please login to like idols!');
+                                                    setModalConfig({
+                                                        isOpen: true,
+                                                        title: 'Login Required',
+                                                        message: 'Please login to like idols!',
+                                                        type: 'info'
+                                                    });
                                                 }
                                             }}
                                             className={cn(
@@ -553,7 +687,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     </div>
                                     <div className="text-right">
                                         <p className="text-[10px] text-white/60 uppercase font-black tracking-widest mb-1">Fan Love</p>
-                                        <p className="text-2xl font-black text-white drop-shadow-lg">{(formData.likes || 0).toLocaleString()}</p>
+                                        <p className="text-2xl font-black text-white drop-shadow-lg"><CountUp value={formData.likes || 0} /></p>
                                     </div>
                                 </div>
                             )}
@@ -632,7 +766,15 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (!user) return alert('Please login to manage favorites!');
+                                                    if (!user) {
+                                                        setModalConfig({
+                                                            isOpen: true,
+                                                            title: 'Login Required',
+                                                            message: 'Please login to manage favorites!',
+                                                            type: 'info'
+                                                        });
+                                                        return;
+                                                    }
                                                     onLike(idol.id);
                                                 }}
                                                 className="hover:scale-110 transition-transform focus:outline-none active:scale-90"
@@ -648,7 +790,12 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             </button>
                                         </div>
                                         <button
-                                            onClick={() => formData.groupId && onGroupClick(formData.groupId)}
+                                            onClick={() => {
+                                                if (formData.groupId) {
+                                                    onGroupClick(formData.groupId);
+                                                    onClose();
+                                                }
+                                            }}
                                             className={cn(
                                                 "text-xl font-black tracking-[0.2em] uppercase transition-all flex items-center gap-2 group",
                                                 formData.groupId ? "text-brand-pink hover:text-brand-pink/80 cursor-pointer" : "text-slate-400"
@@ -738,63 +885,191 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                         <form onSubmit={handleSubmit} className="space-y-10 flex-1">
                             {/* Info Tab Content */}
-                            <div className={cn("grid grid-cols-1 sm:grid-cols-2 gap-8", !editMode && activeTab !== 'info' && "hidden", editMode && "block")}>
-                                <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
-                                <DetailItem
-                                    icon={Globe}
-                                    label="Korean Name"
-                                    value={formData.koreanName}
-                                    editMode={editMode}
-                                    name="koreanName"
-                                    onChange={handleChange}
-                                    theme={theme}
-                                    onAction={() => handleSpeak(formData.koreanName)}
-                                />
-                                <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Building2} label="Company" value={formData.company} editMode={editMode} name="company" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
-                                <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
-
-                                <div className="sm:col-span-2 space-y-3">
-                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
-                                    {editMode ? (
-                                        <input
-                                            value={formData.positions?.join(', ') || ''}
-                                            onChange={handlePositionsChange}
-                                            className={cn(
-                                                "w-full rounded-2xl p-4 transition-all duration-300 focus:outline-none border-2",
-                                                theme === 'dark'
-                                                    ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
-                                                    : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink"
-                                            )}
-                                            placeholder="Lead Vocalist, Main Dancer..."
-                                        />
-                                    ) : (
-                                        <div className="flex flex-wrap gap-2">
-                                            {formData.positions?.map((p, i) => (
-                                                <span key={i} className={cn(
-                                                    "px-5 py-2 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all hover:scale-105 shadow-sm",
-                                                    theme === 'dark'
-                                                        ? "bg-slate-800 border-white/5 text-slate-300"
-                                                        : "bg-white border-slate-200 text-slate-600"
-                                                )}>
-                                                    {p}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="sm:col-span-2 space-y-3">
-                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
-                                        <Trophy size={12} /> Awards
-                                    </label>
-                                    {editMode ? (
+                            <div className={cn(!editMode && activeTab !== 'info' && "hidden", editMode && "block")}>
+                                {editMode ? (
+                                    <div className="space-y-8">
+                                        {/* Section 1: Basic Info */}
                                         <div className="space-y-4">
+                                            <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Basic Information</h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                <DetailItem icon={User} label="Stage Name" value={formData.name} editMode={editMode} name="name" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
+                                                <DetailItem
+                                                    icon={Globe}
+                                                    label="Korean Name"
+                                                    value={formData.koreanName}
+                                                    editMode={editMode}
+                                                    name="koreanName"
+                                                    onChange={handleChange}
+                                                    theme={theme}
+                                                    onAction={() => handleSpeak(formData.koreanName, 'ko-KR')}
+                                                />
+                                                <DetailItem
+                                                    icon={Globe}
+                                                    label="Thai Name"
+                                                    value={formData.thaiName}
+                                                    editMode={editMode}
+                                                    name="thaiName"
+                                                    onChange={handleChange}
+                                                    theme={theme}
+                                                    onAction={() => handleSpeak(formData.thaiName, 'th-TH')}
+                                                />
+                                                <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
+                                                {!editMode && (
+                                                    <DetailItem 
+                                                        icon={Users} 
+                                                        label="Group" 
+                                                        value={formData.group} 
+                                                        theme={theme}
+                                                        onClick={(formData.groupId && onGroupClick) ? () => {
+                                                            onGroupClick(formData.groupId);
+                                                            onClose();
+                                                        } : undefined}
+                                                    />
+                                                )}
+                                                <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
+                                            </div>
+                                        </div>
+
+                                        {/* Section 2: Physical Stats */}
+                                        <div className="space-y-4">
+                                            <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Physical Stats</h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
+                                            </div>
+                                        </div>
+
+                                        {/* Section 3: Career */}
+                                        <div className="space-y-4">
+                                            <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Career</h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                <DetailItem 
+                                                    icon={Building2} 
+                                                    label="Company" 
+                                                    value={formData.company} 
+                                                    editMode={editMode} 
+                                                    name="company" 
+                                                    onChange={handleChange} 
+                                                    theme={theme} 
+                                                    onClick={(!editMode && onSearch && formData.company) ? () => {
+                                                        onSearch(formData.company);
+                                                        onClose();
+                                                    } : undefined}
+                                                />
+                                                <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
+                                                <div className="sm:col-span-2 space-y-2">
+                                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
+                                                    <input
+                                                        value={formData.positions?.join(', ') || ''}
+                                                        onChange={handlePositionsChange}
+                                                        className={cn(
+                                                            "w-full rounded-2xl p-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold",
+                                                            theme === 'dark'
+                                                                ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
+                                                                : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink"
+                                                        )}
+                                                        placeholder="Lead Vocalist, Main Dancer..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Section 4: Media & Links */}
+                                        <div className="space-y-4">
+                                            <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Media & Links</h3>
+                                            <div className="space-y-4">
+                                                <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Twitter} label="Twitter URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Youtube} label="YouTube URL" value={formData.youtube} editMode={editMode} name="youtube" onChange={handleChange} theme={theme} />
+                                                
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center justify-between mb-1"> 
+                                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                            <Globe size={12} />
+                                                            Photo URL
+                                                        </label>
+                                                    </div>
+                                                    <div className="relative group/input">
+                                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-brand-pink transition-colors">
+                                                            <Globe size={18} />
+                                                        </div>
+                                                        <input
+                                                            name="image"
+                                                            value={formData.image}
+                                                            onChange={handleChange}
+                                                            className={cn(
+                                                                "w-full rounded-2xl py-4 pl-12 pr-6 border-2 focus:outline-none transition-all text-sm font-bold",
+                                                                theme === 'dark'
+                                                                    ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
+                                                                    : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                                                            )}
+                                                            placeholder="Paste image URL..."
+                                                        />
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 font-medium pl-1">
+                                                        💡 Tip: คุณสามารถใช้ลิงก์จากเว็บฝากรูป เช่น <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a> ได้ครับ
+                                                    </p>
+                                                </div>
+
+                                                {/* Gallery Management */}
+                                                <div className="pt-4 space-y-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                    <div className="flex items-center justify-between"> 
+                                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                            <Globe size={12} />
+                                                            Gallery Images
+                                                        </label>
+                                                        <button
+                                                            type="button"
+                                                            onClick={addGalleryImage}
+                                                            className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
+                                                        >
+                                                            <Plus size={12} /> Add Image
+                                                        </button>
+                                                    </div>
+                                                    <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({...prev, gallery: newGallery}))} className="space-y-2">
+                                                    {(formData.gallery || []).map((url, idx) => (
+                                                        <Reorder.Item
+                                                            key={idx}
+                                                            value={url}
+                                                            className="flex gap-2 items-center"
+                                                        >
+                                                            <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                                <GripVertical size={16} />
+                                                            </div>
+                                                            <input
+                                                                value={url}
+                                                                onChange={(e) => handleGalleryChange(idx, e.target.value)}
+                                                                className={cn(
+                                                                    "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
+                                                                    theme === 'dark'
+                                                                        ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
+                                                                        : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                                                                )}
+                                                                placeholder={`Gallery Image ${idx + 1} URL...`}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => removeGalleryImage(idx)}
+                                                                className={cn(
+                                                                    "p-3 rounded-2xl transition-colors shrink-0",
+                                                                    theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
+                                                                )}
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </Reorder.Item>
+                                                    ))}
+                                                    </Reorder.Group>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Section 5: Awards */}
+                                        <div className="space-y-4">
+                                            <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Awards</h3>
                                             <div className={cn("p-4 rounded-2xl border-2 space-y-3", theme === 'dark' ? "bg-slate-800/30 border-white/5" : "bg-slate-50 border-slate-100")}>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <select value={newAward.category} onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
@@ -831,148 +1106,243 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 </AnimatePresence>
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="flex flex-col gap-2">
-                                            {(formData.awards || []).length > 0 ? (
-                                                [...(formData.awards || [])].sort((a, b) => {
-                                                    const yearA = typeof a === 'object' ? Number(a.year) : 0;
-                                                    const yearB = typeof b === 'object' ? Number(b.year) : 0;
-                                                    if (yearB !== yearA) return yearB - yearA;
-                                                    const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
-                                                    const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
-                                                    return nameA.localeCompare(nameB);
-                                                }).map((award, i) => (
-                                                    <div key={i} className={cn("px-5 py-3 rounded-2xl text-sm font-medium border transition-all flex items-center gap-3", theme === 'dark' ? "bg-slate-800/50 border-white/5 text-slate-300" : "bg-white border-slate-200 text-slate-600")}>
-                                                        <Trophy size={14} className="text-yellow-500 shrink-0" />
-                                                        <div className="flex-1">
-                                                            {typeof award === 'object' ? (
-                                                                <>
-                                                                    <span className="font-bold text-brand-pink mr-2">{award.year}</span>
-                                                                    <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{award.show}</span>
-                                                                    <div className="text-xs text-slate-500">{award.award}</div>
-                                                                </>
-                                                            ) : award}
-                                                        </div>
-                                                    </div>
-                                                ))
-                                            ) : (
-                                                <p className="text-slate-500 italic text-sm">No awards recorded yet.</p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                                        <DetailItem icon={User} label="Stage Name" value={formData.name} theme={theme} />
+                                        <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
+                                        <DetailItem
+                                            icon={Globe}
+                                            label="Korean Name"
+                                            value={formData.koreanName}
+                                            editMode={editMode}
+                                            name="koreanName"
+                                            onChange={handleChange}
+                                            theme={theme}
+                                            onAction={() => handleSpeak(formData.koreanName)}
+                                        />
+                                        <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
+                                        <DetailItem 
+                                            icon={Building2} 
+                                            label="Company" 
+                                            value={formData.company} 
+                                            editMode={editMode} 
+                                            name="company" 
+                                            onChange={handleChange} 
+                                            theme={theme} 
+                                            onClick={(!editMode && onSearch && formData.company) ? () => {
+                                                onSearch(formData.company);
+                                                onClose();
+                                            } : undefined}
+                                        />
+                                        <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={User} label="Age" value={formData.birthDate ? `${calculateAge(formData.birthDate)} years old` : ''} theme={theme} />
+                                        <DetailItem 
+                                            icon={Star} 
+                                            label="Zodiac" 
+                                            value={calculateZodiac(formData.birthDate)} 
+                                            theme={theme} 
+                                            onClick={onSearch ? () => {
+                                                onSearch(calculateZodiac(formData.birthDate).split(' ')[0]);
+                                                onClose();
+                                            } : undefined}
+                                        />
+                                        <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
 
-                                {editMode && (
-                                    <>
-                                        <div className="space-y-4">
-                                            <div className="flex items-center justify-between mb-1"> 
-                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
-                                                    <Instagram size={12} />
-                                                    Photo URL
-                                                </label>
-                                            </div>
-
-                                            <div className="relative group/input">
-                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-brand-pink transition-colors">
-                                                    <Globe size={18} />
-                                                </div>
-                                                <input
-                                                    name="image"
-                                                    value={formData.image}
-                                                    onChange={handleChange}
-                                                    className={cn(
-                                                        "w-full rounded-2xl py-4 pl-12 pr-6 border-2 focus:outline-none transition-all text-sm font-bold",
-                                                        theme === 'dark'
-                                                            ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
-                                                            : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                                                    )}
-                                                    placeholder="Paste image URL..."
-                                                />
-                                            </div>
-                                            <p className="text-xs text-slate-500 font-medium pl-1">
-                                                💡 Tip: คุณสามารถใช้ลิงก์จากเว็บฝากรูป เช่น <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a> ได้ครับ
-                                            </p>
-
-                                            {/* Gallery Management */}
-                                            <div className="pt-4 space-y-3 border-t border-dashed border-slate-200 dark:border-slate-800">
-                                                <div className="flex items-center justify-between"> 
-                                                    <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
-                                                        <Globe size={12} />
-                                                        Gallery Images
-                                                    </label>
+                                        <div className="sm:col-span-2 space-y-3">
+                                            <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {formData.positions?.map((p, i) => (
                                                     <button
-                                                        type="button"
-                                                        onClick={addGalleryImage}
-                                                        className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
-                                                    >
-                                                        <Plus size={12} /> Add Image
+                                                        key={i}
+                                                        onClick={onSearch ? () => {
+                                                            onSearch(p);
+                                                            onClose();
+                                                        } : undefined}
+                                                        className={cn(
+                                                        "px-5 py-2 rounded-2xl text-xs font-black uppercase tracking-wider border transition-all hover:scale-105 shadow-sm",
+                                                        theme === 'dark'
+                                                            ? "bg-slate-800 border-white/5 text-slate-300"
+                                                            : "bg-white border-slate-200 text-slate-600",
+                                                        onSearch && "cursor-pointer hover:text-brand-pink hover:border-brand-pink/30 hover:bg-brand-pink/5"
+                                                    )}>
+                                                        {p}
                                                     </button>
-                                                </div>
-                                                <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({...prev, gallery: newGallery}))} className="space-y-2">
-                                                {(formData.gallery || []).map((url, idx) => (
-                                                    <Reorder.Item
-                                                        key={idx}
-                                                        value={url}
-                                                        className="flex gap-2 items-center"
-                                                    >
-                                                        <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
-                                                            <GripVertical size={16} />
-                                                        </div>
-                                                        <input
-                                                            value={url}
-                                                            onChange={(e) => handleGalleryChange(idx, e.target.value)}
-                                                            className={cn(
-                                                                "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                                                                theme === 'dark'
-                                                                    ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
-                                                                    : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                                                            )}
-                                                            placeholder={`Gallery Image ${idx + 1} URL...`}
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => removeGalleryImage(idx)}
-                                                            className={cn(
-                                                                "p-3 rounded-2xl transition-colors shrink-0",
-                                                                theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
-                                                            )}
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </Reorder.Item>
                                                 ))}
-                                                </Reorder.Group>
                                             </div>
                                         </div>
-                                        <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
-                                    </>
+
+                                        <div className="sm:col-span-2 space-y-3">
+                                            <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
+                                                <Trophy size={12} /> Awards
+                                            </label>
+                                            <div className="flex flex-col gap-2">
+                                                {(formData.awards || []).length > 0 ? (
+                                                    [...(formData.awards || [])].sort((a, b) => {
+                                                        const yearA = typeof a === 'object' ? Number(a.year) : 0;
+                                                        const yearB = typeof b === 'object' ? Number(b.year) : 0;
+                                                        if (yearB !== yearA) return yearB - yearA;
+                                                        const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
+                                                        const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
+                                                        return nameA.localeCompare(nameB);
+                                                    }).map((award, i) => (
+                                                        <div key={i} className={cn("px-5 py-3 rounded-2xl text-sm font-medium border transition-all flex items-center gap-3", theme === 'dark' ? "bg-slate-800/50 border-white/5 text-slate-300" : "bg-white border-slate-200 text-slate-600")}>
+                                                            <Trophy size={14} className="text-yellow-500 shrink-0" />
+                                                            <div className="flex-1">
+                                                                {typeof award === 'object' ? (
+                                                                    <>
+                                                                        <span className="font-bold text-brand-pink mr-2">{award.year}</span>
+                                                                        <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{award.show}</span>
+                                                                        <div className="text-xs text-slate-500">{award.award}</div>
+                                                                    </>
+                                                                ) : award}
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-slate-500 italic text-sm">No awards recorded yet.</p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {formData.youtube && (
+                                            <div className="sm:col-span-2 space-y-3 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-2 block flex items-center gap-2">
+                                                    <Youtube size={12} /> Latest Video
+                                                </label>
+                                                <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative group/player">
+                                                    <ReactPlayer
+                                                        url={formData.youtube}
+                                                        width="100%"
+                                                        height="100%"
+                                                        controls
+                                                        light={true}
+                                                        playIcon={<div className="p-4 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl group-hover/player:scale-110 transition-transform"><PlayCircle size={48} fill="currentColor" /></div>}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Social Links Section */}
+                                        {(formData.instagram || formData.twitter) && (
+                                            <div className="sm:col-span-2 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                <h3 className={cn(
+                                                    "text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2",
+                                                    theme === 'dark' ? "text-slate-400" : "text-slate-500"
+                                                )}>
+                                                    <Globe size={14} />
+                                                    Social Media
+                                                </h3>
+                                                <div className="flex flex-wrap gap-3">
+                                                {formData.instagram && (
+                                                    <a
+                                                        href={formData.instagram}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
+                                                    >
+                                                        <Instagram size={20} /> Instagram
+                                                    </a>
+                                                )}
+                                                {formData.twitter && (
+                                                    <a
+                                                        href={formData.twitter}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
+                                                    >
+                                                        <Twitter size={20} /> Twitter
+                                                    </a>
+                                                )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Similar Idols Section */}
+                                        {similarIdols.length > 0 && (
+                                            <div className="sm:col-span-2 pt-8 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                <h3 className={cn(
+                                                    "text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2",
+                                                    theme === 'dark' ? "text-slate-400" : "text-slate-500"
+                                                )}>
+                                                    <Users size={14} />
+                                                    Similar Artists
+                                                </h3>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    {similarIdols.map(simIdol => (
+                                                        <IdolCard
+                                                            key={simIdol.id}
+                                                            idol={simIdol}
+                                                            onLike={onLike}
+                                                            onClick={(clickedIdol) => {
+                                                                if (onIdolClick) {
+                                                                    onIdolClick(clickedIdol);
+                                                                } else {
+                                                                    navigate(`/idol/${clickedIdol.id}`);
+                                                                    onClose();
+                                                                }
+                                                            }}
+                                                            searchTerm=""
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </div>
 
                             {/* Discography Tab Content */}
                             {!editMode && activeTab === 'discography' && (
                                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                                         {(formData.albums || []).length > 0 ? (
                                             (formData.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
                                                 <motion.div
                                                     key={idx}
-                                                    whileHover={{ y: -5 }}
+                                                    whileHover={{ y: -8 }}
                                                     onClick={() => setSelectedAlbum(album)}
                                                     className={cn(
-                                                        "group cursor-pointer rounded-2xl overflow-hidden border shadow-md transition-all",
-                                                        theme === 'dark' ? "bg-slate-900 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
+                                                        "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
+                                                        theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
                                                     )}
                                                 >
-                                                    <div className="aspect-square overflow-hidden relative">
-                                                        <img src={convertDriveLink(album.cover)} alt={album.title} className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75" />
-                                                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                            <PlayCircle size={32} className="text-white drop-shadow-lg transition-transform scale-75 group-hover:scale-100" />
+                                                    <div className="aspect-square overflow-hidden relative bg-slate-100 dark:bg-slate-800">
+                                                        <img 
+                                                            src={convertDriveLink(album.cover)} 
+                                                            alt={album.title} 
+                                                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2" 
+                                                            loading="lazy"
+                                                        />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                                        
+                                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-50 group-hover:scale-100">
+                                                            <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl">
+                                                                <PlayCircle size={24} fill="currentColor" />
+                                                            </div>
                                                         </div>
+
+                                                        {album.date && (
+                                                            <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
+                                                                {new Date(album.date).getFullYear()}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <div className="p-3">
-                                                        <h4 className={cn("font-black text-sm leading-tight mb-1 truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{album.title}</h4>
-                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{album.date ? new Date(album.date).getFullYear() : 'Unknown'}</p>
+                                                    
+                                                    <div className="p-3 relative">
+                                                        <h4 className={cn("font-bold text-xs leading-tight mb-1 line-clamp-1 group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-slate-200" : "text-slate-800")}>
+                                                            {album.title}
+                                                        </h4>
+                                                        <div className="flex items-center justify-between">
+                                                             <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                                                                {album.tracks?.length || 0} Tracks
+                                                            </p>
+                                                            {album.youtube && <Youtube size={12} className="text-red-500" />}
+                                                        </div>
                                                     </div>
                                                 </motion.div>
                                             ))
@@ -1249,17 +1619,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 </div>
                             )}
 
-                            {!editMode && activeTab === 'info' && formData.instagram && (
-                                <a
-                                    href={formData.instagram}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
-                                >
-                                    <Instagram size={20} /> Official Instagram
-                                </a>
-                            )}
-
                             {editMode && (
                                 <div className={cn(
                                     "pt-8 flex justify-end gap-4 border-t",
@@ -1358,11 +1717,72 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     }}
                 />
             )}
+
+            <ConfirmationModal
+                {...modalConfig}
+                onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+            />
         </AnimatePresence>
     );
 }
 
-function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction }) {
+function CountUp({ value }) {
+    const ref = useRef(null);
+    const prevValue = useRef(0);
+
+    useEffect(() => {
+        const node = ref.current;
+        if (!node) return;
+
+        const controls = animate(prevValue.current, value, {
+            duration: 1.2,
+            ease: [0.25, 0.1, 0.25, 1],
+            onUpdate: (v) => {
+                node.textContent = Math.round(v).toLocaleString();
+            }
+        });
+
+        prevValue.current = value;
+        return () => controls.stop();
+    }, [value]);
+
+    return <span ref={ref}>{Math.round(prevValue.current).toLocaleString()}</span>;
+}
+
+function calculateAge(dateString) {
+    if (!dateString) return null;
+    const today = new Date();
+    const birthDate = new Date(dateString);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return age;
+}
+
+function calculateZodiac(dateString) {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const month = date.getMonth() + 1;
+
+    if ((month === 3 && day >= 21) || (month === 4 && day <= 19)) return "Aries ♈";
+    if ((month === 4 && day >= 20) || (month === 5 && day <= 20)) return "Taurus ♉";
+    if ((month === 5 && day >= 21) || (month === 6 && day <= 20)) return "Gemini ♊";
+    if ((month === 6 && day >= 21) || (month === 7 && day <= 22)) return "Cancer ♋";
+    if ((month === 7 && day >= 23) || (month === 8 && day <= 22)) return "Leo ♌";
+    if ((month === 8 && day >= 23) || (month === 9 && day <= 22)) return "Virgo ♍";
+    if ((month === 9 && day >= 23) || (month === 10 && day <= 22)) return "Libra ♎";
+    if ((month === 10 && day >= 23) || (month === 11 && day <= 21)) return "Scorpio ♏";
+    if ((month === 11 && day >= 22) || (month === 12 && day <= 21)) return "Sagittarius ♐";
+    if ((month === 12 && day >= 22) || (month === 1 && day <= 19)) return "Capricorn ♑";
+    if ((month === 1 && day >= 20) || (month === 2 && day <= 18)) return "Aquarius ♒";
+    if ((month === 2 && day >= 19) || (month === 3 && day <= 20)) return "Pisces ♓";
+    return null;
+}
+
+function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick }) {
     if (editMode) {
         return (
             <div className="space-y-2"> 
@@ -1388,12 +1808,27 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                 {label}
             </p>
             <div className="flex items-center gap-3">
-                <p className={cn(
-                    "font-black text-lg transition-colors group-hover/detail:text-brand-pink",
-                    theme === 'dark' ? "text-slate-100" : "text-slate-900"
-                )}>
-                    {value || '-'}
-                </p>
+                {onClick && !editMode ? (
+                    <button 
+                        type="button"
+                        onClick={onClick}
+                        className={cn(
+                            "font-black text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 group/link",
+                            theme === 'dark' ? "text-slate-100" : "text-slate-900"
+                        )}
+                        title="Click to search"
+                    >
+                        {value || '-'}
+                        <Search size={16} className="opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                    </button>
+                ) : (
+                    <p className={cn(
+                        "font-black text-lg transition-colors group-hover/detail:text-brand-pink",
+                        theme === 'dark' ? "text-slate-100" : "text-slate-900"
+                    )}>
+                        {value || '-'}
+                    </p>
+                )}
                 {onAction && value && (
                     <button
                         type="button"

@@ -53,7 +53,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                     <p className={cn(
                         "font-medium text-sm",
                         theme === 'dark' ? "text-slate-400" : "text-slate-500"
-                    )}>Sign in to manage your collection</p>
+                    )}>Sign in with your username or email</p>
                 </div>
 
                 {error && (
@@ -85,7 +85,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                                         ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                                         : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
                                 )}
-                                placeholder="Your Username"
+                                placeholder="Username or Email"
                             />
                         </div>
                     </div>

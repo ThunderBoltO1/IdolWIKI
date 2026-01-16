@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Edit2, Loader2 } from 'lucide-react';
-import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore';
+import { ArrowLeft, Edit2, Loader2, UserMinus, UserPlus, Check, Flag } from 'lucide-react';
+import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, where, deleteDoc, setDoc, increment, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { ConfirmationModal } from './ConfirmationModal';
 
 function getRelativeTime(timestamp) {
   if (!timestamp) return 'Just now';
@@ -38,10 +39,23 @@ export function PublicProfilePage() {
   const isSelf = !!user?.uid && !!profileUid && user.uid === profileUid;
 
   const [friendsDocExists, setFriendsDocExists] = useState(false);
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [friendCount, setFriendCount] = useState(0);
 
   const [wallPosts, setWallPosts] = useState([]);
   const [newPost, setNewPost] = useState('');
   const [posting, setPosting] = useState(false);
+
+  // Modal State
+  const [modalConfig, setModalConfig] = useState({
+      isOpen: false,
+      title: '',
+      message: '',
+      type: 'info',
+      singleButton: true,
+      onConfirm: null,
+      confirmText: 'OK'
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -100,21 +114,21 @@ export function PublicProfilePage() {
   useEffect(() => {
     if (!profileUid) return;
 
-    const unsub = onSnapshot(
-      doc(db, 'users', profileUid),
-      (snap) => {
-        if (snap.exists()) {
-          setProfile({ uid: snap.id, ...snap.data() });
+    const loadProfile = async () => {
+      try {
+        const profileDoc = await getDoc(doc(db, 'users', profileUid));
+        if (profileDoc.exists()) {
+          setProfile({ uid: profileDoc.id, ...profileDoc.data() });
         } else {
           setProfile(null);
         }
-      },
-      (err) => {
+      } catch (err) {
         console.error('Load profile error:', err);
+        setProfile(null);
       }
-    );
+    };
 
-    return () => unsub();
+    loadProfile();
   }, [profileUid]);
 
   useEffect(() => {
@@ -122,17 +136,29 @@ export function PublicProfilePage() {
       setFriendsDocExists(false);
       return;
     }
-
-    const friendsUnsub = onSnapshot(
-      doc(db, 'users', user.uid, 'friends', profileUid),
-      (snap) => setFriendsDocExists(snap.exists()),
-      (err) => console.error('Friends doc error:', err)
-    );
+    
+    const unsub = onSnapshot(doc(db, 'users', user.uid, 'friends', profileUid), (docSnap) => {
+      setFriendsDocExists(docSnap.exists());
+    }, (err) => {
+        console.error('Friends doc error:', err);
+        setFriendsDocExists(false);
+    });
+    
+    const reqId = `${user.uid}__${profileUid}`;
+    const unsubReq = onSnapshot(doc(db, 'friendRequests', reqId), (docSnap) => {
+        setHasPendingRequest(docSnap.exists() && docSnap.data().status === 'pending');
+    });
 
     return () => {
-      friendsUnsub();
+        unsub();
+        unsubReq();
     };
   }, [user?.uid, profileUid]);
+
+  useEffect(() => {
+    // Read friendCount directly from the profile data
+    setFriendCount(profile?.friendCount || 0);
+  }, [profile]);
 
   useEffect(() => {
     if (!profileUid) return;
@@ -184,9 +210,134 @@ export function PublicProfilePage() {
       setNewPost('');
     } catch (err) {
       console.error('Post wall error:', err);
-      alert('Failed to post');
+      setModalConfig({
+          isOpen: true,
+          title: 'Error',
+          message: 'Failed to post',
+          type: 'danger'
+      });
     } finally {
       setPosting(false);
+    }
+  };
+
+  const handleAddFriend = async () => {
+    if (!user?.uid || !profileUid) return;
+    try {
+        const reqId = `${user.uid}__${profileUid}`;
+        const reqRef = doc(db, 'friendRequests', reqId);
+        
+        const reqSnap = await getDoc(reqRef);
+        if (reqSnap.exists()) {
+            const data = reqSnap.data();
+            if (data.status === 'pending') return;
+            if (data.status === 'accepted') return;
+            await deleteDoc(reqRef);
+        }
+
+        await setDoc(reqRef, {
+            fromUid: user.uid,
+            toUid: profileUid,
+            fromUsername: (user.username || '').toLowerCase().trim(),
+            fromName: user.name || '',
+            fromAvatar: user.avatar || '',
+            status: 'pending',
+            createdAt: serverTimestamp(),
+        });
+        
+        setModalConfig({
+            isOpen: true,
+            title: 'Request Sent',
+            message: 'Friend request sent successfully!',
+            type: 'success'
+        });
+    } catch (err) {
+        console.error('Add friend error:', err);
+        if (err.code === 'permission-denied') {
+            setModalConfig({
+                isOpen: true,
+                title: 'Permission Denied',
+                message: 'Please check Firestore Security Rules.',
+                type: 'danger'
+            });
+        } else {
+            setModalConfig({
+                isOpen: true,
+                title: 'Error',
+                message: 'Failed to send friend request',
+                type: 'danger'
+            });
+        }
+    }
+  };
+
+  const handleUnfriend = async () => {
+    setModalConfig({
+        isOpen: true,
+        title: 'Unfriend',
+        message: 'Are you sure you want to unfriend this user?',
+        type: 'danger',
+        singleButton: false,
+        confirmText: 'Unfriend',
+        onConfirm: executeUnfriend
+    });
+  };
+
+  const executeUnfriend = async () => {
+    try {
+        // 1. Remove from current user's friend list
+        await deleteDoc(doc(db, 'users', user.uid, 'friends', profileUid));
+        await updateDoc(doc(db, 'users', user.uid), { friendCount: increment(-1) });
+    } catch (err) {
+        console.error('Unfriend error:', err);
+        // Error handling
+        return;
+    }
+
+    try {
+        // 2. Try to remove from the other user's friend list
+        await deleteDoc(doc(db, 'users', profileUid, 'friends', user.uid));
+        await updateDoc(doc(db, 'users', profileUid), { friendCount: increment(-1) });
+    } catch (e) {
+        console.warn('Failed to remove from friend\'s list (expected if restricted)', e);
+    }
+  };
+
+  const handleReportUser = () => {
+    setModalConfig({
+        isOpen: true,
+        title: 'Report User',
+        message: 'Are you sure you want to report this user?',
+        type: 'danger',
+        singleButton: false,
+        confirmText: 'Report',
+        onConfirm: executeReportUser
+    });
+  };
+
+  const executeReportUser = async () => {
+    try {
+        await addDoc(collection(db, 'reports'), {
+            targetId: profileUid,
+            targetType: 'user',
+            reportedBy: user.uid,
+            createdAt: serverTimestamp(),
+            status: 'pending'
+        });
+        setModalConfig({
+            isOpen: true,
+            title: 'Report Sent',
+            message: 'Thank you. We will review this user.',
+            type: 'success'
+        });
+    } catch (error) {
+        console.error("Error reporting user:", error);
+        setModalConfig({
+            isOpen: true,
+            title: 'Error',
+            message: 'Failed to send report.',
+            type: 'danger'
+        });
     }
   };
 
@@ -259,15 +410,20 @@ export function PublicProfilePage() {
             )}>
               <div className="flex items-start gap-4">
                 <div className="w-16 h-16 rounded-2xl overflow-hidden border shrink-0">
-                  <img
-                    src={convertDriveLink(profile?.avatar) || ''}
-                    alt={profile?.name || normalizedUsername}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = '';
-                    }}
-                  />
+                  {(() => {
+                    const avatarUrl = convertDriveLink(profile?.avatar);
+                    return avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt={profile?.name || normalizedUsername}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '';
+                        }}
+                      />
+                    ) : null;
+                  })()}
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -286,6 +442,18 @@ export function PublicProfilePage() {
             </div>
 
             <div className="p-6 space-y-3">
+              <div className={cn(
+                'rounded-2xl border p-4 text-center',
+                theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
+              )}>
+                <div className={cn('text-[10px] font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
+                  Friends
+                </div>
+                <div className={cn('mt-1 text-2xl font-black', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                  {friendCount}
+                </div>
+              </div>
+
               {isSelf ? (
                 <button
                   type="button"
@@ -301,18 +469,52 @@ export function PublicProfilePage() {
                 <div className={cn('text-xs font-bold', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
                   Log in to add friends and post
                 </div>
+              ) : friendsDocExists ? (
+                <button
+                  type="button"
+                  onClick={handleUnfriend}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                    theme === 'dark' ? 'border-red-500/50 text-red-400 hover:bg-red-500/10' : 'border-red-200 text-red-600 hover:bg-red-50'
+                  )}
+                >
+                  <UserMinus size={14} /> Unfriend
+                </button>
+              ) : hasPendingRequest ? (
+                <button
+                  type="button"
+                  disabled
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors opacity-50 cursor-not-allowed',
+                    theme === 'dark' ? 'border-white/10 text-white' : 'border-slate-200 text-slate-900'
+                  )}
+                >
+                  <Check size={14} /> Request Sent
+                </button>
               ) : (
-                <div className={cn(
-                  'rounded-2xl border p-4 text-center',
-                  theme === 'dark' ? 'border-white/10 bg-slate-950/30 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-700'
-                )}>
-                  <div className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-                    Friend system moved
-                  </div>
-                  <div className={cn('mt-2 text-xs font-medium', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
-                    Use the Friends menu in the navbar to add or accept friends.
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleAddFriend}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                    'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90'
+                  )}
+                >
+                  <UserPlus size={14} /> Add Friend
+                </button>
+              )}
+
+              {!isSelf && user?.uid && (
+                <button
+                  type="button"
+                  onClick={handleReportUser}
+                  className={cn(
+                    'w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                    theme === 'dark' ? 'border-white/10 text-slate-400 hover:text-red-400 hover:bg-white/5' : 'border-slate-200 text-slate-500 hover:text-red-500 hover:bg-slate-50'
+                  )}
+                >
+                  <Flag size={14} /> Report User
+                </button>
               )}
 
               <div className={cn(
@@ -410,31 +612,23 @@ export function PublicProfilePage() {
                     theme === 'dark' ? 'border-white/10' : 'border-slate-200'
                   )}>
                     <div className="flex items-center gap-3 min-w-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const u = (post.username || '').toLowerCase().trim();
-                          if (!u) return;
-                          navigate(`/u/${u}`);
-                        }}
-                        className={cn(
-                          "w-10 h-10 rounded-full overflow-hidden border shrink-0",
-                          !(post.username || '').trim() && "pointer-events-none"
-                        )}
-                        title={post.username ? `View @${post.username}` : ''}
-                      >
-                        <img
-                          src={convertDriveLink(post.avatar) || ''}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.src = '';
-                          }}
-                        />
-                      </button>
-
-                      <div className="min-w-0">
+                      <div className="w-10 h-10 rounded-full overflow-hidden border shrink-0">
+                        {(() => {
+                          const avatarUrl = convertDriveLink(post.avatar);
+                          return avatarUrl ? (
+                            <img
+                              src={avatarUrl}
+                              alt=""
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = '';
+                              }}
+                            />
+                          ) : null;
+                        })()}
+                      </div>
+                      <div className="min-w-0 flex-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -473,6 +667,11 @@ export function PublicProfilePage() {
           )}
         </section>
       </div>
+
+      <ConfirmationModal
+          {...modalConfig}
+          onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

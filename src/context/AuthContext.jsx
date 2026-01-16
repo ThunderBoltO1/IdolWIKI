@@ -7,7 +7,7 @@ import {
     updateProfile,
     sendPasswordResetEmail
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
 const AuthContext = createContext(null);
@@ -31,6 +31,13 @@ export const AuthProvider = ({ children }) => {
             if (unsubscribeUser) unsubscribeUser();
 
             if (firebaseUser) {
+                // Update online status
+                try {
+                    await updateDoc(doc(db, 'users', firebaseUser.uid), { isOnline: true });
+                } catch (e) {
+                    // Ignore error if doc doesn't exist yet (e.g. during registration flow)
+                }
+
                 // Real-time listener for user document
                 unsubscribeUser = onSnapshot(doc(db, 'users', firebaseUser.uid),
                     (docSnap) => {
@@ -69,21 +76,44 @@ export const AuthProvider = ({ children }) => {
         };
     }, []);
 
+    const logActivity = async (uid, action, details = {}) => {
+        try {
+            await addDoc(collection(db, 'activityLogs'), {
+                userId: uid,
+                action,
+                details,
+                timestamp: serverTimestamp()
+            });
+        } catch (error) {
+            console.error("Error logging activity:", error);
+        }
+    };
+
     const login = async (identifier, password) => {
         setIsLoading(true);
         try {
-            let email = identifier;
+            let email = identifier.trim();
 
             // If identifier doesn't look like an email, treat it as a username
-            if (!identifier.includes('@')) {
-                const usernameDoc = await getDoc(doc(db, 'usernames', identifier.toLowerCase()));
+            if (!email.includes('@')) {
+                const usernameDoc = await getDoc(doc(db, 'usernames', email.toLowerCase()));
                 if (!usernameDoc.exists()) {
                     throw new Error('Username not found');
                 }
-                email = usernameDoc.data().email;
+                const data = usernameDoc.data();
+                if (data.email) {
+                    email = data.email;
+                } else if (data.uid) {
+                    // Fallback: try to get email from user profile if not in username doc
+                    const userDoc = await getDoc(doc(db, 'users', data.uid));
+                    if (userDoc.exists() && userDoc.data().email) {
+                        email = userDoc.data().email;
+                    }
+                }
             }
 
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            await logActivity(userCredential.user.uid, 'login');
             return userCredential.user;
         } catch (error) {
             throw error;
@@ -123,13 +153,15 @@ export const AuthProvider = ({ children }) => {
                 email: email,
                 role: (email === 'admin@example.com' || email === 'mctv2541@gmail.com') ? 'admin' : 'user',
                 avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=60',
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                isOnline: true
             };
 
             await setDoc(doc(db, 'users', firebaseUser.uid), userData);
             console.log("Firestore user document created for:", firebaseUser.uid);
 
             setUser({ uid: firebaseUser.uid, ...userData });
+            await logActivity(firebaseUser.uid, 'register');
             return firebaseUser;
         } catch (error) {
             console.error("Registration failed at step:", error.code || 'unknown');
@@ -142,6 +174,10 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
+            if (user?.uid) {
+                await updateDoc(doc(db, 'users', user.uid), { isOnline: false });
+                await logActivity(user.uid, 'logout');
+            }
             await signOut(auth);
             setUser(null);
         } catch (error) {
@@ -161,6 +197,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             setUser(prev => ({ ...prev, ...data }));
+            await logActivity(user.uid, 'update_profile', data);
         } catch (error) {
             console.error("Update error:", error);
             throw error;

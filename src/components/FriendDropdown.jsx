@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Loader2, Search, UserPlus, Users, X } from 'lucide-react';
-import { collection, doc, documentId, endAt, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAt, updateDoc, where, addDoc } from 'firebase/firestore';
+import { Check, Loader2, Search, UserPlus, Users, X, UserMinus } from 'lucide-react';
+import { collection, doc, documentId, endAt, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAt, updateDoc, where, addDoc, deleteDoc, increment } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
+import { ConfirmationModal } from './ConfirmationModal';
 
 const requestId = (fromUid, toUid) => `${fromUid}__${toUid}`;
 
@@ -30,6 +31,19 @@ export function FriendDropdown() {
     const [targetUid, setTargetUid] = useState(null);
     const [isFriend, setIsFriend] = useState(false);
     const [sending, setSending] = useState(false);
+    const [friendsList, setFriendsList] = useState([]);
+    const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+
+    // Modal State
+    const [modalConfig, setModalConfig] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info',
+        singleButton: true,
+        onConfirm: null,
+        confirmText: 'OK'
+    });
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -57,16 +71,60 @@ export function FriendDropdown() {
                     .map((d) => ({ id: d.id, ...d.data() }))
                     .filter((r) => r.status === 'pending');
 
-                items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-                setIncomingRequests(items);
+                const enriched = items.map((r) => ({
+                    ...r,
+                    fromName: r.fromName || 'Unknown',
+                    fromUsername: r.fromUsername || 'unknown',
+                    fromAvatar: r.fromAvatar || '',
+                })).filter(req => req.fromUsername !== 'unknown');
+                setIncomingRequests(enriched);
             },
-            (err) => {
-                console.error('Incoming requests listener error:', err);
-            }
+            (err) => console.error('Incoming requests error:', err)
         );
 
         return () => unsub();
     }, [user?.uid]);
+
+    useEffect(() => {
+        if (!user?.uid) return;
+
+        const friendsRef = collection(db, 'users', user.uid, 'friends');
+        const unsub = onSnapshot(
+            friendsRef,
+            async (snapshot) => {
+                const friends = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        uid: data.uid || doc.id,
+                        name: data.name || 'Unknown',
+                        username: data.username || 'unknown',
+                        avatar: data.avatar || '',
+                        ...data,
+                    };
+                }).filter(friend => friend.username !== 'unknown');
+                setFriendsList(friends);
+            },
+            (err) => console.error('Friends list error:', err)
+        );
+
+        return () => unsub();
+    }, [user?.uid]);
+
+    useEffect(() => {
+        if (!user?.uid) return;
+
+        const q = query(collection(db, 'users'), where('isOnline', '==', true));
+        const unsub = onSnapshot(q, (snapshot) => {
+            setOnlineUserIds(new Set(snapshot.docs.map(d => d.id)));
+        });
+
+        return () => unsub();
+    }, [user?.uid]);
+
+    const onlineCount = useMemo(() => {
+        return friendsList.filter(f => onlineUserIds.has(f.uid)).length;
+    }, [friendsList, onlineUserIds]);
 
     useEffect(() => {
         if (!user?.uid || !normalizedSearch) {
@@ -171,20 +229,21 @@ export function FriendDropdown() {
     const acceptFriendRequest = async (req) => {
         if (!user?.uid || !req?.fromUid || !req?.id) return;
         try {
+            // These operations should succeed for the current user
             await updateDoc(doc(db, 'friendRequests', req.id), {
                 status: 'accepted',
                 respondedAt: serverTimestamp(),
             });
 
+            // Add friend to current user's list
             await setDoc(doc(db, 'users', user.uid, 'friends', req.fromUid), {
                 uid: req.fromUid,
                 createdAt: serverTimestamp(),
+                name: req.fromName || 'Unknown',
+                username: req.fromUsername || 'unknown',
+                avatar: req.fromAvatar || '',
             });
-
-            await setDoc(doc(db, 'users', req.fromUid, 'friends', user.uid), {
-                uid: user.uid,
-                createdAt: serverTimestamp(),
-            });
+            await updateDoc(doc(db, 'users', user.uid), { friendCount: increment(1) });
 
             // Send notification to the requester that they are now friends
             await addDoc(collection(db, 'notifications'), {
@@ -200,9 +259,37 @@ export function FriendDropdown() {
                 read: false,
                 createdAt: serverTimestamp(),
             });
+
+            // Try to update the other user's data. This might fail due to permissions.
+            try {
+                await setDoc(doc(db, 'users', req.fromUid, 'friends', user.uid), {
+                    uid: user.uid,
+                    createdAt: serverTimestamp(),
+                    name: user.name || 'Anonymous',
+                    username: (user.username || '').toLowerCase().trim(),
+                    avatar: user.avatar || '',
+                });
+                await updateDoc(doc(db, 'users', req.fromUid), { friendCount: increment(1) });
+            } catch (e) {
+                console.warn("Could not update friend's data (permissions may be restricted, this is expected for non-admins):", e);
+            }
         } catch (err) {
             console.error('Accept friend request error:', err);
-            alert('Failed to accept friend request');
+            if (err.code === 'permission-denied') {
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Permission Denied',
+                    message: 'Could not accept friend request. Please check your security rules.',
+                    type: 'danger'
+                });
+            } else {
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Error',
+                    message: 'Failed to accept friend request',
+                    type: 'danger'
+                });
+            }
         }
     };
 
@@ -215,20 +302,57 @@ export function FriendDropdown() {
             });
         } catch (err) {
             console.error('Decline friend request error:', err);
-            alert('Failed to decline friend request');
+            setModalConfig({
+                isOpen: true,
+                title: 'Error',
+                message: 'Failed to decline friend request',
+                type: 'danger'
+            });
         }
     };
 
     const sendFriendRequestToUid = async (toUid) => {
         if (!user?.uid || !toUid) return;
         if (toUid === user.uid) {
-            alert("You can't add yourself");
+            setModalConfig({
+                isOpen: true,
+                title: 'Action not allowed',
+                message: "You can't add yourself",
+                type: 'info'
+            });
             return;
         }
 
         setSending(true);
         try {
-            await setDoc(doc(db, 'friendRequests', requestId(user.uid, toUid)), {
+            const reqRef = doc(db, 'friendRequests', requestId(user.uid, toUid));
+            const reqSnap = await getDoc(reqRef);
+
+            if (reqSnap.exists()) {
+                const data = reqSnap.data();
+                if (data.status === 'pending') {
+                    setModalConfig({
+                        isOpen: true,
+                        title: 'Request Pending',
+                        message: 'Friend request already sent!',
+                        type: 'info'
+                    });
+                    return;
+                }
+                if (data.status === 'accepted') {
+                    setModalConfig({
+                        isOpen: true,
+                        title: 'Already Friends',
+                        message: 'You are already friends!',
+                        type: 'success'
+                    });
+                    return;
+                }
+                // If declined, delete the old request so we can create a new one
+                await deleteDoc(reqRef);
+            }
+
+            await setDoc(reqRef, {
                 fromUid: user.uid,
                 toUid: toUid,
                 fromUsername: (user.username || '').toLowerCase().trim(),
@@ -237,11 +361,68 @@ export function FriendDropdown() {
                 status: 'pending',
                 createdAt: serverTimestamp(),
             });
+            
+            setModalConfig({
+                isOpen: true,
+                title: 'Request Sent',
+                message: 'Friend request sent successfully!',
+                type: 'success'
+            });
         } catch (err) {
             console.error('Send friend request error:', err);
-            alert('Failed to send friend request');
+            if (err.code === 'permission-denied') {
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Permission Denied',
+                    message: 'Please check Firestore Security Rules.',
+                    type: 'danger'
+                });
+            } else {
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Error',
+                    message: 'Failed to send friend request',
+                    type: 'danger'
+                });
+            }
         } finally {
             setSending(false);
+        }
+    };
+
+    const removeFriend = async (friendId) => {
+        if (!user?.uid || !friendId) return;
+        
+        setModalConfig({
+            isOpen: true,
+            title: 'Remove Friend',
+            message: 'Are you sure you want to remove this friend?',
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Remove',
+            onConfirm: () => executeRemoveFriend(friendId)
+        });
+    };
+
+    const executeRemoveFriend = async (friendId) => {
+        try {
+            // 1. Remove from current user's friend list (Should always succeed if rules allow writing to own doc)
+            await deleteDoc(doc(db, 'users', user.uid, 'friends', friendId));
+            // Decrement own friend count
+            await updateDoc(doc(db, 'users', user.uid), { friendCount: increment(-1) });
+        } catch (err) {
+            console.error('Error removing friend from your list:', err);
+            // Error handling is silent or can be added here if needed
+            return;
+        }
+
+        try {
+            // 2. Try to remove from the other user's friend list (Might fail due to permissions, which is fine)
+            await deleteDoc(doc(db, 'users', friendId, 'friends', user.uid));
+            // Decrement the other user's friend count
+            await updateDoc(doc(db, 'users', friendId), { friendCount: increment(-1) });
+        } catch (e) {
+            console.warn('Could not remove from friend\'s list (expected if restricted):', e);
         }
     };
 
@@ -255,20 +436,35 @@ export function FriendDropdown() {
         try {
             const usernameSnap = await getDoc(doc(db, 'usernames', u));
             if (!usernameSnap.exists()) {
-                alert('User not found');
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Not Found',
+                    message: 'User not found',
+                    type: 'danger'
+                });
                 return;
             }
 
             const toUid = usernameSnap.data()?.uid;
             if (!toUid) {
-                alert('User not found');
+                setModalConfig({
+                    isOpen: true,
+                    title: 'Not Found',
+                    message: 'User not found',
+                    type: 'danger'
+                });
                 return;
             }
 
             await sendFriendRequestToUid(toUid);
         } catch (err) {
             console.error('Send friend request error:', err);
-            alert('Failed to send friend request');
+            setModalConfig({
+                isOpen: true,
+                title: 'Error',
+                message: 'Failed to send friend request',
+                type: 'danger'
+            });
         } finally {
             setSending(false);
         }
@@ -419,34 +615,77 @@ export function FriendDropdown() {
                                     </div>
                                 ) : (
                                     <div className="mt-3 space-y-2">
+                                        <AnimatePresence mode="popLayout">
                                         {incomingRequests.map((req) => (
-                                            <div
+                                            <motion.div
+                                                layout
+                                                initial={{ opacity: 0, x: -20 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                exit={{ opacity: 0, x: 20 }}
                                                 key={req.id}
                                                 className={cn(
                                                     "rounded-2xl border p-3 flex items-center gap-3",
                                                     theme === 'dark' ? "border-white/10 bg-slate-950/30" : "border-slate-200 bg-white"
                                                 )}
                                             >
-                                                <div className="w-10 h-10 rounded-full overflow-hidden border shrink-0">
-                                                    <img
-                                                        src={convertDriveLink(req.fromAvatar) || ''}
-                                                        alt=""
-                                                        className="w-full h-full object-cover"
-                                                        onError={(e) => {
-                                                            e.target.onerror = null;
-                                                            e.target.src = '';
-                                                        }}
-                                                    />
-                                                </div>
+                                                {(req.fromAvatar && req.fromAvatar.trim()) && (
+                                                    <div className="w-10 h-10 rounded-full overflow-hidden border shrink-0">
+                                                        {(() => {
+                                                            const avatarUrl = convertDriveLink(req.fromAvatar);
+                                                            return avatarUrl ? (
+                                                                <img
+                                                                    src={avatarUrl}
+                                                                    alt=""
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = '';
+                                                                    }}
+                                                                />
+                                                            ) : null;
+                                                        })()}
+                                                    </div>
+                                                )}
                                                 <div className="flex-1 min-w-0">
                                                     <div className={cn("text-xs font-black truncate", theme === 'dark' ? 'text-white' : 'text-slate-900')}>
                                                         {req.fromName || 'Unknown'}
                                                     </div>
-                                                    <div className={cn("text-[10px] font-bold uppercase tracking-widest truncate", theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const u = (req.fromUsername || '').toLowerCase().trim();
+                                                        if (!u || u === 'unknown') return;
+                                                            setIsOpen(false);
+                                                            navigate(`/u/${u}`);
+                                                        }}
+                                                        className={cn(
+                                                            "text-[10px] font-bold uppercase tracking-widest truncate hover:underline",
+                                                            theme === 'dark' ? 'text-slate-500' : 'text-slate-500',
+                                                            (!(req.fromUsername || '').trim() || req.fromUsername === 'unknown') && 'opacity-50 pointer-events-none'
+                                                        )}
+                                                    >
                                                         @{req.fromUsername || 'unknown'}
-                                                    </div>
+                                                    </button>
                                                 </div>
                                                 <div className="flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const u = (req.fromUsername || '').toLowerCase().trim();
+                                                    if (!u || u === 'unknown') return;
+                                                            setIsOpen(false);
+                                                            navigate(`/u/${u}`);
+                                                        }}
+                                                disabled={!(req.fromUsername || '').trim() || req.fromUsername === 'unknown'}
+                                                        className={cn(
+                                                            "p-2 rounded-xl border transition-colors",
+                                                            theme === 'dark' ? "border-white/10 text-white hover:bg-white/5" : "border-slate-200 text-slate-900 hover:bg-slate-50",
+                                                    (!(req.fromUsername || '').trim() || req.fromUsername === 'unknown') && 'opacity-50'
+                                                        )}
+                                                        title="See profile"
+                                                    >
+                                                        <Search size={14} />
+                                                    </button>
                                                     <button
                                                         type="button"
                                                         onClick={() => declineFriendRequest(req)}
@@ -470,8 +709,121 @@ export function FriendDropdown() {
                                                         <Check size={14} />
                                                     </button>
                                                 </div>
-                                            </div>
+                                            </motion.div>
                                         ))}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Friends List */}
+                            <div>
+                                <div className={cn("text-xs font-black uppercase tracking-widest", theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                                    Your Friends
+                                </div>
+                                <div className={cn("text-[10px] font-bold uppercase tracking-widest mt-1", theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>
+                                    {friendsList.length} friends 
+                                    <span className="text-emerald-500 inline-flex items-center gap-1 ml-1">
+                                        <motion.span 
+                                            animate={{ opacity: [0.5, 1, 0.5] }} 
+                                            transition={{ duration: 2, repeat: Infinity }} 
+                                            className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" 
+                                        /> 
+                                        {onlineCount} online
+                                    </span>
+                                </div>
+
+                                {friendsList.length === 0 ? (
+                                    <div className={cn(
+                                        "mt-3 rounded-2xl border p-4 text-center",
+                                        theme === 'dark' ? "border-white/10 bg-slate-950/30" : "border-slate-200 bg-slate-50"
+                                    )}>
+                                        <p className={cn('text-xs font-bold', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>No friends yet</p>
+                                    </div>
+                                ) : (
+                                    <div className="mt-3 space-y-2">
+                                        <AnimatePresence mode="popLayout">
+                                        {friendsList.map((friend) => (
+                                            <motion.div
+                                                layout
+                                                initial={{ opacity: 0, scale: 0.9 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+                                                key={friend.uid || friend.id}
+                                                className={cn(
+                                                    "rounded-2xl border p-3 flex items-center gap-3",
+                                                    theme === 'dark' ? "border-white/10 bg-slate-950/30" : "border-slate-200 bg-white"
+                                                )}
+                                            >
+                                                {(friend.avatar && friend.avatar.trim()) && (
+                                                    <div className="w-10 h-10 rounded-full overflow-hidden border shrink-0">
+                                                        {(() => {
+                                                            const avatarUrl = convertDriveLink(friend.avatar);
+                                                            return avatarUrl ? (
+                                                                <img
+                                                                    src={avatarUrl}
+                                                                    alt=""
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = '';
+                                                                    }}
+                                                                />
+                                                            ) : null;
+                                                        })()}
+                                                    </div>
+                                                )}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className={cn("text-xs font-black truncate", theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                                                        {friend.name || 'Unknown'}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const u = (friend.username || '').toLowerCase().trim();
+                                                            if (!u || u === 'unknown') return;
+                                                            setIsOpen(false);
+                                                            navigate(`/u/${u}`);
+                                                        }}
+                                                        className={cn(
+                                                            "text-[10px] font-bold uppercase tracking-widest truncate hover:underline",
+                                                            theme === 'dark' ? 'text-slate-500' : 'text-slate-500',
+                                                        (!(friend.username || '').trim() || friend.username === 'unknown') && 'opacity-50 pointer-events-none'
+                                                        )}
+                                                    >
+                                                        @{friend.username || 'unknown'}
+                                                    </button>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const u = (friend.username || '').toLowerCase().trim();
+                                                            if (!u || u === 'unknown') return;
+                                                            setIsOpen(false);
+                                                            navigate(`/u/${u}`);
+                                                        }}
+                                                        disabled={!(friend.username || '').trim() || friend.username === 'unknown'}
+                                                        className={cn(
+                                                            "p-2 rounded-xl border transition-colors",
+                                                            theme === 'dark' ? "border-white/10 text-white hover:bg-white/5" : "border-slate-200 text-slate-900 hover:bg-slate-50",
+                                                            (!(friend.username || '').trim() || friend.username === 'unknown') && 'opacity-50'
+                                                        )}
+                                                        title="See profile"
+                                                    >
+                                                        <Search size={14} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFriend(friend.uid)}
+                                                        className={cn("p-2 rounded-xl border transition-colors", theme === 'dark' ? "border-red-500/20 text-red-400 hover:bg-red-500/10" : "border-red-200 text-red-500 hover:bg-red-100")}
+                                                        title="Remove friend">
+                                                        <UserMinus size={14} />
+                                                    </button>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                        </AnimatePresence>
                                     </div>
                                 )}
                             </div>
@@ -479,6 +831,11 @@ export function FriendDropdown() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <ConfirmationModal
+                {...modalConfig}
+                onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+            />
         </div>
     );
-}
+};

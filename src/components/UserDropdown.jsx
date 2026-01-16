@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, User, Star, LayoutDashboard, Users as UsersIcon, LogOut, Flag } from 'lucide-react';
+import { Settings, User, Star, LayoutDashboard, Users as UsersIcon, LogOut, Flag, Trophy } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 
-export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick, onFavoritesClick, onDashboardClick, onManageUsersClick, onManageReportsClick, onLogoutRequest }) {
+export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick, onFavoritesClick, onDashboardClick, onManageUsersClick, onManageReportsClick, onManageAwardsClick, onLogoutRequest }) {
     const { theme } = useTheme();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -27,6 +27,7 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
         { label: 'Dashboard', icon: LayoutDashboard, action: onDashboardClick, admin: true },
         { label: 'Manage Users', icon: UsersIcon, action: onManageUsersClick, admin: true },
         { label: 'Manage Reports', icon: Flag, action: onManageReportsClick, admin: true },
+        { label: 'Manage Awards', icon: Trophy, action: onManageAwardsClick, admin: true },
     ];
 
     return (

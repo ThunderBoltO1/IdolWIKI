@@ -38,6 +38,8 @@ export function AdminDashboard({ onBack }) {
                 ...prev,
                 onlineUsers: snapshot.size
             }));
+        }, (error) => {
+            console.error("Error fetching online users:", error);
         });
 
         return () => unsubscribe();

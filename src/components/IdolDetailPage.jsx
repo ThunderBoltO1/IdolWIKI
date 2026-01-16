@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Twitter, Globe } from 'lucide-react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cn } from '../lib/utils';
@@ -14,12 +14,34 @@ export function IdolDetailPage() {
   const { isAdmin } = useAuth();
   const { theme } = useTheme();
 
+  const getYouTubeVideoId = (url) => {
+    if (!url) return null;
+    let videoId = null;
+    try {
+        const urlObj = new URL(url);
+        if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname === '/watch') {
+            videoId = urlObj.searchParams.get('v');
+        } else if (urlObj.hostname === 'youtu.be') {
+            videoId = urlObj.pathname.substring(1);
+        } else if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname.startsWith('/embed/')) {
+            videoId = urlObj.pathname.substring('/embed/'.length);
+        }
+    } catch (e) {
+        if (url && url.length === 11 && !url.includes('/') && !url.includes('.')) {
+            videoId = url;
+        }
+    }
+    return videoId;
+  };
+
   const [idol, setIdol] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
   const [isEditingWorks, setIsEditingWorks] = useState(false);
   const [albumsDraft, setAlbumsDraft] = useState([]);
+  const [videosDraft, setVideosDraft] = useState([]);
+  const [galleryDraft, setGalleryDraft] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -55,6 +77,8 @@ export function IdolDetailPage() {
   useEffect(() => {
     setIsEditingWorks(false);
     setAlbumsDraft(idol?.albums || []);
+    setVideosDraft(idol?.videos || []);
+    setGalleryDraft(idol?.gallery || []);
   }, [idol?.id]);
 
   const normalizedAlbums = useMemo(() => {
@@ -88,6 +112,38 @@ export function IdolDetailPage() {
     setAlbumsDraft((prev) => (prev || []).filter((_, i) => i !== index));
   };
 
+  const addVideo = () => {
+    setVideosDraft((prev) => [...(prev || []), { title: '', url: '' }]);
+  };
+
+  const updateVideo = (index, field, value) => {
+    setVideosDraft((prev) => {
+      const next = [...(prev || [])];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const removeVideo = (index) => {
+    setVideosDraft((prev) => (prev || []).filter((_, i) => i !== index));
+  };
+
+  const addGalleryImage = () => {
+    setGalleryDraft((prev) => [...(prev || []), '']);
+  };
+
+  const updateGalleryImage = (index, value) => {
+    setGalleryDraft((prev) => {
+      const next = [...(prev || [])];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const removeGalleryImage = (index) => {
+    setGalleryDraft((prev) => (prev || []).filter((_, i) => i !== index));
+  };
+
   const saveWorks = async () => {
     if (!isAdmin || !idolId) return;
 
@@ -95,6 +151,8 @@ export function IdolDetailPage() {
     try {
       await updateDoc(doc(db, 'idols', idolId), {
         albums: albumsDraft,
+        videos: videosDraft,
+        gallery: galleryDraft,
         updatedAt: new Date().toISOString()
       });
       setIsEditingWorks(false);
@@ -175,7 +233,7 @@ export function IdolDetailPage() {
                   : 'border-transparent bg-brand-purple text-white hover:bg-brand-purple/90'
               )}
             >
-              {isEditingWorks ? 'Cancel' : 'Edit works'}
+              {isEditingWorks ? 'Cancel' : 'Edit Profile'}
             </button>
 
             {isEditingWorks && (
@@ -233,6 +291,33 @@ export function IdolDetailPage() {
                   <Calendar size={14} className="text-brand-purple" />
                   <span>{idol.debutDate || 'Debut date n/a'}</span>
                 </div>
+
+                {idol.instagram && (
+                  <a
+                    href={idol.instagram}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border hover:scale-105 transition-transform',
+                      theme === 'dark' ? 'border-white/10 text-pink-400 bg-slate-950/40' : 'border-slate-200 text-pink-600 bg-slate-50'
+                    )}
+                  >
+                    <Instagram size={14} /> Instagram
+                  </a>
+                )}
+                {idol.twitter && (
+                  <a
+                    href={idol.twitter}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border hover:scale-105 transition-transform',
+                      theme === 'dark' ? 'border-white/10 text-sky-400 bg-slate-950/40' : 'border-slate-200 text-sky-600 bg-slate-50'
+                    )}
+                  >
+                    <Twitter size={14} /> X
+                  </a>
+                )}
               </div>
             </div>
 
@@ -264,6 +349,89 @@ export function IdolDetailPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Videos Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className={cn('text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+            <Youtube size={20} /> Featured Videos
+          </h2>
+          {isEditingWorks && (
+            <button
+              type="button"
+              onClick={addVideo}
+              className={cn(
+                'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90'
+              )}
+            >
+              <Plus size={14} /> Add Video
+            </button>
+          )}
+        </div>
+
+        {isEditingWorks ? (
+          <div className="space-y-3">
+            {videosDraft.map((video, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <input
+                  value={video.title}
+                  onChange={(e) => updateVideo(idx, 'title', e.target.value)}
+                  className={cn(
+                    "w-1/3 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
+                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                  )}
+                  placeholder="Title (e.g. MV)"
+                />
+                <input
+                  value={video.url}
+                  onChange={(e) => updateVideo(idx, 'url', e.target.value)}
+                  className={cn(
+                    "flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
+                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                  )}
+                  placeholder="YouTube URL..."
+                />
+                <button
+                  type="button"
+                  onClick={() => removeVideo(idx)}
+                  className={cn(
+                    "p-3 rounded-2xl transition-colors shrink-0",
+                    theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
+                  )}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {videosDraft.length === 0 && <p className="text-sm text-slate-500 italic">No videos added.</p>}
+          </div>
+        ) : (
+          (idol.videos && idol.videos.length > 0) ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {idol.videos.map((video, idx) => (
+                <div key={idx} className="space-y-2">
+                  <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src={`https://www.youtube.com/embed/${getYouTubeVideoId(video.url)}`}
+                      title="YouTube video player"
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="absolute inset-0"
+                    />
+                  </div>
+                  <p className={cn("text-sm font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled'}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 italic">No videos available.</p>
+          )
+        )}
       </div>
 
       <div className="space-y-4">
@@ -393,20 +561,22 @@ export function IdolDetailPage() {
                           )}
                         />
                       ) : (
-                        <a
-                          href={album.youtube || '#'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={cn(
-                            'mt-2 inline-block text-sm font-bold',
-                            album.youtube ? 'text-brand-pink hover:underline' : (theme === 'dark' ? 'text-slate-500' : 'text-slate-500')
-                          )}
-                          onClick={(e) => {
-                            if (!album.youtube) e.preventDefault();
-                          }}
-                        >
-                          {album.youtube ? 'Open video' : 'n/a'}
-                        </a>
+                        album.youtube ? (
+                          <div className="mt-4 rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                              <iframe
+                                  width="100%"
+                                  height="100%"
+                                  src={`https://www.youtube.com/embed/${getYouTubeVideoId(album.youtube)}`}
+                                  title="YouTube video player"
+                                  frameBorder="0"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowFullScreen
+                                  className="absolute inset-0"
+                              />
+                          </div>
+                        ) : (
+                          <p className={cn('mt-2 text-sm', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>n/a</p>
+                        )
                       )}
 
                       <p className={cn('mt-5 text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Tracks</p>
@@ -440,6 +610,74 @@ export function IdolDetailPage() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Gallery Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className={cn('text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+            <ImageIcon size={20} /> Gallery
+          </h2>
+          {isEditingWorks && (
+            <button
+              type="button"
+              onClick={addGalleryImage}
+              className={cn(
+                'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90'
+              )}
+            >
+              <Plus size={14} /> Add Image
+            </button>
+          )}
+        </div>
+
+        {isEditingWorks ? (
+          <div className="space-y-3">
+            {galleryDraft.map((url, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <input
+                  value={url}
+                  onChange={(e) => updateGalleryImage(idx, e.target.value)}
+                  className={cn(
+                    "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
+                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                  )}
+                  placeholder="Image URL..."
+                />
+                <button
+                  type="button"
+                  onClick={() => removeGalleryImage(idx)}
+                  className={cn(
+                    "p-3 rounded-2xl transition-colors shrink-0",
+                    theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
+                  )}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {galleryDraft.length === 0 && <p className="text-sm text-slate-500 italic">No images added.</p>}
+          </div>
+        ) : (
+          (idol.gallery && idol.gallery.length > 0) ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {idol.gallery.map((img, idx) => (
+                <div key={idx} className="aspect-square rounded-2xl overflow-hidden shadow-md hover:scale-105 transition-transform duration-300 cursor-pointer">
+                  <img
+                    src={convertDriveLink(img)}
+                    alt={`Gallery ${idx}`}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                    onClick={() => window.open(convertDriveLink(img), '_blank')}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 italic">No gallery images.</p>
+          )
         )}
       </div>
     </div>

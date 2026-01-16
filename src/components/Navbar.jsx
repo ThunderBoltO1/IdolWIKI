@@ -111,6 +111,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                 onDashboardClick={onDashboardClick}
                                 onManageUsersClick={onManageUsersClick}
                                 onManageReportsClick={onManageReportsClick}
+                                onManageAwardsClick={() => window.location.href = '/admin/awards'}
                                 onLogoutRequest={onLogoutRequest}
                             />
                         </div>

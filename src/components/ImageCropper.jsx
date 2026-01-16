@@ -4,13 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import getCroppedImgDataUrl from '../lib/cropImage';
-import { Check, X, ZoomIn, ZoomOut, Crop as CropIcon, Loader2 } from 'lucide-react';
+import { Check, X, ZoomIn, ZoomOut, Crop as CropIcon, Loader2, Maximize, Minimize } from 'lucide-react';
 
 export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 }) {
     const { theme } = useTheme();
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+    const [objectFit, setObjectFit] = useState('contain');
     const [cropShape, setCropShape] = useState("round"); // Default to round, can be "rect"
     const [loading, setLoading] = useState(true);
     const [image, setImage] = useState(null);
@@ -125,6 +126,15 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                                 className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-brand-pink"
                             />
                             <ZoomIn size={20} className="text-slate-500" />
+                            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2" />
+                            <button
+                                type="button"
+                                onClick={() => setObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
+                                className={cn("p-2 rounded-lg transition-colors", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")}
+                                title={objectFit === 'contain' ? "Fill Frame" : "Fit Image"}
+                            >
+                                {objectFit === 'contain' ? <Maximize size={20} /> : <Minimize size={20} />}
+                            </button>
                         </div>
                         <div className="flex gap-3">
                             <button

@@ -8,6 +8,7 @@ import { createImage, isDataUrl } from '../lib/cropImage';
 import { getDocs, query, where, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { convertDriveLink } from '../lib/storage';
+import { useAwards } from '../hooks/useAwards.js';
 
 function DateSelect({ value, onChange, theme }) {
     const date = value ? new Date(value) : new Date();
@@ -87,114 +88,6 @@ function DateSelect({ value, onChange, theme }) {
     );
 }
 
-const AWARD_DATA = {
-    "K-Pop & Music Awards": {
-        "MAMA Awards": [
-            "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
-            "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best New Male Artist", "Best New Female Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
-            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
-        ],
-        "Melon Music Awards (MMA)": [
-            "Record of the Year (Daesang)",
-            "Song of the Year (Daesang)",
-            "Album of the Year (Daesang)",
-            "Artist of the Year (Daesang)",
-            "Best Group (Female)",
-            "New Artist of the Year",
-            "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
-            "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
-            "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
-        ],
-        "Golden Disc Awards (GDA)": [
-            "Digital Daesang (Song of the Year)", "Album Daesang (Album of the Year)",
-            "Digital Song Bonsang", "Album Bonsang", "Rookie Artist of the Year",
-            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award", "Song Division"
-        ],
-        "Korean Music Awards (KMA)": [
-            "Musician of the Year", "Song of the Year", "Album of the Year", "Rookie of the Year",
-            "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
-        ],
-        "Seoul Music Awards (SMA)": [
-            "Rookie of the Year",
-            "Main Award (Bonsang)",
-            "Best Performance Award",
-            "World Best Artist Award",
-            "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
-            "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
-            "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
-        ],
-        "Circle Chart Music Awards": [
-            "Artist of the Year (Global Digital)", "Artist of the Year (Physical Album)", "Artist of the Year (Unique Listeners)",
-            "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
-        ],
-        "The Fact Music Awards (TMA)": [
-            "Artist of the Year (Bonsang)",
-            "Worldwide Icon",
-            "Hot Trend Award",
-            "Next Leader Award",
-            "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
-            "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
-        ],
-        "Asia Artist Awards (AAA)": [
-            "Stage of the Year (Daesang)",
-            "Hot Trend Award",
-            "Rookie of the Year",
-            "Best New Artist (Singer)",
-            "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
-            "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
-            "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
-        ],
-        "Hanteo Music Awards": [
-            "Artist of the Year (Bonsang)",
-            "Best Performance (Group)",
-            "Rookie of the Year (Female)"
-        ],
-        "K-World Dream Awards": [
-            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
-            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
-        ],
-        "Korea Grand Music Awards": [
-            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
-            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
-        ],
-        "TikTok Awards Korea": [
-            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
-        ],
-        "Billboard Music Awards": [
-            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
-        ],
-        "MTV Video Music Awards": [
-            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
-        ]
-    },
-    "Acting & Arts Awards": {
-        "Baeksang Arts Awards": [
-            "Grand Prize (Daesang) - TV", "Best Drama", "Best Director (TV)", "Best Actor (TV)", "Best Actress (TV)",
-            "Best Supporting Actor (TV)", "Best Supporting Actress (TV)", "Best New Actor (TV)", "Best New Actress (TV)",
-            "Grand Prize (Daesang) - Film", "Best Film", "Best Director (Film)", "Best Actor (Film)", "Best Actress (Film)",
-            "Best Supporting Actor (Film)", "Best Supporting Actress (Film)", "Best New Actor (Film)", "Best New Actress (Film)",
-            "Most Popular Actor", "Most Popular Actress"
-        ],
-        "Blue Dragon Series Awards": [
-            "Blue Dragon's Choice (Daesang)", "Best Drama", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress",
-            "Best Entertainer", "Popular Star Award"
-        ],
-        "Blue Dragon Film Awards": [
-            "Best Film", "Best Director", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress",
-            "Popular Star Award"
-        ],
-        "Grand Bell Awards": [
-            "Best Film", "Best Director", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress"
-        ]
-    }
-};
-
 export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const { theme } = useTheme();
     const [loading, setLoading] = useState(false);
@@ -216,6 +109,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         awards: [],
         albums: []
     });
+    const { awards: awardData } = useAwards();
 
     const [newAward, setNewAward] = useState({
         year: new Date().getFullYear(),
@@ -397,7 +291,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })}
                                             className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                         >
-                                            {Object.keys(AWARD_DATA).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                            {Object.keys(awardData).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                         </select>
                                         <input
                                             type="number"
@@ -414,7 +308,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                         >
                                             <option value="">Select Award Show</option>
-                                            {newAward.category && Object.keys(AWARD_DATA[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
+                                            {newAward.category && awardData[newAward.category] && Object.keys(awardData[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
                                         </select>
                                         <select
                                             value={newAward.award}
@@ -423,7 +317,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                         >
                                             <option value="">Select Award</option>
-                                            {newAward.show && AWARD_DATA[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
+                                            {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
                                         </select>
                                     </div>
                                     <motion.button

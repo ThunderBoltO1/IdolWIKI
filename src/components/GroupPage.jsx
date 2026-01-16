@@ -14,114 +14,8 @@ import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { GroupCard } from './GroupCard';
 import Cropper from 'react-easy-crop';
-
-const AWARD_DATA = {
-    "K-Pop & Music Awards": {
-        "MAMA Awards": [
-            "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
-            "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best New Male Artist", "Best New Female Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
-            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
-        ],
-        "Melon Music Awards (MMA)": [
-            "Record of the Year (Daesang)",
-            "Song of the Year (Daesang)",
-            "Album of the Year (Daesang)",
-            "Artist of the Year (Daesang)",
-            "Best Group (Female)",
-            "New Artist of the Year",
-            "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
-            "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
-            "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
-        ],
-        "Golden Disc Awards (GDA)": [
-            "Digital Daesang (Song of the Year)", "Album Daesang (Album of the Year)",
-            "Digital Song Bonsang", "Album Bonsang", "Rookie Artist of the Year",
-            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award"
-        ],
-        "Korean Music Awards (KMA)": [
-            "Musician of the Year", "Song of the Year", "Album of the Year", "Rookie of the Year",
-            "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
-        ],
-        "Seoul Music Awards (SMA)": [
-            "Rookie of the Year",
-            "Main Award (Bonsang)",
-            "Best Performance Award",
-            "World Best Artist Award",
-            "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
-            "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
-            "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
-        ],
-        "Circle Chart Music Awards": [
-            "Artist of the Year (Global Digital)", "Artist of the Year (Physical Album)", "Artist of the Year (Unique Listeners)",
-            "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
-        ],
-        "The Fact Music Awards (TMA)": [
-            "Artist of the Year (Bonsang)",
-            "Worldwide Icon",
-            "Hot Trend Award",
-            "Next Leader Award",
-            "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
-            "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
-        ],
-        "Asia Artist Awards (AAA)": [
-            "Stage of the Year (Daesang)",
-            "Hot Trend Award",
-            "Rookie of the Year",
-            "Best New Artist (Singer)",
-            "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
-            "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
-            "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
-        ],
-        "Hanteo Music Awards": [
-            "Artist of the Year (Bonsang)",
-            "Best Performance (Group)",
-            "Rookie of the Year (Female)"
-        ],
-        "K-World Dream Awards": [
-            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
-            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
-        ],
-        "Korea Grand Music Awards": [
-            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
-            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
-        ],
-        "TikTok Awards Korea": [
-            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
-        ],
-        "Billboard Music Awards": [
-            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
-        ],
-        "MTV Video Music Awards": [
-            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
-        ]
-    },
-    "Acting & Arts Awards": {
-        "Baeksang Arts Awards": [
-            "Grand Prize (Daesang) - TV", "Best Drama", "Best Director (TV)", "Best Actor (TV)", "Best Actress (TV)",
-            "Best Supporting Actor (TV)", "Best Supporting Actress (TV)", "Best New Actor (TV)", "Best New Actress (TV)",
-            "Grand Prize (Daesang) - Film", "Best Film", "Best Director (Film)", "Best Actor (Film)", "Best Actress (Film)",
-            "Best Supporting Actor (Film)", "Best Supporting Actress (Film)", "Best New Actor (Film)", "Best New Actress (Film)",
-            "Most Popular Actor", "Most Popular Actress"
-        ],
-        "Blue Dragon Series Awards": [
-            "Blue Dragon's Choice (Daesang)", "Best Drama", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress",
-            "Best Entertainer", "Popular Star Award"
-        ],
-        "Blue Dragon Film Awards": [
-            "Best Film", "Best Director", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress",
-            "Popular Star Award"
-        ],
-        "Grand Bell Awards": [
-            "Best Film", "Best Director", "Best Actor", "Best Actress",
-            "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress"
-        ]
-    }
-};
+import { MusicPlayer } from './MusicPlayer';
+import { useAwards } from '../hooks/useAwards.js';
 
 export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [] }) {
     const { isAdmin, user } = useAuth();
@@ -160,15 +54,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         confirmText: 'OK'
     });
     const [similarGroups, setSimilarGroups] = useState([]);
-    const [loadingSimilarGroups, setLoadingSimilarGroups] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
 
     const [heroCrop, setHeroCrop] = useState({ x: 0, y: 0 });
     const [heroZoom, setHeroZoom] = useState(1);
     const [heroCroppedArea, setHeroCroppedArea] = useState(null);
-    const searchInputRef = useRef(null);
-    const dropdownRef = useRef(null);
-
 
     const [memberSearch, setMemberSearch] = useState('');
     const [editingMembers, setEditingMembers] = useState([]);
@@ -176,11 +66,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [news, setNews] = useState([]);
     const [loadingNews, setLoadingNews] = useState(false);
     const [newsSourceFilter, setNewsSourceFilter] = useState('all');
-
-    const filteredNews = useMemo(() => {
-        if (newsSourceFilter === 'all') return news;
-        return news.filter(item => item.provider?.[0]?.name.toLowerCase().includes(newsSourceFilter.toLowerCase()));
-    }, [news, newsSourceFilter]);
+    const { awards: awardData } = useAwards();
 
     const calculateAgeAtDate = (birthDate, targetDate) => {
         if (!birthDate || !targetDate) return null;
@@ -192,35 +78,36 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         return age;
     };
 
+    const getYouTubeVideoId = (url) => {
+        if (!url) return null;
+        let videoId = null;
+        try {
+            const urlObj = new URL(url);
+            if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname === '/watch') {
+                videoId = urlObj.searchParams.get('v');
+            } else if (urlObj.hostname === 'youtu.be') {
+                videoId = urlObj.pathname.substring(1);
+            } else if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname.startsWith('/embed/')) {
+                videoId = urlObj.pathname.substring('/embed/'.length);
+            }
+        } catch (e) {
+            if (url.length === 11 && !url.includes('/') && !url.includes('.')) {
+                videoId = url;
+            }
+        }
+        return videoId;
+    };
+
     const sortedMembers = useMemo(() => {
         if (!members) return [];
-        const currentMemberIds = displayGroup?.members || [];
+        const currentMemberIds = isEditing ? (formData.members || []) : (displayGroup?.members || []);
         
         const memberMap = new Map(members.map(m => [m.id, m]));
         const ordered = currentMemberIds.map(id => memberMap.get(id)).filter(Boolean);
         const orderedIds = new Set(ordered.map(m => m.id));
         const remaining = members.filter(m => !orderedIds.has(m.id));
         return [...ordered, ...remaining];
-    }, [members, displayGroup?.members]);
-
-    const editingMembersList = useMemo(() => {
-        const memberIds = formData.members || [];
-        const memberMap = new Map(allIdols.map(m => [m.id, m]));
-        return memberIds.map(id => memberMap.get(id)).filter(Boolean);
-    }, [formData.members, allIdols]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target) && searchInputRef.current && !searchInputRef.current.contains(event.target)) {
-                setMemberSearch('');
-            }
-        };
-
-        if (memberSearch) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [memberSearch]);
+    }, [members, isEditing, formData.members, displayGroup?.members]);
 
     const timelineMembers = useMemo(() => {
         return [...(members || [])].sort((a, b) => {
@@ -228,6 +115,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             const dateB = new Date(b.debutDate || '9999-12-31');
             return dateA - dateB;
         });
+    }, [members]);
+
+    useEffect(() => {
+        if (members) {
+            setEditingMembers(members);
+        }
     }, [members]);
 
     useEffect(() => {
@@ -272,7 +165,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         if (!displayGroup?.company) return;
 
         const fetchSimilar = async () => {
-            setLoadingSimilarGroups(true);
             try {
                 const q = query(
                     collection(db, 'groups'),
@@ -286,21 +178,22 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 setSimilarGroups(results);
             } catch (err) {
                 console.error("Error fetching similar groups", err);
-            } finally {
-                setLoadingSimilarGroups(false);
             }
         };
         fetchSimilar();
     }, [displayGroup?.company, displayGroup?.id]);
 
     useEffect(() => {
+        const controller = new AbortController();
         if (activeTab === 'news' && displayGroup?.name) {
-            fetchNews();
+            fetchNews(controller.signal);
         }
+        return () => controller.abort();
     }, [activeTab, displayGroup?.name]);
 
-    const fetchNews = async () => {
+    const fetchNews = async (signal) => {
         setLoadingNews(true);
+        setNews([]);
         try {
             const groupNameLower = displayGroup.name.toLowerCase();
             const koreanNameLower = (displayGroup.koreanName || '').toLowerCase();
@@ -311,60 +204,122 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 const rssUrl = 'https://www.koreaboo.com/feed/';
                 const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
             
-                const response = await fetch(apiUrl);
+                const response = await fetch(apiUrl, { signal });
                 const data = await response.json();
 
                 if (data.status === 'ok') {
-                    const filteredItems = data.items.filter(item => {
+                    let filteredItems = data.items.filter(item => {
                         const title = (item.title || '').toLowerCase();
                         return title.includes(groupNameLower) || (koreanNameLower && title.includes(koreanNameLower));
                     });
 
+                    // If no news found with group name, try searching by member names
+                    if (filteredItems.length === 0 && members.length > 0) {
+                        const memberNames = members.map(m => m.name.toLowerCase());
+                        filteredItems = data.items.filter(item => {
+                            const title = (item.title || '').toLowerCase();
+                            return memberNames.some(name => title.includes(name));
+                        });
+                    }
+
+                    const extractThumbnail = async (url) => {
+                        try {
+                            // Note: Direct fetching might be blocked by CORS policies on the client-side.
+                            // A proxy would be required for this to work reliably for all URLs.
+                            const response = await fetch(url, { signal });
+                            const html = await response.text();
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(html, 'text/html');
+
+                            // Try og:image
+                            let thumbnail = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || 
+                                            doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content');
+                            
+                            if (!thumbnail) {
+                                // Fallback: find first large enough image
+                                const images = Array.from(doc.querySelectorAll('img'));
+                                for (const img of images) {
+                                    const src = img.getAttribute('src');
+                                    // Skip small icons, tracking pixels, etc.
+                                    if (src && !src.includes('icon') && !src.includes('logo') && !src.includes('pixel')) {
+                                        thumbnail = src;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (thumbnail && !thumbnail.startsWith('http')) {
+                                thumbnail = new URL(thumbnail, new URL(url).origin).href;
+                            }
+                            return thumbnail || null;
+                        } catch (err) {
+                            if (err.name === 'AbortError') return null;
+                            console.warn(`Failed to extract thumbnail for ${url}:`, err);
+                            return null;
+                        }
+                    };
+
                     if (filteredItems.length > 0) {
-                        mappedNews = filteredItems.map(item => {
-                            // Try to find image in description if not in thumbnail/enclosure
+                        const enrichedItems = await Promise.all(filteredItems.map(async (item) => {
+                            const thumbnail = await extractThumbnail(item.link);
                             let contentImg = null;
                             const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
-                            if (imgMatch) {
-                                contentImg = imgMatch[1];
-                            }
+                            if (imgMatch) contentImg = imgMatch[1];
+                            
+                            // Check for enclosure or media:content from rss2json structure
+                            const enclosureImg = item.enclosure?.link || item.thumbnail;
+                            const finalThumbnail = thumbnail || enclosureImg || contentImg;
 
                             return {
-                            name: item.title,
-                            url: item.link,
-                            description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
-                            datePublished: item.pubDate,
-                            provider: [{ name: data.feed?.title || 'Koreaboo' }],
-                            image: { 
-                                thumbnail: { 
-                                    // Prioritize thumbnail, then enclosure, then extracted from content, then fallback
-                                    contentUrl: item.thumbnail || item.enclosure?.link || contentImg || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'
-                                } 
-                            }
-                        }});
+                                name: item.title,
+                                url: item.link,
+                                description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
+                                datePublished: item.pubDate,
+                                provider: [{ name: data.feed?.title || 'Koreaboo' }],
+                                image: {
+                                    thumbnail: {
+                                        contentUrl: finalThumbnail
+                                    }
+                                }
+                            };
+                        }));
+                        mappedNews = enrichedItems
+                            .sort((a, b) => new Date(b.datePublished) - new Date(a.datePublished))
+                            .slice(0, 10);
                     }
                 }
             } catch (err) {
+                if (err.name !== 'AbortError') {
                 console.warn("Koreaboo fetch failed, trying fallback...", err);
+                }
             }
 
             // 2. Fallback: Google News RSS via rss2json
             if (mappedNews.length === 0) {
                 try {
-                    const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(displayGroup.name + ' kpop')}&hl=en-US&gl=US&ceid=US:en`;
+                    // Use a broader search query for Google News to get more results
+                    const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(displayGroup.name + ' kpop')}&hl=en-US&gl=US&ceid=US:en&when:7d`;
                     const googleApiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleRssUrl)}`;
                     
-                    const response = await fetch(googleApiUrl);
+                    const response = await fetch(googleApiUrl, { signal });
                     const data = await response.json();
 
                     if (data.status === 'ok') {
-                        mappedNews = data.items.map(item => {
+                        const googleNews = data.items.map(item => {
                             // Try to find image in description if not in thumbnail/enclosure
                             let contentImg = null;
                             const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
-                            if (imgMatch) {
-                                contentImg = imgMatch[1];
+                            if (imgMatch) contentImg = imgMatch[1];
+
+                            // Google News often puts images in description HTML but not as enclosure
+                            // We can try to extract it, or use a better fallback
+                            let thumbnail = item.enclosure?.link || item.thumbnail || contentImg;
+
+                            // If still no image, try to extract from content if available
+                            if (!thumbnail && item.content) {
+                                const contentMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
+                                if (contentMatch) thumbnail = contentMatch[1];
                             }
+
                             return {
                             name: item.title,
                             url: item.link,
@@ -373,23 +328,38 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             provider: [{ name: 'Google News' }],
                             image: { 
                             thumbnail: {
-                                    contentUrl: item.thumbnail || item.enclosure?.link || contentImg || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'
+                                    contentUrl: thumbnail
                                 } 
                             }
                         }});
+                        // Google News results are already specific to the query, so we might not need strict filtering again.
+                        // But let's keep a loose filter just in case.
+                        mappedNews = googleNews
+                            .sort((a, b) => new Date(b.datePublished) - new Date(a.datePublished))
+                            .slice(0, 20); // Show up to 20 news items from Google
                     }
                 } catch (err) {
+                    if (err.name !== 'AbortError') {
                     console.error("Google News fallback failed", err);
+                    }
                 }
             }
 
             setNews(mappedNews);
         } catch (error) {
+            if (error.name !== 'AbortError') {
             console.error("Error fetching news:", error);
+            }
         } finally {
             setLoadingNews(false);
         }
     };
+
+    const filteredNews = useMemo(() => {
+        if (newsSourceFilter === 'all') return news;
+        return news.filter(item => item.provider?.[0]?.name.toLowerCase().includes(newsSourceFilter.toLowerCase()));
+    }, [news, newsSourceFilter]);
+
 
     const createMentions = async (text, commentId) => {
         const mentionRegex = /@([a-zA-Z0-9_]+)/g;
@@ -648,11 +618,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         }
 
         // Handle Member Updates
-        const originalMemberIds = group.members || [];
-        const newMemberIds = formData.members || [];
+        const currentMemberIds = members.map(m => m.id);
+        const newMemberIds = editingMembers.map(m => m.id);
         
-        const addedMembers = newMemberIds.filter(id => !originalMemberIds.includes(id));
-        const removedMembers = originalMemberIds.filter(id => !newMemberIds.includes(id));
+        const addedMembers = newMemberIds.filter(id => !currentMemberIds.includes(id));
+        const removedMembers = currentMemberIds.filter(id => !newMemberIds.includes(id));
 
         if (addedMembers.length > 0 || removedMembers.length > 0) {
             const batch = writeBatch(db);
@@ -748,7 +718,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     return (
-        <div className="py-6 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 30 }}
+            className="py-6 space-y-10"
+        >
             {/* Social Media Links (Top) */}
             {!isEditing && (displayGroup?.instagram || displayGroup?.twitter || displayGroup?.youtube) && (
                 <div className="flex justify-end gap-3 px-2">
@@ -760,7 +735,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     )}
                     {displayGroup.twitter && (
                         <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-sky-500 hover:bg-sky-500 hover:text-white border border-white/10" : "bg-white text-sky-500 hover:bg-sky-500 hover:text-white border border-slate-100")}>
-                        <X size={18} />
+                            <Twitter size={18} />
                             <span className="hidden sm:inline">X</span>
                         </a>
                     )}
@@ -789,6 +764,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 onCropChange={setHeroCrop}
                                 onCropComplete={(_, pixels) => setHeroCroppedArea(pixels)}
                                 onZoomChange={setHeroZoom}
+                                            cropShape="rect"
+                                            restrictPosition={false}
                                 showGrid={false}
                                 objectFit="horizontal-cover"
                             />
@@ -810,6 +787,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         <img
                             src={convertDriveLink(activeImage)}
                             alt={displayGroup.name}
+                            loading="eager"
                             className="w-full h-full object-cover"
                             onError={(e) => {
                                 e.target.onerror = null;
@@ -932,6 +910,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         placeholder="Hero Image URL"
                                     />
                                 </div>
+                                <div className="flex items-center gap-2">
+                                    <Youtube size={16} className="text-white/50" />
+                                    <input
+                                        value={formData.themeSongUrl || ''}
+                                        onChange={e => setFormData({...formData, themeSongUrl: e.target.value})}
+                                        className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
+                                        placeholder="Theme Song URL (YouTube)"
+                                    />
+                                </div>
                             </div>
                         ) : (
                             <>
@@ -971,9 +958,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 {activeTab === 'members' && (
                     <div className="lg:col-span-4 space-y-6">
                         <motion.div
-                        initial={{ opacity: 0, x: -30 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.5 }}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 30, delay: 0.2 } }}
+                        viewport={{ once: true }}
                         className={cn(
                             "p-6 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
                             theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-slate-200"
@@ -1045,7 +1032,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })}
                                                     className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                                 >
-                                                    {Object.keys(AWARD_DATA).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                    {Object.keys(awardData).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                                 </select>
                                                 <input
                                                     type="number"
@@ -1062,7 +1049,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                                 >
                                                     <option value="">Select Award Show</option>
-                                                    {newAward.category && Object.keys(AWARD_DATA[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
+                                                    {newAward.category && awardData[newAward.category] && Object.keys(awardData[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
                                                 </select>
                                                 <select
                                                     value={newAward.award}
@@ -1071,7 +1058,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
                                                 >
                                                     <option value="">Select Award</option>
-                                                    {newAward.show && AWARD_DATA[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
+                                                    {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
                                                 </select>
                                             </div>
                                             <motion.button
@@ -1188,7 +1175,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         />
                                     </div>
                                     <div className="flex items-center gap-3">
-                                    <X size={16} className="text-slate-400" />
+                                        <Twitter size={16} className="text-slate-400" />
                                         <input 
                                             value={formData.twitter || ''} 
                                             onChange={e => setFormData({...formData, twitter: e.target.value})}
@@ -1215,7 +1202,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     )}
                                     {displayGroup.twitter && (
                                         <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 text-sky-500 hover:scale-105 transition-transform border border-sky-500/20 font-bold text-xs">
-                                        <X size={16} /> X
+                                            <Twitter size={16} /> X
                                         </a>
                                     )}
                                     {displayGroup.youtube && (
@@ -1279,7 +1266,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 "border-transparent opacity-70 hover:opacity-100 hover:scale-105 hover:rotate-1"
                                             )}
                                         >
-                                            <img src={img} className="w-full h-full object-cover" alt="" />
+                                            <img src={img} className="w-full h-full object-cover" alt="" loading="lazy" />
                                         </button>
                                     ))}
                                 </div>
@@ -1293,30 +1280,24 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 <div className={cn("space-y-8", activeTab === 'members' ? "lg:col-span-8" : "lg:col-span-12")}>
                     <div className="flex items-center justify-between flex-wrap gap-y-3">
                         <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
-                            <div
-                                role="button"
-                                tabIndex={0}
+                            <button
                                 onClick={() => setActiveTab('members')}
-                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('members')}
                                 className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'members'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'members' ? (
+                                {activeTab === 'members' && (
                                     <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
-                                        <Users size={24} />
+                                        <Star size={24} fill="currentColor" />
                                     </motion.div>
-                                ) : <Users size={24} />}
+                                )}
                                 Members
-                            </div>
-                            <div
-                                role="button"
-                                tabIndex={0}
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('timeline')}
-                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('timeline')}
                                 className={cn(
                                     "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'timeline'
@@ -1324,18 +1305,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'timeline' ? (
+                                {activeTab === 'timeline' && (
                                     <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
                                         <History size={24} />
                                     </motion.div>
-                                ) : <History size={24} />}
+                                )}
                                 Timeline
-                            </div>
-                            <div
-                                role="button"
-                                tabIndex={0}
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('discography')}
-                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('discography')}
                                 className={cn(
                                     "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'discography'
@@ -1343,58 +1321,59 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'discography' ? (
+                                {activeTab === 'discography' && (
                                     <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-purple/10 text-brand-purple shadow-inner">
                                         <Disc size={24} fill="currentColor" />
                                     </motion.div>
-                                ) : <Disc size={24} />}
+                                )}
                                 Discography
-                            </div>
+                            </button>
                             <div
-                                role="button"
-                                tabIndex={0}
                                 onClick={() => setActiveTab('news')}
-                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('news')}
                                 className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
                                     activeTab === 'news'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'news' ? (
+                                {activeTab === 'news' && (
                                     <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-green-500/10 text-green-500 shadow-inner">
                                         <Newspaper size={24} fill="currentColor" />
                                     </motion.div>
-                                ) : <Newspaper size={24} />}
-                                News
+                                )}
+                                <div className="flex items-center gap-3">
+                                    News
+                                    {activeTab === 'news' && (
+                                        <button onClick={(e) => { e.stopPropagation(); fetchNews(); }} disabled={loadingNews} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                                            <RefreshCw size={20} className={cn(loadingNews && "animate-spin")} />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div
-                                role="button"
-                                tabIndex={0}
+                            <button
                                 onClick={() => setActiveTab('comments')}
-                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('comments')}
                                 className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'comments'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'comments' ? (
+                                {activeTab === 'comments' && (
                                     <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-blue/10 text-brand-blue shadow-inner">
-                                        <MessageSquare size={24} />
+                                        <MessageSquare size={24} fill="currentColor" />
                                     </motion.div>
-                                ) : <MessageSquare size={24} />}
+                                )}
                                 Fan Talk
                                 <span className="text-xl md:text-2xl opacity-30 ml-2">({comments.length})</span>
-                            </div>
+                            </button>
                         </div>
                     </div>
 
                     {activeTab === 'members' ? (
                         <>
-                            {isEditing && !isReordering && (
+                            {isEditing && (
                                 <div className="flex justify-end mb-4">
                                     <button
                                         onClick={() => setIsReordering(!isReordering)}
@@ -1411,80 +1390,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
                             )}
 
-                            {isEditing && (
-                                <div className="space-y-6 mb-8 p-6 rounded-2xl border border-dashed border-brand-pink/30 bg-brand-pink/5">
-                                    <div className="space-y-3">
-                                        <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                            <Users size={12} /> Manage Members
-                                        </label>
-                                        
-                                        <div className="relative">
-                                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                                            <input
-                                                ref={searchInputRef}
-                                                value={memberSearch}
-                                                onChange={e => setMemberSearch(e.target.value)}
-                                                className={cn(
-                                                    "w-full rounded-2xl py-3 pl-12 pr-4 border-2 focus:outline-none transition-all text-sm font-bold",
-                                                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
-                                                )}
-                                                placeholder="Search idols to add..."
-                                            />
-                                            {memberSearch && (
-                                                <div 
-                                                    ref={dropdownRef}
-                                                    className={cn(
-                                                    "absolute top-full left-0 right-0 mt-2 rounded-2xl border shadow-xl overflow-hidden z-20 max-h-48 overflow-y-auto",
-                                                    theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-white border-slate-200"
-                                                )}>
-                                                    {allIdols.filter(i => 
-                                                        !(formData.members || []).includes(i.id) && 
-                                                        (i.name.toLowerCase().includes(memberSearch.toLowerCase()) || (i.koreanName && i.koreanName.includes(memberSearch)))
-                                                    ).slice(0, 10).map(idol => (
-                                                        <button
-                                                            key={idol.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (idol.groupId && idol.groupId !== displayGroup.id) {
-                                                                    setModalConfig({
-                                                                        isOpen: true,
-                                                                        title: 'Move Member',
-                                                                        message: `${idol.name} is already in "${idol.group}". Do you want to move them to this group?`,
-                                                                        type: 'info',
-                                                                        singleButton: false,
-                                                                        confirmText: 'Move',
-                                                                        onConfirm: () => setFormData(prev => ({ ...prev, members: [...(prev.members || []), idol.id] }))
-                                                                    });
-                                                                    setMemberSearch('');
-                                                                    return;
-                                                                }
-                                                                setFormData(prev => ({ ...prev, members: [...(prev.members || []), idol.id] }));
-                                                                setMemberSearch('');
-                                                                searchInputRef.current?.focus();
-                                                            }}
-                                                            className={cn(
-                                                                "w-full p-3 flex items-center gap-3 hover:bg-brand-pink/10 transition-colors text-left",
-                                                                theme === 'dark' ? "text-white" : "text-slate-900"
-                                                            )}
-                                                        >
-                                                            <img src={convertDriveLink(idol.image)} className="w-8 h-8 rounded-full object-cover" alt="" />
-                                                            <div>
-                                                                <p className="text-sm font-bold">{idol.name}</p>
-                                                                <p className="text-xs text-slate-500">{idol.group || 'Soloist'}</p>
-                                                            </div>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
                             {isReordering ? (
                                 <Reorder.Group 
                                     axis="y" 
-                                    values={editingMembersList} 
+                                    values={sortedMembers} 
                                     onReorder={(newOrder) => {
                                         setFormData(prev => ({
                                             ...prev,
@@ -1493,7 +1402,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     }}
                                     className="space-y-4"
                                 >
-                                    {editingMembersList.map((member) => (
+                                    {sortedMembers.map((member) => (
                                         <Reorder.Item key={member.id} value={member}>
                                             <div className={cn(
                                                 "flex items-center gap-4 p-4 rounded-2xl border cursor-grab active:cursor-grabbing",
@@ -1506,15 +1415,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         </Reorder.Item>
                                     ))}
                                 </Reorder.Group>
-                            ) : isEditing ? (
-                                <div className="grid grid-cols-1 md:grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8">
-                                    {editingMembersList.map((member, idx) => (
-                                        <MemberCard
-                                            key={member.id || idx} member={member} theme={theme}
-                                            onClick={() => onMemberClick(member)} onImageClick={(img) => setLightboxImage(img)}
-                                        />
-                                    ))}
-                                </div>
                             ) : (
                                 <motion.div
                                     key="members"
@@ -1592,6 +1492,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 <img 
                                                     src={convertDriveLink(member.image)} 
                                                     className="w-16 h-16 rounded-2xl object-cover shadow-md"
+                                                    loading="lazy"
                                                     alt={member.name}
                                                 />
                                                 <div>
@@ -1683,7 +1584,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             key="news"
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="space-y-8"
+                            className="space-y-6"
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
@@ -1706,8 +1607,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         <motion.a 
                                             key={idx} 
                                             initial={{ opacity: 0, y: 20 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: idx * 0.1 }}
+                                            animate={{ opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 25, delay: idx * 0.05 } }}
                                             whileHover={{ scale: 1.02 }}
                                             href={item.url} 
                                             target="_blank" 
@@ -1717,23 +1617,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 shadow-lg hover:shadow-xl"
                                             )}
                                         >
+                                            {item.image?.thumbnail?.contentUrl && (
                                             <div className="h-48 w-full relative overflow-hidden shrink-0">
                                                 <img 
-                                                    src={item.image?.thumbnail?.contentUrl || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'} 
+                                                    src={item.image?.thumbnail?.contentUrl} 
                                                     alt={item.name}
+                                                    loading="lazy"
                                                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                                     onError={(e) => {
-                                                        e.target.onerror = null;
-                                                        e.target.src = 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60';
+                                                        e.target.style.display = 'none';
                                                     }}
                                                 />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
                                                 <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
                                                      <span className="text-[10px] font-black uppercase tracking-widest text-white bg-brand-pink/90 px-2 py-1 rounded-lg backdrop-blur-md shadow-lg">
-                                                        {item.provider?.[0]?.name.replace(' News', '') || 'News'}
+                                                        {item.provider?.[0]?.name || 'News'}
                                                      </span>
                                                 </div>
                                             </div>
+                                            )}
                                             
                                             <div className="p-6 flex flex-col flex-1">
                                                 <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 font-bold">
@@ -1766,7 +1668,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="flex gap-6">
                                 <div className={cn("w-14 h-14 rounded-full shrink-0 flex items-center justify-center shadow-lg", theme === 'dark' ? "bg-slate-800" : "bg-slate-50")}>
                                     {user?.avatar ? (
-                                        <img src={convertDriveLink(user.avatar)} className="w-full h-full rounded-full object-cover" alt="" />
+                                        <img src={convertDriveLink(user.avatar)} className="w-full h-full rounded-full object-cover" alt="" loading="lazy" />
                                     ) : (
                                         <User size={24} className="text-slate-400" />
                                     )}
@@ -1828,7 +1730,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 )}
                                                 title={comment.username ? `View @${comment.username}` : ''}
                                             >
-                                                <img src={convertDriveLink(comment.avatar) || `https://ui-avatars.com/api/?name=${comment.user}&background=random`} className="w-full h-full rounded-full object-cover" alt="" />
+                                                <img src={convertDriveLink(comment.avatar) || `https://ui-avatars.com/api/?name=${comment.user}&background=random`} className="w-full h-full rounded-full object-cover" alt="" loading="lazy" />
                                             </button>
                                             <div className="space-y-2 flex-1">
                                                 <div className="flex items-center justify-between">
@@ -1940,7 +1842,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     )}
                                                     title={reply.username ? `View @${reply.username}` : ''}
                                                 >
-                                                    <img src={convertDriveLink(reply.avatar) || `https://ui-avatars.com/api/?name=${reply.user}&background=random`} className="w-full h-full object-cover" alt="" />
+                                                    <img src={convertDriveLink(reply.avatar) || `https://ui-avatars.com/api/?name=${reply.user}&background=random`} className="w-full h-full object-cover" alt="" loading="lazy" />
                                                 </button>
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-3">
@@ -2059,13 +1961,20 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     </button>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <motion.div
+                                    variants={{
+                                        hidden: { opacity: 0 },
+                                        show: { opacity: 1, transition: { staggerChildren: 0.05 } }
+                                    }}
+                                    initial="hidden"
+                                    animate="show"
+                                    className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+                                >
                                     {(displayGroup.albums || []).length > 0 ? (
                                         (displayGroup.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
                                             <motion.div
                                                 layout
-                                                initial={{ opacity: 0, scale: 0.9 }}
-                                                animate={{ opacity: 1, scale: 1 }}
+                                                variants={{ hidden: { opacity: 0, y: 20, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
                                                 key={idx}
                                                 whileHover={{ y: -8 }}
                                                 onClick={() => setSelectedAlbum(album)}
@@ -2115,7 +2024,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             <p className="text-slate-500 font-medium">No discography added yet.</p>
                                         </div>
                                     )}
-                                </div>
+                                </motion.div>
                             )}
                         </motion.div>
                     )}
@@ -2123,7 +2032,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             </div>
 
             {/* Similar Groups Section */}
-            {(loadingSimilarGroups || similarGroups.length > 0) && (
+            {similarGroups.length > 0 && (
                 <div className="border-t border-dashed border-slate-200 dark:border-slate-800 pt-10">
                     <h3 className={cn(
                         "text-2xl font-black mb-8 flex items-center gap-3",
@@ -2133,32 +2042,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         Similar Groups from {displayGroup.company}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {loadingSimilarGroups ? (
-                            Array.from({ length: 4 }).map((_, i) => (
-                                <div key={i} className={cn(
-                                    "aspect-[3/4.2] rounded-[48px] overflow-hidden relative",
-                                    theme === 'dark' ? "bg-slate-900" : "bg-slate-100"
-                                )}>
-                                    <div className={cn(
-                                        "absolute inset-0 animate-pulse",
-                                        theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
-                                    )} />
-                                    <div className="absolute bottom-8 left-8 right-8 space-y-4 opacity-50">
-                                        <div className={cn("h-3 w-1/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
-                                        <div className={cn("h-8 w-2/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            similarGroups.map(g => (
-                                <GroupCard 
-                                    key={g.id} 
-                                    group={g} 
-                                    onClick={() => onGroupClick && onGroupClick(g.id)}
-                                    onFavorite={() => {}}
-                                />
-                            ))
-                        )}
+                        {similarGroups.map(g => (
+                            <GroupCard 
+                                key={g.id} 
+                                group={g} 
+                                onClick={() => onGroupClick && onGroupClick(g.id)}
+                                onFavorite={() => {}}
+                            />
+                        ))}
                     </div>
                 </div>
             )}
@@ -2204,6 +2095,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.9, opacity: 0 }}
                             src={convertDriveLink(lightboxImage)}
+                            loading="lazy"
                             alt="Full size"
                             className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
@@ -2247,7 +2139,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             className={cn("w-full max-w-4xl rounded-[40px] overflow-hidden flex flex-col md:flex-row shadow-2xl max-h-[80vh]", theme === 'dark' ? "bg-slate-900" : "bg-white")}
                         >
                             <div className="w-full md:w-1/2 aspect-square md:aspect-auto relative">
-                                <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title} />
+                                <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title} loading="lazy" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent md:hidden" />
                                 <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
                             </div>
@@ -2273,9 +2165,23 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
 
                                 {selectedAlbum.youtube && (
-                                    <a href={selectedAlbum.youtube} target="_blank" rel="noopener noreferrer" className="w-full py-4 rounded-2xl bg-[#FF0000] text-white font-black uppercase tracking-widest hover:bg-[#CC0000] transition-colors flex items-center justify-center gap-3 shadow-lg shadow-red-500/20">
-                                        <PlayCircle size={20} /> Listen on YouTube
-                                    </a>
+                                    <div className="space-y-2">
+                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-2 block flex items-center gap-2">
+                                            <Youtube size={12} /> Album Preview
+                                        </label>
+                                        <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                                            <iframe
+                                                width="100%"
+                                                height="100%"
+                                                src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedAlbum.youtube)}`}
+                                                title="YouTube video player"
+                                                frameBorder="0"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                allowFullScreen
+                                                className="absolute inset-0"
+                                            />
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </motion.div>
@@ -2287,7 +2193,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
-        </div>
+
+            <MusicPlayer 
+                url={displayGroup.themeSongUrl} 
+                groupName={displayGroup.name} 
+                groupImage={convertDriveLink(displayGroup.image)} 
+            />
+        </motion.div>
     );
 }
 
@@ -2395,6 +2307,7 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
                     <img
                         src={convertDriveLink(member.image)}
                         alt={member.name}
+                        loading="lazy"
                         className="w-24 h-24 md:w-32 md:h-32 rounded-[24px] md:rounded-[32px] object-cover border-4 border-white/5 shadow-2xl transition-all duration-700 group-hover:scale-110"
                     />
                     {member.isFavorite && (

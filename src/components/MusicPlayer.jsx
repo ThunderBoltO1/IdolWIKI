@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import ReactPlayer from 'react-player';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Volume2, VolumeX, X, Loader2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
@@ -12,16 +11,120 @@ export function MusicPlayer({ url, groupName, groupImage, onClose }) {
   const [muted, setMuted] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isReady, setIsReady] = useState(false);
-  const playerRef = useRef(null);
+  const playerRef = useRef(null); // Will hold the YT.Player instance
+  const containerRef = useRef(null); // Will hold the div for iframe
+
+  // Helper to extract video ID
+  const getYouTubeId = (url) => {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
 
   useEffect(() => {
-    // Reset state when URL changes
-    setPlaying(true);
-    setProgress(0);
-    setIsReady(false);
+    if (!url) return;
+
+    const videoId = getYouTubeId(url);
+    if (!videoId) return;
+
+    // Load YouTube IFrame API
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+    }
+
+    const initPlayer = () => {
+      if (playerRef.current) {
+        playerRef.current.loadVideoById(videoId);
+        return;
+      }
+
+      playerRef.current = new window.YT.Player(containerRef.current, {
+        height: '0',
+        width: '0',
+        videoId: videoId,
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0
+        },
+        events: {
+          onReady: (event) => {
+            setIsReady(true);
+            event.target.setVolume(volume * 100);
+            if (playing) event.target.playVideo();
+          },
+          onStateChange: (event) => {
+            if (event.data === window.YT.PlayerState.ENDED) {
+              setPlaying(false);
+              setProgress(0);
+            }
+          }
+        }
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      initPlayer();
+    } else {
+      window.onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    // Progress interval
+    const interval = setInterval(() => {
+      if (playerRef.current && playerRef.current.getCurrentTime) {
+        const current = playerRef.current.getCurrentTime();
+        const duration = playerRef.current.getDuration();
+        if (duration > 0) {
+          setProgress(current / duration);
+        }
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      // Optional: destroy player on unmount if needed, but keeping it might be smoother for navigation
+      // if (playerRef.current) playerRef.current.destroy();
+    };
   }, [url]);
 
+  useEffect(() => {
+    if (playerRef.current && isReady) {
+      if (playing) {
+        playerRef.current.playVideo();
+      } else {
+        playerRef.current.pauseVideo();
+      }
+    }
+  }, [playing, isReady]);
+
+  useEffect(() => {
+    if (playerRef.current && isReady) {
+      playerRef.current.setVolume(volume * 100);
+      if (volume > 0 && muted) setMuted(false);
+    }
+  }, [volume, isReady]);
+
+  useEffect(() => {
+    if (playerRef.current && isReady) {
+      if (muted) {
+        playerRef.current.mute();
+      } else {
+        playerRef.current.unMute();
+      }
+    }
+  }, [muted, isReady]);
+
   const togglePlay = () => setPlaying(!playing);
+  
   const handleVolumeChange = (e) => {
     const newVolume = parseFloat(e.target.value);
     setVolume(newVolume);
@@ -37,33 +140,18 @@ export function MusicPlayer({ url, groupName, groupImage, onClose }) {
   const handleSeek = (e) => {
     const newProgress = parseFloat(e.target.value);
     setProgress(newProgress);
-    playerRef.current?.seekTo(newProgress);
+    if (playerRef.current && playerRef.current.getDuration) {
+      const duration = playerRef.current.getDuration();
+      playerRef.current.seekTo(duration * newProgress, true);
+    }
   };
 
   return (
     <AnimatePresence>
       {url && (
         <>
-          <div className="hidden">
-            <ReactPlayer
-              ref={playerRef}
-              url={url}
-              playing={playing}
-              volume={volume}
-              muted={muted}
-              onProgress={handleProgress}
-              onReady={() => setIsReady(true)}
-              onEnded={() => setPlaying(false)}
-              onError={(e) => console.warn('MusicPlayer error:', e)}
-              width="0"
-              height="0"
-              config={{
-                youtube: {
-                  playerVars: { controls: 0, modestbranding: 1, playsinline: 1 },
-                },
-              }}
-            />
-          </div>
+          {/* Hidden Container for YouTube IFrame API */}
+          <div ref={containerRef} className="hidden" />
 
           <motion.div
             initial={{ opacity: 0, y: 100, scale: 0.9 }}

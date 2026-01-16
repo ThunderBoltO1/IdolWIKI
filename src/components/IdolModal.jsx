@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactPlayer from 'react-player';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -14,97 +13,7 @@ import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { IdolCard } from './IdolCard';
 import Cropper from 'react-easy-crop';
-
-const AWARD_DATA = {
-    "K-Pop & Music Awards": {
-        "MAMA Awards": [
-            "Artist of the Year", "Song of the Year", "Album of the Year", "Worldwide Icon of the Year",
-            "Best Male Artist", "Best Female Artist", "Best Male Group", "Best Female Group", "Best New Artist",
-            "Best New Male Artist", "Best New Female Artist",
-            "Best Dance Performance (Solo)", "Best Dance Performance (Group)", "Best Dance Performance Male Group", "Best Dance Performance Female Group",
-            "Best Vocal Performance (Solo)", "Best Vocal Performance (Group)", "Best Band Performance", "Best Collaboration", "Best OST",
-            "Best Music Video", "Best Choreography", "Favorite New Artist", "Worldwide Fans' Choice", "Fans' Choice - Female", "Fans' Choice - Male"
-        ],
-        "Melon Music Awards (MMA)": [
-            "Record of the Year (Daesang)",
-            "Song of the Year (Daesang)",
-            "Album of the Year (Daesang)",
-            "Artist of the Year (Daesang)",
-            "Best Group (Female)",
-            "New Artist of the Year",
-            "Artist of the Year", "Album of the Year", "Song of the Year", "Record of the Year",
-            "Top 10 Artists (Bonsang)", "New Artist of the Year", "Best Solo (Male/Female)", "Best Group (Male/Female)",
-            "Best OST", "Best Music Video", "Global Artist", "Netizen Popularity Award", "Hot Trend Award", "Millions Top 10"
-        ],
-        "Golden Disc Awards (GDA)": [
-            "Digital Daesang (Song of the Year)", "Album Daesang (Album of the Year)",
-            "Digital Song Bonsang", "Album Bonsang", "Rookie Artist of the Year",
-            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award"
-        ],
-        "Korean Music Awards (KMA)": [
-            "Musician of the Year", "Song of the Year", "Album of the Year", "Rookie of the Year",
-            "Best K-Pop Song", "Best K-Pop Album", "Best Pop Song", "Best Pop Album"
-        ],
-        "Seoul Music Awards (SMA)": [
-            "Rookie of the Year",
-            "Main Award (Bonsang)",
-            "Best Performance Award",
-            "World Best Artist Award",
-            "Grand Award (Daesang)", "Main Award (Bonsang)", "Rookie of the Year",
-            "Best Song Award", "Best Album Award", "R&B/Hip-Hop Award", "Ballad Award", "OST Award",
-            "Popularity Award", "K-Wave Special Award", "Discovery of the Year"
-        ],
-        "Circle Chart Music Awards": [
-            "Artist of the Year (Global Digital)", "Artist of the Year (Physical Album)", "Artist of the Year (Unique Listeners)",
-            "Rookie of the Year", "World K-Pop Star", "Social Hot Star", "Retail Album of the Year", "Music Steady Seller"
-        ],
-        "The Fact Music Awards (TMA)": [
-            "Artist of the Year (Bonsang)",
-            "Worldwide Icon",
-            "Hot Trend Award",
-            "Next Leader Award",
-            "Grand Prize (Daesang)", "Artist of the Year (Bonsang)", "Next Leader Award",
-            "Listener's Choice Award", "Worldwide Icon", "Best Performer", "Popularity Award"
-        ],
-        "Asia Artist Awards (AAA)": [
-            "Stage of the Year (Daesang)",
-            "Hot Trend Award",
-            "Rookie of the Year",
-            "Best New Artist (Singer)",
-            "Actor of the Year (Daesang)", "Artist of the Year (Daesang)", "Album of the Year (Daesang)", "Song of the Year (Daesang)",
-            "Performance of the Year (Daesang)", "Stage of the Year (Daesang)", "Fandom of the Year (Daesang)",
-            "Best Artist", "Best Musician", "Rookie of the Year", "Best Icon", "Best Choice", "Popularity Award", "Asia Celebrity", "Hot Trend"
-        ],
-        "Hanteo Music Awards": [
-            "Artist of the Year (Bonsang)",
-            "Best Performance (Group)",
-            "Rookie of the Year (Female)"
-        ],
-        "K-World Dream Awards": [
-            "K-World Dream Super Rookie Award", "K-World Dream Bonsang", "K-World Dream Best Artist",
-            "K-World Dream Best Performance", "K-World Dream Best Music Video", "K-World Dream Producer Award"
-        ],
-        "Korea Grand Music Awards": [
-            "Grand Honour's Choice", "Best Artist", "Best Group", "Best Solo Artist", "Best Rookie",
-            "Best Song", "Best Album", "Most Popular Artist", "K-Pop Global Leader"
-        ],
-        "TikTok Awards Korea": [
-            "Best Viral Song", "Artist of the Year", "Creator of the Year", "Video of the Year"
-        ],
-        "Billboard Music Awards": [
-            "Top Artist", "Top New Artist", "Top Duo/Group", "Top Social Artist", "Top K-Pop Artist", "Top K-Pop Album", "Top K-Pop Song", "Top Global K-Pop Artist", "Top Global K-Pop Album", "Top Global K-Pop Song", "Top K-Pop Touring Artist", "Top Selling Song"
-        ],
-        "MTV Video Music Awards": [
-            "Video of the Year", "Artist of the Year", "Song of the Year", "Best New Artist", "Push Performance of the Year", "Best Collaboration", "Best Pop", "Best K-Pop", "Best Group", "Song of Summer"
-        ]
-    },
-    "Acting & Arts Awards": {
-        "Baeksang Arts Awards": ["Grand Prize (Daesang) - TV", "Best Drama", "Best Director (TV)", "Best Actor (TV)", "Best Actress (TV)", "Best Supporting Actor (TV)", "Best Supporting Actress (TV)", "Best New Actor (TV)", "Best New Actress (TV)", "Grand Prize (Daesang) - Film", "Best Film", "Best Director (Film)", "Best Actor (Film)", "Best Actress (Film)", "Best Supporting Actor (Film)", "Best Supporting Actress (Film)", "Best New Actor (Film)", "Best New Actress (Film)", "Most Popular Actor", "Most Popular Actress"],
-        "Blue Dragon Series Awards": ["Blue Dragon's Choice (Daesang)", "Best Drama", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress", "Best Entertainer", "Popular Star Award"],
-        "Blue Dragon Film Awards": ["Best Film", "Best Director", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress", "Popular Star Award"],
-        "Grand Bell Awards": ["Best Film", "Best Director", "Best Actor", "Best Actress", "Best Supporting Actor", "Best Supporting Actress", "Best New Actor", "Best New Actress"]
-    }
-};
+import { useAwards } from '../hooks/useAwards.js';
 
 const defaultIdolData = {
     name: '',
@@ -128,6 +37,7 @@ const defaultIdolData = {
     instagram: '',
     twitter: '',
     youtube: '',
+    videos: [],
     likes: 0,
     albums: []
 };
@@ -164,6 +74,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [imageCrop, setImageCrop] = useState({ x: 0, y: 0 });
     const [imageZoom, setImageZoom] = useState(1);
     const [imageCroppedArea, setImageCroppedArea] = useState(null);
+    const [imageObjectFit, setImageObjectFit] = useState('horizontal-cover');
     const [history, setHistory] = useState([]);
     const isBackRef = useRef(false);
 
@@ -171,6 +82,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [historyLogs, setHistoryLogs] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     
+    const { awards: awardData } = useAwards();
+    const [isYTCopied, setIsYTCopied] = useState(false);
     const [modalConfig, setModalConfig] = useState({
         isOpen: false,
         title: '',
@@ -180,6 +93,35 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         onConfirm: null,
         confirmText: 'OK'
     });
+
+    function getYouTubeVideoId(url) {
+        if (!url) return null;
+        let videoId = null;
+        try {
+            const urlObj = new URL(url);
+            if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname === '/watch') {
+                videoId = urlObj.searchParams.get('v');
+            } else if (urlObj.hostname === 'youtu.be') {
+                videoId = urlObj.pathname.substring(1);
+            } else if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname.startsWith('/embed/')) {
+                videoId = urlObj.pathname.substring('/embed/'.length);
+            }
+        } catch (e) {
+            // Not a full URL, might be just an ID
+            if (url.length === 11 && !url.includes('/') && !url.includes('.')) {
+                videoId = url;
+            }
+        }
+        return videoId;
+    }
+
+    function getYouTubeEmbedCode(url) {
+        const videoId = getYouTubeVideoId(url);
+        if (videoId) {
+            return `<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>`;
+        }
+        return 'Could not generate embed code. Please provide a valid YouTube video URL or ID.';
+    }
 
     useEffect(() => {
         if (!idol?.id) return;
@@ -229,9 +171,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 }
 
                 const initialData = mode === 'create' ? { ...defaultIdolData, ...(idol || {}) } : idol;
+                
+                // Migrate legacy single youtube link to videos array if needed
+                if (initialData.youtube && (!initialData.videos || initialData.videos.length === 0)) {
+                    initialData.videos = [{ title: 'Latest Video', url: initialData.youtube }];
+                }
+
                 setFormData(initialData);
                 setEditMode(mode === 'create' || mode === 'edit');
                 setActiveImage(initialData.image || defaultIdolData.image);
+                setImageObjectFit('horizontal-cover');
                 setActiveTab('info');
                 if (scrollContainerRef.current) {
                     scrollContainerRef.current.scrollTop = 0;
@@ -385,6 +334,21 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const removeAlbum = (index) => {
         const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
         setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
+    const handleVideoChange = (index, field, value) => {
+        const newVideos = [...(formData.videos || [])];
+        if (!newVideos[index]) newVideos[index] = {};
+        newVideos[index][field] = value;
+        setFormData(prev => ({ ...prev, videos: newVideos }));
+    };
+
+    const addVideo = () => {
+        setFormData(prev => ({ ...prev, videos: [...(prev.videos || []), { title: '', url: '' }] }));
+    };
+
+    const removeVideo = (index) => {
+        setFormData(prev => ({ ...prev, videos: (prev.videos || []).filter((_, i) => i !== index) }));
     };
 
     const handleBack = () => {
@@ -727,7 +691,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             onCropComplete={(_, pixels) => setImageCroppedArea(pixels)}
                                             onZoomChange={setImageZoom}
                                             showGrid={false}
-                                            objectFit="horizontal-cover"
+                                            objectFit={imageObjectFit}
                                         />
                                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
                                             <ZoomOut size={14} className="text-white/80" />
@@ -741,6 +705,15 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
                                             />
                                             <ZoomIn size={14} className="text-white/80" />
+                                            <div className="w-px h-4 bg-white/20 mx-1" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setImageObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
+                                                className="text-white/80 hover:text-white transition-colors"
+                                                title={imageObjectFit === 'contain' ? "Fill Frame" : "Fit Image"}
+                                            >
+                                                {imageObjectFit === 'contain' ? <Maximize size={14} /> : <Minimize size={14} />}
+                                            </button>
                                         </div>
                                     </div>
                                 ) : (
@@ -1132,9 +1105,25 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             <div className="space-y-4">
                                             <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
                                             <DetailItem icon={X} label="X (Twitter) URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
-                                                <div>
-                                                    <DetailItem icon={Youtube} label="YouTube URL" value={formData.youtube} editMode={editMode} name="youtube" onChange={handleChange} theme={theme} />
-                                                    {editMode && <p className="text-[10px] text-slate-500 mt-1 ml-1 font-medium">* แนะนำลิงก์รูปแบบ https://www.youtube.com/watch?v=... หรือ https://youtu.be/...</p>}
+                                                
+                                                {/* Videos Section */}
+                                                <div className="space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                                            <Youtube size={12} /> Videos / Works
+                                                        </label>
+                                                        <button type="button" onClick={addVideo} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline">
+                                                            <Plus size={12} /> Add Video
+                                                        </button>
+                                                    </div>
+                                                    {(formData.videos || []).map((video, idx) => (
+                                                        <div key={idx} className="flex gap-2 items-center">
+                                                            <input value={video.title} onChange={e => handleVideoChange(idx, 'title', e.target.value)} className={cn("w-1/3 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="Title (e.g. MV)" />
+                                                            <input value={video.url} onChange={e => handleVideoChange(idx, 'url', e.target.value)} className={cn("flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="YouTube URL..." />
+                                                            <button type="button" onClick={() => removeVideo(idx)} className={cn("p-3 rounded-2xl transition-colors shrink-0", theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100")}><Trash2 size={16} /></button>
+                                                        </div>
+                                                    ))}
+                                                    {(!formData.videos || formData.videos.length === 0) && <p className="text-[10px] text-slate-500 font-medium">* Add YouTube links for MVs, Fancams, etc.</p>}
                                                 </div>
                                                 
                                                 <div className="space-y-2">
@@ -1225,18 +1214,18 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             <div className={cn("p-4 rounded-2xl border-2 space-y-3", theme === 'dark' ? "bg-slate-800/30 border-white/5" : "bg-slate-50 border-slate-100")}>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <select value={newAward.category} onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
-                                                        {Object.keys(AWARD_DATA).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                                        {Object.keys(awardData).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                                     </select>
                                                     <input type="number" value={newAward.year} onChange={e => setNewAward({ ...newAward, year: e.target.value })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")} placeholder="Year" />
                                                 </div>
                                                 <div className="grid grid-cols-1 gap-3">
                                                     <select value={newAward.show} onChange={e => setNewAward({ ...newAward, show: e.target.value, award: '' })} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
                                                         <option value="">Select Award Show</option>
-                                                        {newAward.category && Object.keys(AWARD_DATA[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
+                                                        {newAward.category && awardData[newAward.category] && Object.keys(awardData[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
                                                     </select>
                                                     <select value={newAward.award} onChange={e => setNewAward({ ...newAward, award: e.target.value })} disabled={!newAward.show} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
                                                         <option value="">Select Award</option>
-                                                        {newAward.show && AWARD_DATA[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
+                                                        {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
                                                     </select>
                                                 </div>
                                                 <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={handleAddAward} disabled={!newAward.show || !newAward.award} className="w-full py-2 rounded-xl bg-brand-pink text-white text-xs font-black uppercase tracking-widest hover:bg-brand-pink/90 disabled:opacity-50">
@@ -1362,23 +1351,29 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             </div>
                                         </div>
 
-                                        {formData.youtube && (
+                                        {(formData.videos && formData.videos.length > 0) && (
                                             <div className="sm:col-span-2 space-y-3 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800">
                                                 <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-2 block flex items-center gap-2">
-                                                    <Youtube size={12} /> Latest Video
+                                                    <Youtube size={12} /> Featured Videos
                                                 </label>
-                                                <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative group/player">
-                                                    <ReactPlayer
-                                                        url={formData.youtube}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    {formData.videos.map((video, idx) => (
+                                                        <div key={idx} className="space-y-2">
+                                                            <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                                                    <iframe
                                                         width="100%"
                                                         height="100%"
-                                                        controls
-                                                        config={{
-                                                            youtube: {
-                                                                playerVars: { showinfo: 1 }
-                                                            }
-                                                        }}
+                                                                    src={`https://www.youtube.com/embed/${getYouTubeVideoId(video.url)}`}
+                                                        title="YouTube video player"
+                                                        frameBorder="0"
+                                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                                        allowFullScreen
+                                                        className="absolute inset-0"
                                                     />
+                                                            </div>
+                                                            <p className={cn("text-xs font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled'}</p>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}
@@ -1852,9 +1847,18 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 </div>
 
                                 {selectedAlbum.youtube && (
-                                    <a href={selectedAlbum.youtube} target="_blank" rel="noopener noreferrer" className="w-full py-3 rounded-xl bg-[#FF0000] text-white font-black uppercase text-xs tracking-widest hover:bg-[#CC0000] transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-500/20">
-                                        <PlayCircle size={16} /> Listen on YouTube
-                                    </a>
+                                    <div className="mt-6 rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                                        <iframe
+                                            width="100%"
+                                            height="100%"
+                                            src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedAlbum.youtube)}`}
+                                            title="YouTube video player"
+                                            frameBorder="0"
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                            allowFullScreen
+                                            className="absolute inset-0"
+                                        />
+                                    </div>
                                 )}
                             </div>
                         </motion.div>

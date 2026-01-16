@@ -16,6 +16,7 @@ import { IdolDetailPage } from './components/IdolDetailPage';
 import { PublicProfilePage } from './components/PublicProfilePage';
 import { AdminUserManagement } from './components/AdminUserManagement';
 import { AdminDashboard } from './components/AdminDashboard';
+import { AdminAwardManagement } from './components/AdminAwardManagement';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -614,6 +615,22 @@ function AppContent() {
                     exit={{ opacity: 0, scale: 0.95 }}
                   >
                     <AdminDashboard onBack={() => navigate('/')} />
+                  </motion.div>
+                </RequireAdmin>
+              }
+            />
+
+            <Route
+              path="/admin/awards"
+              element={
+                <RequireAdmin>
+                  <motion.div
+                    key="admin-awards"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                  >
+                    <AdminAwardManagement onBack={() => navigate('/')} />
                   </motion.div>
                 </RequireAdmin>
               }

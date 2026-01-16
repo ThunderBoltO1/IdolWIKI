@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { IdolModal } from './components/IdolModal';
+import { Loader2 } from 'lucide-react';
 import { GroupPage } from './components/GroupPage';
 import { GroupSelection } from './components/GroupSelection';
 import { LoginPage } from './components/LoginPage';
@@ -19,13 +20,21 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 
 function RequireAdmin({ children }) {
   const location = useLocation();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="animate-spin text-brand-pink" size={40} />
+      </div>
+    );
+  }
 
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location }} />;
@@ -157,8 +166,9 @@ function AppContent() {
   }, [location.pathname]);
 
   // Handlers
-  const handleAddClick = () => {
-    setSelectedIdol(null);
+  const handleAddClick = (initialData) => {
+    const data = (initialData && initialData.nativeEvent) ? null : initialData;
+    setSelectedIdol(data || null);
     setModalMode('create');
     setModalOpen(true);
   };
@@ -169,11 +179,30 @@ function AppContent() {
 
   const handleSaveGroup = async (groupData) => {
     try {
-      await addDoc(collection(db, 'groups'), {
-        ...groupData,
+      const { members: memberIds, ...restGroupData } = groupData;
+      
+      // Create ID from name (slugify)
+      const groupId = restGroupData.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const groupRef = doc(db, 'groups', groupId);
+
+      await setDoc(groupRef, {
+        ...restGroupData,
         createdAt: new Date().toISOString(),
-        members: []
+        members: memberIds || []
       });
+
+      if (memberIds && memberIds.length > 0) {
+        const batch = writeBatch(db);
+        memberIds.forEach(idolId => {
+          const idolRef = doc(db, 'idols', idolId);
+          batch.update(idolRef, { 
+            groupId: groupRef.id, 
+            group: restGroupData.name 
+          });
+        });
+        await batch.commit();
+      }
+
       setGroupModalOpen(false);
     } catch (err) {
       console.error("Error adding group: ", err);
@@ -202,15 +231,61 @@ function AppContent() {
           createdAt: timestamp,
           updatedAt: timestamp
         };
-        await addDoc(collection(db, 'idols'), newIdol);
+        const docRef = await addDoc(collection(db, 'idols'), newIdol);
+        
+        if (user) {
+          await addDoc(collection(db, 'auditLogs'), {
+            targetId: docRef.id,
+            targetType: 'idol',
+            action: 'create',
+            userId: user.uid,
+            userName: user.name || user.email || 'Unknown',
+            changes: newIdol,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        setModalOpen(false);
       } else if (selectedIdol?.id) {
         const idolRef = doc(db, 'idols', selectedIdol.id);
+        
+        const changes = {};
+        let hasChanges = false;
+        Object.keys(idolData).forEach(key => {
+          if (['id', 'createdAt', 'updatedAt', 'likes', 'isFavorite'].includes(key)) return;
+          const newValue = idolData[key];
+          const oldValue = selectedIdol[key];
+          if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
+            changes[key] = { from: oldValue ?? null, to: newValue };
+            hasChanges = true;
+          }
+        });
+
         await updateDoc(idolRef, { ...idolData, updatedAt: timestamp });
+
+        try {
+          if (hasChanges && user) {
+            await addDoc(collection(db, 'auditLogs'), {
+              targetId: selectedIdol.id,
+              targetType: 'idol',
+              action: 'update',
+              userId: user.uid,
+              userName: user.name || user.email || 'Unknown',
+              changes: changes,
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (auditErr) {
+          console.warn("Failed to create audit log:", auditErr);
+        }
       }
-      setModalOpen(false);
     } catch (err) {
       console.error("Save error:", err);
-      alert("Failed to save data. Please check your Firestore rules.");
+      if (err.code === 'permission-denied') {
+        alert("Permission denied. You do not have access to modify this data.");
+      } else {
+        alert("Failed to save data: " + err.message);
+      }
     }
   };
 
@@ -434,7 +509,7 @@ function AppContent() {
               >
                 <RegisterPage
                   onNavigate={(view) => navigate(`/${view}`)}
-                  onRegisterSuccess={() => navigate('/')}
+                  onRegisterSuccess={() => navigate('/profile')}
                 />
               </motion.div>
             } />
@@ -544,7 +619,7 @@ function AppContent() {
               }
             />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} />} />
+            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} />} />
           </Routes>
         </AnimatePresence>
       </main>
@@ -558,12 +633,15 @@ function AppContent() {
         onDelete={handleDelete}
         onLike={handleFavoriteIdol}
         onGroupClick={handleGroupClick}
+        onIdolClick={handleCardClick}
       />
 
       <GroupModal
         isOpen={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
         onSave={handleSaveGroup}
+        idols={idols}
+        onAddIdol={handleAddClick}
       />
 
       <ConfirmationModal
@@ -579,7 +657,7 @@ function AppContent() {
   );
 }
 
-function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate }) {
+function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate, onSearch, allIdols, onGroupClick }) {
   const { groupId } = useParams();
   const group = groups.find(g => g.id === groupId);
   const members = idols.filter(i => i.groupId === groupId);
@@ -598,6 +676,9 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, on
         onMemberClick={handleMemberClick}
         onUpdateGroup={onUpdateGroup}
         onDeleteGroup={onDeleteGroup}
+        onSearch={onSearch}
+        allIdols={allIdols}
+        onGroupClick={onGroupClick}
       />
     </motion.div>
   );

@@ -5,7 +5,10 @@ import {
     signOut,
     onAuthStateChanged,
     updateProfile,
-    sendPasswordResetEmail
+    sendPasswordResetEmail,
+    setPersistence,
+    browserLocalPersistence,
+    browserSessionPersistence
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -89,9 +92,11 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const login = async (identifier, password) => {
+    const login = async (identifier, password, rememberMe = false) => {
         setIsLoading(true);
         try {
+            await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+
             let email = identifier.trim();
 
             // If identifier doesn't look like an email, treat it as a username

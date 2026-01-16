@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactPlayer from 'react-player';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ImageCropper } from './ImageCropper';
-import { createImage, isDataUrl } from '../lib/cropImage';
+import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { IdolCard } from './IdolCard';
+import Cropper from 'react-easy-crop';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -141,6 +142,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [floatingHearts, setFloatingHearts] = useState([]);
     const [showSuccess, setShowSuccess] = useState(false);
     const successTimeoutRef = useRef(null);
+    const scrollContainerRef = useRef(null);
     const [activeTab, setActiveTab] = useState('info');
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
@@ -158,6 +160,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         award: ''
     });
     const [similarIdols, setSimilarIdols] = useState([]);
+
+    const [imageCrop, setImageCrop] = useState({ x: 0, y: 0 });
+    const [imageZoom, setImageZoom] = useState(1);
+    const [imageCroppedArea, setImageCroppedArea] = useState(null);
+    const [history, setHistory] = useState([]);
+    const isBackRef = useRef(false);
+
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyLogs, setHistoryLogs] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
     
     const [modalConfig, setModalConfig] = useState({
         isOpen: false,
@@ -205,11 +217,25 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
             const shouldReset = (mode === 'create' && !formData.id) || (idol && idol.id !== formData.id);
 
             if (shouldReset) {
-                const initialData = mode === 'create' ? defaultIdolData : idol;
+                if (idol && formData.id && idol.id !== formData.id) {
+                    if (!isBackRef.current) {
+                        setHistory(prev => [...prev, formData]);
+                    } else {
+                        isBackRef.current = false;
+                    }
+                } else if (!idol || (formData.id && !idol.id)) {
+                    // Reset history if opening fresh or clearing
+                    setHistory([]);
+                }
+
+                const initialData = mode === 'create' ? { ...defaultIdolData, ...(idol || {}) } : idol;
                 setFormData(initialData);
                 setEditMode(mode === 'create' || mode === 'edit');
                 setActiveImage(initialData.image || defaultIdolData.image);
                 setActiveTab('info');
+                if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollTop = 0;
+                }
             }
 
             // Always reset these on open
@@ -220,6 +246,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 award: ''
             });
             setVisibleComments(5);
+        } else {
+            setHistory([]);
         }
     }, [isOpen, mode, idol, formData.id]);
 
@@ -299,11 +327,11 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'image') {
-            startCropping(value, (newUrl) => {
-                const processedValue = newUrl ? convertDriveLink(newUrl) : newUrl;
-                setFormData(prev => ({ ...prev, image: processedValue }));
-                setActiveImage(processedValue);
-            }, 3 / 4);
+            const processedValue = value ? convertDriveLink(value) : value;
+            setFormData(prev => ({ ...prev, image: processedValue }));
+            setActiveImage(processedValue);
+            setImageZoom(1);
+            setImageCrop({ x: 0, y: 0 });
         } else {
             setFormData(prev => ({ ...prev, [name]: value }));
         }
@@ -359,9 +387,69 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         setFormData(prev => ({ ...prev, albums: newAlbums }));
     };
 
-    const handleSubmit = (e) => {
+    const handleBack = () => {
+        if (history.length > 0) {
+            const prevIdol = history[history.length - 1];
+            setHistory(prev => prev.slice(0, -1));
+            isBackRef.current = true;
+            if (onIdolClick) {
+                onIdolClick(prevIdol);
+            }
+        }
+    };
+
+    const handleDiscard = () => {
+        if (JSON.stringify(formData) !== JSON.stringify(idol)) {
+            if (!window.confirm("Discard unsaved changes?")) return;
+        }
+        setFormData(idol);
+        setEditMode(false);
+        setActiveImage(idol.image);
+        setImageCroppedArea(null);
+    };
+
+    const handleFetchHistory = async () => {
+        setShowHistory(true);
+        setLoadingHistory(true);
+        try {
+            const q = query(
+                collection(db, 'auditLogs'),
+                where('targetId', '==', idol.id),
+                orderBy('createdAt', 'desc'),
+                limit(20)
+            );
+            const snapshot = await getDocs(q);
+            setHistoryLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        } catch (err) {
+            console.error("Failed to fetch history", err);
+            // Fallback if index is missing or collection doesn't exist
+            setHistoryLogs([]);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        onSave(formData);
+        
+        let imageToSave = formData.image;
+        if (imageCroppedArea && activeImage) {
+            try {
+                const croppedImage = await getCroppedImgDataUrl(activeImage, imageCroppedArea);
+                imageToSave = croppedImage;
+            } catch (e) {
+                console.error("Failed to crop image", e);
+            }
+        }
+
+        const updatedData = { ...formData, image: imageToSave };
+        onSave(updatedData);
+        
+        // Update local state to reflect saved data immediately
+        setFormData(updatedData);
+        setActiveImage(imageToSave);
+        setImageCroppedArea(null);
+
         setEditMode(false);
 
         if (successTimeoutRef.current) {
@@ -599,6 +687,28 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                         <X size={20} />
                     </button>
 
+                    {history.length > 0 && !editMode && (
+                        <button
+                            onClick={handleBack}
+                            className={cn(
+                                "absolute top-6 left-6 z-20 p-2.5 rounded-full transition-all duration-300 active:scale-90 shadow-lg flex items-center gap-2 pr-4",
+                                theme === 'dark' ? "bg-black/40 hover:bg-black/60 text-white" : "bg-white/80 hover:bg-white text-slate-800"
+                            )}
+                        >
+                            <ArrowLeft size={20} />
+                            <span className="text-xs font-black uppercase tracking-widest">Back</span>
+                        </button>
+                    )}
+
+                    <AnimatePresence mode="wait">
+                    <motion.div
+                        key={formData.id || 'new'}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="flex flex-col md:flex-row w-full h-full"
+                    >
                     {/* Left Column: Image & Gallery */}
                     <div className={cn(
                         "w-full md:w-5/12 h-[350px] md:h-auto relative flex flex-col overflow-hidden",
@@ -606,19 +716,48 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     )}>
                         <div className="relative flex-1 overflow-hidden">
                             <AnimatePresence mode="wait">
-                                <motion.img
-                                    key={activeImage}
-                                    initial={{ opacity: 0, scale: 1.15 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    src={convertDriveLink(activeImage) || null}
-                                    alt={formData.name}
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                        e.target.onerror = null;
-                                        e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
-                                    }}
-                                />
+                                {editMode ? (
+                                    <div className="relative w-full h-full bg-slate-900">
+                                        <Cropper
+                                            image={activeImage}
+                                            crop={imageCrop}
+                                            zoom={imageZoom}
+                                            aspect={3 / 4}
+                                            onCropChange={setImageCrop}
+                                            onCropComplete={(_, pixels) => setImageCroppedArea(pixels)}
+                                            onZoomChange={setImageZoom}
+                                            showGrid={false}
+                                            objectFit="horizontal-cover"
+                                        />
+                                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
+                                            <ZoomOut size={14} className="text-white/80" />
+                                            <input
+                                                type="range"
+                                                min={1}
+                                                max={3}
+                                                step={0.1}
+                                                value={imageZoom}
+                                                onChange={(e) => setImageZoom(Number(e.target.value))}
+                                                className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
+                                            />
+                                            <ZoomIn size={14} className="text-white/80" />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <motion.img
+                                        key={activeImage}
+                                        initial={{ opacity: 0, scale: 1.15 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        src={convertDriveLink(activeImage) || null}
+                                        alt={formData.name}
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
+                                        }}
+                                    />
+                                )}
                             </AnimatePresence>
                             <div className={cn(
                                 "absolute inset-0 bg-gradient-to-t via-transparent to-transparent opacity-80",
@@ -718,7 +857,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     </div>
 
                     {/* Right Column: Details or Form */}
-                    <div className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col">
+                    <div ref={scrollContainerRef} className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col">
                         <div className="flex justify-between items-start mb-10">
                             <div className="flex-1 mr-4">
                                 {editMode ? (
@@ -830,6 +969,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                             {!editMode && isAdmin && (
                                 <div className="flex gap-3 mt-2">
+                                    <button
+                                        onClick={handleFetchHistory}
+                                        className={cn(
+                                            "p-3 rounded-2xl transition-all duration-300 shadow-sm active:scale-90",
+                                            theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                        )}
+                                        title="View Edit History"
+                                    >
+                                        <History size={20} />
+                                    </button>
                                     <button
                                         onClick={() => setEditMode(true)}
                                         className={cn(
@@ -981,9 +1130,12 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         <div className="space-y-4">
                                             <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Media & Links</h3>
                                             <div className="space-y-4">
-                                                <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={Twitter} label="Twitter URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={Youtube} label="YouTube URL" value={formData.youtube} editMode={editMode} name="youtube" onChange={handleChange} theme={theme} />
+                                            <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
+                                            <DetailItem icon={X} label="X (Twitter) URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
+                                                <div>
+                                                    <DetailItem icon={Youtube} label="YouTube URL" value={formData.youtube} editMode={editMode} name="youtube" onChange={handleChange} theme={theme} />
+                                                    {editMode && <p className="text-[10px] text-slate-500 mt-1 ml-1 font-medium">* แนะนำลิงก์รูปแบบ https://www.youtube.com/watch?v=... หรือ https://youtu.be/...</p>}
+                                                </div>
                                                 
                                                 <div className="space-y-2">
                                                     <div className="flex items-center justify-between mb-1"> 
@@ -1159,6 +1311,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 {formData.positions?.map((p, i) => (
                                                     <button
                                                         key={i}
+                                                        type="button"
                                                         onClick={onSearch ? () => {
                                                             onSearch(p);
                                                             onClose();
@@ -1220,8 +1373,11 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         width="100%"
                                                         height="100%"
                                                         controls
-                                                        light={true}
-                                                        playIcon={<div className="p-4 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl group-hover/player:scale-110 transition-transform"><PlayCircle size={48} fill="currentColor" /></div>}
+                                                        config={{
+                                                            youtube: {
+                                                                playerVars: { showinfo: 1 }
+                                                            }
+                                                        }}
                                                     />
                                                 </div>
                                             </div>
@@ -1255,7 +1411,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         rel="noopener noreferrer"
                                                         className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
                                                     >
-                                                        <Twitter size={20} /> Twitter
+                                                        <X size={20} /> X
                                                     </a>
                                                 )}
                                                 </div>
@@ -1626,13 +1782,14 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 )}>
                                     <button
                                         type="button"
-                                        onClick={() => mode === 'create' ? onClose() : setEditMode(false)}
+                                        onClick={() => mode === 'create' ? onClose() : handleDiscard()}
                                         className={cn(
-                                            "px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 shadow-sm",
+                                            "px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 shadow-sm flex items-center gap-2",
                                             theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                         )}
                                     >
-                                        Cancel
+                                        {mode === 'create' ? <X size={16} /> : <RotateCcw size={16} />}
+                                        {mode === 'create' ? 'Cancel' : 'Discard Changes'}
                                     </button>
                                     <button
                                         type="submit"
@@ -1644,6 +1801,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                             )}
                         </form>
                     </div>
+                    </motion.div>
+                    </AnimatePresence>
                 </motion.div>
             </div>
 
@@ -1717,6 +1876,62 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     }}
                 />
             )}
+
+            {/* History Modal */}
+            <AnimatePresence>
+                {showHistory && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                        onClick={() => setShowHistory(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={e => e.stopPropagation()}
+                            className={cn("w-full max-w-lg rounded-[32px] overflow-hidden flex flex-col shadow-2xl max-h-[80vh]", theme === 'dark' ? "bg-slate-900" : "bg-white")}
+                        >
+                            <div className="p-6 border-b border-slate-200 dark:border-white/10 flex justify-between items-center">
+                                <h3 className={cn("text-xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>Edit History</h3>
+                                <button onClick={() => setShowHistory(false)} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10">
+                                    <X size={20} className={theme === 'dark' ? "text-white" : "text-slate-900"} />
+                                </button>
+                            </div>
+                            <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+                                {loadingHistory ? (
+                                    <div className="flex justify-center py-10"><Loader2 className="animate-spin text-brand-pink" /></div>
+                                ) : historyLogs.length === 0 ? (
+                                    <p className="text-center text-slate-500">No history found.</p>
+                                ) : (
+                                    historyLogs.map(log => (
+                                        <div key={log.id} className={cn("p-4 rounded-2xl border", theme === 'dark' ? "border-white/5 bg-slate-800/50" : "border-slate-100 bg-slate-50")}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <span className={cn("text-xs font-black uppercase tracking-widest", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                    {log.action || 'Update'}
+                                                </span>
+                                                <span className="text-xs text-slate-500">
+                                                    {log.createdAt ? new Date(log.createdAt.toMillis()).toLocaleString() : 'Unknown date'}
+                                                </span>
+                                            </div>
+                                            <p className={cn("text-sm", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>
+                                                by <span className="font-bold">{log.userName || 'Unknown'}</span>
+                                            </p>
+                                            {log.changes && (
+                                                <div className="mt-2 text-xs font-mono opacity-70">
+                                                    {Object.keys(log.changes).join(', ')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <ConfirmationModal
                 {...modalConfig}

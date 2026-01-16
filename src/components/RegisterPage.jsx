@@ -15,12 +15,37 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+
+        if (!formData.name.trim() || !formData.username.trim() || !formData.email.trim() || !formData.password) {
+            setError('Please fill in all fields.');
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(formData.email)) {
+            setError('Invalid email address.');
+            return;
+        }
+
+        if (formData.password.length < 6) {
+            setError('Password must be at least 6 characters.');
+            return;
+        }
+
         setLoading(true);
         try {
             await register(formData.name, formData.username, formData.email, formData.password);
             onRegisterSuccess();
         } catch (err) {
-            setError(err.message || 'Failed to register');
+            if (err.code === 'auth/email-already-in-use') {
+                setError('Email is already in use. Please login or use a different email.');
+            } else if (err.code === 'auth/weak-password') {
+                setError('Password should be at least 6 characters.');
+            } else if (err.code === 'auth/invalid-email') {
+                setError('Invalid email address.');
+            } else {
+                setError(err.message || 'Failed to register');
+            }
         } finally {
             setLoading(false);
         }
@@ -49,11 +74,11 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                     <h2 className={cn(
                         "text-3xl font-black mb-2 tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"
-                    )}>Join the Galaxy</h2>
+                    )}>Join the K-PopDB</h2>
                     <p className={cn(
                         "font-medium text-sm",
                         theme === 'dark' ? "text-slate-400" : "text-slate-500"
-                    )}>Create your identity in the archives</p>
+                    )}>Create your ID</p>
                 </div>
 
                 {error && (
@@ -116,7 +141,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                         )}
                     >
                         <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                        {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Initialize Account"}
+                        {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Register"}
                     </button>
                 </form>
 

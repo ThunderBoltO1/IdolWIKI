@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { collection, getDocs, getCountFromServer, query, where, orderBy, limit, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, getCountFromServer, query, where, orderBy, limit, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw } from 'lucide-react';
+import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw, History } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 
@@ -25,6 +25,23 @@ export function AdminDashboard({ onBack }) {
     const [topGroups, setTopGroups] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [auditLogs, setAuditLogs] = useState([]);
+    const [logsLoading, setLogsLoading] = useState(true);
+
+    // Real-time listener for online users
+    useEffect(() => {
+        if (!isAdmin) return;
+
+        const q = query(collection(db, 'users'), where('isOnline', '==', true));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setStats(prev => ({
+                ...prev,
+                onlineUsers: snapshot.size
+            }));
+        });
+
+        return () => unsubscribe();
+    }, [isAdmin]);
 
     useEffect(() => {
         const fetchStats = async () => {
@@ -57,9 +74,8 @@ export function AdminDashboard({ onBack }) {
                 const topGroupsQuery = query(collection(db, 'groups'), orderBy('favorites', 'desc'), limit(5));
     
                 // Fetch other counts and activity logs
-                const [usersSnap, onlineUsersSnap, idolsSnap, groupsSnap, commentsSnap, topIdolsSnap, topGroupsSnap] = await Promise.all([
+                const [usersSnap, idolsSnap, groupsSnap, commentsSnap, topIdolsSnap, topGroupsSnap] = await Promise.all([
                     getCountFromServer(collection(db, 'users')),
-                    getCountFromServer(query(collection(db, 'users'), where('isOnline', '==', true))),
                     getCountFromServer(collection(db, 'idols')),
                     getDocs(collection(db, 'groups')),
                     getCountFromServer(collection(db, 'comments')),
@@ -109,14 +125,14 @@ export function AdminDashboard({ onBack }) {
                     .sort((a, b) => b.awardCount - a.awardCount);
                 setGroupAwards(awardsData);
 
-                setStats({
+                setStats(prev => ({
+                    ...prev,
                     users: usersSnap.data().count,
                     dailyActiveUsers: dailyActiveUsersCount,
-                    onlineUsers: onlineUsersSnap.data().count,
                     idols: idolsSnap.data().count,
                     groups: groupsSnap.size,
                     comments: commentsSnap.data().count
-                });
+                }));
             } catch (error) {
                 console.error("Error fetching stats:", error);
                 setError("Failed to load stats. Please check your Firestore Security Rules.");
@@ -127,6 +143,23 @@ export function AdminDashboard({ onBack }) {
 
         if (isAdmin) {
             fetchStats();
+        }
+    }, [isAdmin]);
+
+    useEffect(() => {
+        if (isAdmin) {
+            const fetchLogs = async () => {
+                try {
+                    const q = query(collection(db, 'auditLogs'), orderBy('createdAt', 'desc'), limit(50));
+                    const snapshot = await getDocs(q);
+                    setAuditLogs(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+                } catch (e) {
+                    console.error("Failed to fetch audit logs", e);
+                } finally {
+                    setLogsLoading(false);
+                }
+            };
+            fetchLogs();
         }
     }, [isAdmin]);
 
@@ -421,6 +454,70 @@ export function AdminDashboard({ onBack }) {
                                 </div>
                             </motion.div>
                         ))}
+                    </div>
+                </div>
+
+                <div className="mt-16">
+                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                        <History className="text-blue-500" />
+                        System Audit Logs
+                    </h2>
+                    <div className={cn(
+                        "rounded-3xl border overflow-hidden",
+                        theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
+                    )}>
+                        {logsLoading ? (
+                            <div className="p-10 flex justify-center">
+                                <Loader2 className="animate-spin text-brand-pink" size={32} />
+                            </div>
+                        ) : auditLogs.length === 0 ? (
+                            <div className="p-10 text-center text-slate-500 font-medium">No audit logs found.</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead className={cn(
+                                        "border-b font-black uppercase tracking-wider text-xs",
+                                        theme === 'dark' ? "border-white/10 text-slate-400 bg-white/5" : "border-slate-100 text-slate-500 bg-slate-50"
+                                    )}>
+                                        <tr>
+                                            <th className="p-4">Time</th>
+                                            <th className="p-4">User</th>
+                                            <th className="p-4">Action</th>
+                                            <th className="p-4">Target</th>
+                                            <th className="p-4">Details</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className={cn("divide-y", theme === 'dark' ? "divide-white/5" : "divide-slate-100")}>
+                                        {auditLogs.map(log => (
+                                            <tr key={log.id} className={cn("transition-colors", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")}>
+                                                <td className="p-4 whitespace-nowrap text-slate-500 font-medium">
+                                                    {log.createdAt?.toMillis ? new Date(log.createdAt.toMillis()).toLocaleString() : 'Unknown'}
+                                                </td>
+                                                <td className={cn("p-4 font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                    {log.userName || 'Unknown'}
+                                                </td>
+                                                <td className="p-4">
+                                                    <span className={cn(
+                                                        "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
+                                                        log.action === 'create' ? "bg-green-500/10 text-green-500" : 
+                                                        log.action === 'update' ? "bg-blue-500/10 text-blue-500" : 
+                                                        log.action === 'delete' ? "bg-red-500/10 text-red-500" : "bg-slate-500/10 text-slate-500"
+                                                    )}>
+                                                        {log.action}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 font-medium">
+                                                    <span className="capitalize opacity-70">{log.targetType}</span>: {log.targetId}
+                                                </td>
+                                                <td className="p-4 max-w-xs truncate text-slate-500 font-mono text-xs">
+                                                    {JSON.stringify(log.changes)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
 

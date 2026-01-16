@@ -1,11 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube } from 'lucide-react';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { ImageCropper } from './ImageCropper';
 import { createImage, isDataUrl } from '../lib/cropImage';
+import { getDocs, query, where, collection } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { convertDriveLink } from '../lib/storage';
 
+function DateSelect({ value, onChange, theme }) {
+    const date = value ? new Date(value) : new Date();
+    const [year, setYear] = useState(value ? date.getFullYear() : '');
+    const [month, setMonth] = useState(value ? date.getMonth() + 1 : '');
+    const [day, setDay] = useState(value ? date.getDate() : '');
+
+    useEffect(() => {
+        if (value) {
+            const d = new Date(value);
+            setYear(d.getFullYear());
+            setMonth(d.getMonth() + 1);
+            setDay(d.getDate());
+        }
+    }, [value]);
+
+    const updateDate = (y, m, d) => {
+        if (y && m && d) {
+            const formattedDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            onChange(formattedDate);
+        } else {
+            onChange('');
+        }
+    };
+
+    const years = Array.from({ length: new Date().getFullYear() - 1989 }, (_, i) => new Date().getFullYear() - i);
+    const months = [
+        { val: 1, label: 'Jan' }, { val: 2, label: 'Feb' }, { val: 3, label: 'Mar' }, { val: 4, label: 'Apr' },
+        { val: 5, label: 'May' }, { val: 6, label: 'Jun' }, { val: 7, label: 'Jul' }, { val: 8, label: 'Aug' },
+        { val: 9, label: 'Sep' }, { val: 10, label: 'Oct' }, { val: 11, label: 'Nov' }, { val: 12, label: 'Dec' }
+    ];
+    const days = Array.from({ length: 31 }, (_, i) => i + 1);
+
+    const selectClass = cn(
+        "flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold appearance-none cursor-pointer",
+        theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+    );
+
+    return (
+        <div className="space-y-2">
+            <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                <Calendar size={12} /> Debut Date
+            </label>
+            <div className="flex gap-2">
+                <div className="relative flex-1">
+                    <select 
+                        value={day} 
+                        onChange={(e) => { setDay(e.target.value); updateDate(year, month, e.target.value); }} 
+                        className={selectClass}
+                    >
+                        <option value="">Day</option>
+                        {days.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                </div>
+                <div className="relative flex-1">
+                    <select 
+                        value={month} 
+                        onChange={(e) => { setMonth(e.target.value); updateDate(year, e.target.value, day); }} 
+                        className={selectClass}
+                    >
+                        <option value="">Month</option>
+                        {months.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
+                    </select>
+                </div>
+                <div className="relative flex-1">
+                    <select 
+                        value={year} 
+                        onChange={(e) => { setYear(e.target.value); updateDate(e.target.value, month, day); }} 
+                        className={selectClass}
+                    >
+                        <option value="">Year</option>
+                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -31,7 +111,7 @@ const AWARD_DATA = {
         "Golden Disc Awards (GDA)": [
             "Digital Daesang (Song of the Year)", "Album Daesang (Album of the Year)",
             "Digital Song Bonsang", "Album Bonsang", "Rookie Artist of the Year",
-            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award"
+            "Best Solo Artist", "Best Group", "Most Popular Artist", "Cosmopolitan Artist Award", "Song Division"
         ],
         "Korean Music Awards (KMA)": [
             "Musician of the Year", "Song of the Year", "Album of the Year", "Rookie of the Year",
@@ -115,10 +195,14 @@ const AWARD_DATA = {
     }
 };
 
-export function GroupModal({ isOpen, onClose, onSave }) {
+export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const { theme } = useTheme();
     const [loading, setLoading] = useState(false);
     const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4.2 });
+    const [memberSearch, setMemberSearch] = useState('');
+    const [selectedMembers, setSelectedMembers] = useState([]);
+    const searchInputRef = useRef(null);
+    const dropdownRef = useRef(null);
     const [formData, setFormData] = useState({
         name: '',
         koreanName: '',
@@ -127,7 +211,6 @@ export function GroupModal({ isOpen, onClose, onSave }) {
         debutDate: '',
         fanclub: '',
         image: '',
-        themeSongUrl: '',
         members: [], // Initialize empty members
         gallery: [],
         awards: [],
@@ -151,7 +234,6 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                 debutDate: '',
                 fanclub: '',
                 image: '',
-                themeSongUrl: '',
                 members: [],
                 gallery: [],
                 awards: [],
@@ -163,8 +245,23 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                 show: '',
                 award: ''
             });
+            setMemberSearch('');
+            setSelectedMembers([]);
         }
     }, [isOpen]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target) && searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+                setMemberSearch('');
+            }
+        };
+
+        if (memberSearch) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [memberSearch]);
 
     const startCropping = (url, callback, aspect = 3 / 4.2) => {
         if (!url || isDataUrl(url)) {
@@ -178,7 +275,19 @@ export function GroupModal({ isOpen, onClose, onSave }) {
         e.preventDefault();
         setLoading(true);
         try {
-            await onSave(formData);
+            // Check for duplicate group name
+            const q = query(collection(db, 'groups'), where('name', '==', formData.name));
+            const snapshot = await getDocs(q);
+            if (!snapshot.empty) {
+                alert('Group name already exists!');
+                setLoading(false);
+                return;
+            }
+
+            await onSave({
+                ...formData,
+                members: selectedMembers.map(m => m.id)
+            });
             onClose();
         } catch (error) {
             console.error("Error creating group:", error);
@@ -257,12 +366,8 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                                 <InputGroup label="Image URL" value={formData.image} onChange={e => handleImageChange(e.target.value)} theme={theme} icon={ImageIcon} placeholder="https://..." />
                             </div>
 
-                            <div className="md:col-span-2">
-                                <InputGroup label="Theme Song URL (YouTube)" value={formData.themeSongUrl} onChange={e => setFormData({...formData, themeSongUrl: e.target.value})} theme={theme} icon={Youtube} placeholder="https://youtube.com/watch?v=..." />
-                            </div>
-
                             <InputGroup label="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
-                            <InputGroup label="Debut Date" value={formData.debutDate} onChange={e => setFormData({...formData, debutDate: e.target.value})} theme={theme} icon={Calendar} type="date" />
+                            <DateSelect value={formData.debutDate} onChange={val => setFormData({...formData, debutDate: val})} theme={theme} />
                             <InputGroup label="Fanclub Name" value={formData.fanclub} onChange={e => setFormData({...formData, fanclub: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLINK" />
                             
                             <div className="md:col-span-2 space-y-2">
@@ -354,6 +459,109 @@ export function GroupModal({ isOpen, onClose, onSave }) {
                                     ))}
                                     </AnimatePresence>
                                 </div>
+                            </div>
+
+                            <div className="md:col-span-2 space-y-3 pt-4 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                    <Users size={12} /> Add Members
+                                </label>
+                                
+                                <div className="relative">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                                    <input
+                                        ref={searchInputRef}
+                                        value={memberSearch}
+                                        onChange={e => setMemberSearch(e.target.value)}
+                                        className={cn(
+                                            "w-full rounded-2xl py-3 pl-12 pr-4 border-2 focus:outline-none transition-all text-sm font-bold",
+                                            theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+                                        )}
+                                        placeholder="Search idols to add..."
+                                    />
+                                    {memberSearch && (
+                                        <div 
+                                            ref={dropdownRef}
+                                            className={cn(
+                                            "absolute top-full left-0 right-0 mt-2 rounded-2xl border shadow-xl overflow-hidden z-20 max-h-48 overflow-y-auto",
+                                            theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+                                        )}>
+                                            {idols.filter(i => 
+                                                !selectedMembers.find(m => m.id === i.id) && 
+                                                (i.name.toLowerCase().includes(memberSearch.toLowerCase()) || (i.koreanName && i.koreanName.includes(memberSearch)))
+                                            ).map(idol => (
+                                                <button
+                                                    key={idol.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (idol.groupId) {
+                                                            if (!window.confirm(`${idol.name} is already in "${idol.group}". Do you want to move them to this new group?`)) {
+                                                                return;
+                                                            }
+                                                        }
+                                                        setSelectedMembers([...selectedMembers, idol]);
+                                                        searchInputRef.current?.focus();
+                                                    }}
+                                                    className={cn(
+                                                        "w-full p-3 flex items-center gap-3 hover:bg-brand-pink/10 transition-colors text-left",
+                                                        theme === 'dark' ? "text-white" : "text-slate-900"
+                                                    )}
+                                                >
+                                                    <img src={convertDriveLink(idol.image)} className="w-8 h-8 rounded-full object-cover" alt="" />
+                                                    <div>
+                                                        <p className="text-sm font-bold">{idol.name}</p>
+                                                        <p className="text-xs text-slate-500">{idol.group || 'Soloist'}</p>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                            
+                                            <button
+                                                type="button"
+                                                onClick={() => onAddIdol && onAddIdol({ name: memberSearch })}
+                                                className={cn(
+                                                    "w-full p-3 flex items-center gap-3 hover:bg-brand-pink/10 transition-colors text-left border-t",
+                                                    theme === 'dark' ? "text-brand-pink border-white/10" : "text-brand-pink border-slate-100"
+                                                )}
+                                            >
+                                                <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center shrink-0">
+                                                    <Plus size={16} />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-bold">Create "{memberSearch}"</p>
+                                                    <p className="text-xs opacity-70">Add a new idol to the database</p>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {selectedMembers.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                        <AnimatePresence mode="popLayout">
+                                        {selectedMembers.map(member => (
+                                            <motion.div
+                                                layout
+                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                exit={{ opacity: 0, scale: 0.8 }}
+                                                key={member.id}
+                                                className={cn(
+                                                "flex items-center gap-2 pl-1 pr-2 py-1 rounded-full border",
+                                                theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-white border-slate-200"
+                                            )}>
+                                                <img src={convertDriveLink(member.image)} className="w-6 h-6 rounded-full object-cover" alt="" />
+                                                <span className={cn("text-xs font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.name}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedMembers(selectedMembers.filter(m => m.id !== member.id))}
+                                                    className="p-1 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </motion.div>
+                                        ))}
+                                        </AnimatePresence>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="md:col-span-2 space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">

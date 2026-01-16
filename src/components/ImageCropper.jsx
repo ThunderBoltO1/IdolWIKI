@@ -11,6 +11,7 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
+    const [cropShape, setCropShape] = useState("round"); // Default to round, can be "rect"
     const [loading, setLoading] = useState(true);
     const [image, setImage] = useState(null);
     const [error, setError] = useState(null);
@@ -63,6 +64,7 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
             <div className="fixed inset-0 z-[101] flex flex-col items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
+
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={onCancel}
@@ -141,3 +143,8 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
         </AnimatePresence>
     );
 }
+
+ImageCropper.defaultProps = {
+    aspect: 3 / 4,
+    cropShape: "round"
+};

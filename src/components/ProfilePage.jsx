@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2 } from 'lucide-react';
+import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { ImageCropper } from './ImageCropper';
@@ -106,19 +106,38 @@ export const ProfilePage = ({ onBack }) => {
                     <div className="flex flex-col items-center gap-5">
                         <div className="relative group">
                             <div className="absolute inset-0 bg-gradient-to-tr from-brand-pink to-brand-purple rounded-full blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
-                            <img
-                                src={convertDriveLink(formData.avatar)}
-                                alt="Avatar"
-                                className={cn(
-                                    "w-36 h-36 rounded-full border-4 object-cover shadow-2xl relative z-10 transition-transform duration-500 group-hover:scale-105",
-                                    theme === 'dark' ? "border-slate-800" : "border-white"
-                                )}
-                                onError={(e) => {
-                                    e.target.onerror = null;
-                                    e.target.src = '';
-                                }}
-                            />
+                            {formData.avatar ? (
+                                <img
+                                    src={convertDriveLink(formData.avatar)}
+                                    alt="Avatar"
+                                    className={cn(
+                                        "w-36 h-36 rounded-full border-4 object-cover shadow-2xl relative z-10 transition-transform duration-500 group-hover:scale-105",
+                                        theme === 'dark' ? "border-slate-800" : "border-white"
+                                    )}
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = '';
+                                    }}
+                                />
+                            ) : (
+                                <div className={cn(
+                                    "w-36 h-36 rounded-full border-4 flex items-center justify-center shadow-2xl relative z-10 transition-transform duration-500 group-hover:scale-105",
+                                    theme === 'dark' ? "border-slate-800 bg-slate-800 text-slate-500" : "border-white bg-slate-100 text-slate-400"
+                                )}>
+                                    <User size={64} />
+                                </div>
+                            )}
                         </div>
+                        {formData.avatar && (
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, avatar: '' }))}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors text-xs font-black uppercase tracking-widest"
+                            >
+                                <Trash2 size={14} />
+                                Reset Avatar
+                            </button>
+                        )}
                     </div>
 
                     <div className="grid gap-8 md:grid-cols-2">

@@ -3,8 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, addDoc, serverTimestamp, where, writeBatch } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Loader2, Trash2, Shield, User, Search, CheckCircle2, ArrowLeft, Ban, AlertCircle, History, X, MessageSquare, Send, Megaphone, Activity } from 'lucide-react';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { db, auth } from '../lib/firebase';
+import { Loader2, Trash2, Shield, User, Search, CheckCircle2, ArrowLeft, Ban, AlertCircle, History, X, MessageSquare, Send, Megaphone, Activity, KeyRound } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 
@@ -26,6 +27,7 @@ export function AdminUserManagement({ onBack }) {
     const [viewingActivityFor, setViewingActivityFor] = useState(null);
     const [activityLogs, setActivityLogs] = useState([]);
     const [activityLoading, setActivityLoading] = useState(false);
+    const [activityError, setActivityError] = useState(null);
 
     useEffect(() => {
         if (isAdmin) {
@@ -109,6 +111,21 @@ export function AdminUserManagement({ onBack }) {
         }
     };
 
+    const handleResetPassword = async (userItem) => {
+        if (!window.confirm(`Are you sure you want to send a password reset email to ${userItem.email}?`)) return;
+        
+        setActionLoading(`${userItem.id}-reset-password`);
+        try {
+            await sendPasswordResetEmail(auth, userItem.email);
+            showSuccess(`Password reset email sent to ${userItem.email}`);
+        } catch (error) {
+            console.error("Error sending reset password email:", error);
+            alert("Failed to send password reset email: " + error.message);
+        } finally {
+            setActionLoading(null);
+        }
+    };
+
     const fetchBanHistory = async (userItem) => {
         setViewingHistoryFor(userItem);
         setHistoryLoading(true);
@@ -134,6 +151,7 @@ export function AdminUserManagement({ onBack }) {
         setViewingActivityFor(userItem);
         setActivityLoading(true);
         setActivityLogs([]);
+        setActivityError(null);
         try {
             const q = query(
                 collection(db, 'activityLogs'),
@@ -146,7 +164,7 @@ export function AdminUserManagement({ onBack }) {
             setActivityLogs(logs);
         } catch (err) {
             console.error("Error fetching activity logs:", err);
-            alert("Failed to fetch activity logs");
+            setActivityError("Failed to fetch activity logs. Check permissions.");
         } finally {
             setActivityLoading(false);
         }
@@ -377,19 +395,6 @@ export function AdminUserManagement({ onBack }) {
                                 </button>
 
                                 <button
-                                    onClick={() => fetchActivityLogs(userItem)}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-emerald-900/30 text-slate-500 hover:text-emerald-400" 
-                                            : "hover:bg-emerald-50 text-slate-400 hover:text-emerald-500"
-                                    )}
-                                    title="View Activity Logs"
-                                >
-                                    <Activity size={20} />
-                                </button>
-
-                                <button
                                     onClick={() => setNotificationTarget(userItem)}
                                     className={cn(
                                         "p-2.5 rounded-xl transition-colors",
@@ -400,6 +405,21 @@ export function AdminUserManagement({ onBack }) {
                                     title="Send Message"
                                 >
                                     <MessageSquare size={20} />
+                                </button>
+
+                                <button
+                                    onClick={() => handleResetPassword(userItem)}
+                                    disabled={isUserLoading(userItem.id)}
+                                    className={cn(
+                                        "p-2.5 rounded-xl transition-colors",
+                                        theme === 'dark' 
+                                            ? "hover:bg-yellow-900/30 text-slate-500 hover:text-yellow-400" 
+                                            : "hover:bg-yellow-50 text-slate-400 hover:text-yellow-500",
+                                        (isUserLoading(userItem.id)) && "opacity-50 cursor-not-allowed"
+                                    )}
+                                    title="Send Password Reset Email"
+                                >
+                                    {actionLoading === `${userItem.id}-reset-password` ? <Loader2 size={20} className="animate-spin" /> : <KeyRound size={20} />}
                                 </button>
 
                                 <button
@@ -603,6 +623,11 @@ export function AdminUserManagement({ onBack }) {
                             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
                                 {activityLoading ? (
                                     <div className="flex justify-center py-10"><Loader2 className="animate-spin text-brand-pink" /></div>
+                                ) : activityError ? (
+                                    <div className="p-10 text-center">
+                                        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
+                                        <p className="text-red-500 font-bold">{activityError}</p>
+                                    </div>
                                 ) : activityLogs.length === 0 ? (
                                     <p className="text-center text-slate-500 py-10">No activity recorded.</p>
                                 ) : (

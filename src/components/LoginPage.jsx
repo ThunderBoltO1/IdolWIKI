@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -6,18 +7,26 @@ import { Lock, Mail, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
-    const { login } = useAuth();
+    const { login, user } = useAuth();
+    const navigate = useNavigate();
     const { theme } = useTheme();
     const [formData, setFormData] = useState({ identifier: '', password: '' });
+    const [rememberMe, setRememberMe] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            navigate('/');
+        }
+    }, [user, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setLoading(true);
         try {
-            await login(formData.identifier, formData.password);
+            await login(formData.identifier, formData.password, rememberMe);
             onLoginSuccess();
         } catch (err) {
             setError(err.message || 'Failed to login');
@@ -119,6 +128,25 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                                 placeholder="••••••••"
                             />
                         </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-1">
+                        <input
+                            type="checkbox"
+                            id="remember-me"
+                            checked={rememberMe}
+                            onChange={(e) => setRememberMe(e.target.checked)}
+                            className="w-4 h-4 rounded border-gray-300 text-brand-pink focus:ring-brand-pink accent-brand-pink cursor-pointer"
+                        />
+                        <label 
+                            htmlFor="remember-me" 
+                            className={cn(
+                                "text-xs font-bold cursor-pointer select-none", 
+                                theme === 'dark' ? "text-slate-400" : "text-slate-500"
+                            )}
+                        >
+                            Remember Me
+                        </label>
                     </div>
 
                     <button

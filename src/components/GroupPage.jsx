@@ -1,18 +1,19 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History } from 'lucide-react';
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder } from 'framer-motion';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, Twitter, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ImageCropper } from './ImageCropper';
-import { createImage, isDataUrl } from '../lib/cropImage';
+import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { GroupCard } from './GroupCard';
+import Cropper from 'react-easy-crop';
 
 const AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -122,15 +123,18 @@ const AWARD_DATA = {
     }
 };
 
-export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick }) {
+export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [] }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
     const containerRef = useRef(null);
+    const [displayGroup, setDisplayGroup] = useState(group);
     const [activeImage, setActiveImage] = useState(group?.image || '');
     const [lightboxImage, setLightboxImage] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
+    const [isReordering, setIsReordering] = useState(false);
     const [formData, setFormData] = useState(group || {});
+    const [refreshing, setRefreshing] = useState(false);
     const [activeTab, setActiveTab] = useState('members');
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
@@ -156,7 +160,67 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         confirmText: 'OK'
     });
     const [similarGroups, setSimilarGroups] = useState([]);
+    const [loadingSimilarGroups, setLoadingSimilarGroups] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+
+    const [heroCrop, setHeroCrop] = useState({ x: 0, y: 0 });
+    const [heroZoom, setHeroZoom] = useState(1);
+    const [heroCroppedArea, setHeroCroppedArea] = useState(null);
+    const searchInputRef = useRef(null);
+    const dropdownRef = useRef(null);
+
+
+    const [memberSearch, setMemberSearch] = useState('');
+    const [editingMembers, setEditingMembers] = useState([]);
+    const [selectedTimelineMember, setSelectedTimelineMember] = useState(null);
+    const [news, setNews] = useState([]);
+    const [loadingNews, setLoadingNews] = useState(false);
+    const [newsSourceFilter, setNewsSourceFilter] = useState('all');
+
+    const filteredNews = useMemo(() => {
+        if (newsSourceFilter === 'all') return news;
+        return news.filter(item => item.provider?.[0]?.name.toLowerCase().includes(newsSourceFilter.toLowerCase()));
+    }, [news, newsSourceFilter]);
+
+    const calculateAgeAtDate = (birthDate, targetDate) => {
+        if (!birthDate || !targetDate) return null;
+        const birth = new Date(birthDate);
+        const target = new Date(targetDate);
+        let age = target.getFullYear() - birth.getFullYear();
+        const m = target.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && target.getDate() < birth.getDate())) age--;
+        return age;
+    };
+
+    const sortedMembers = useMemo(() => {
+        if (!members) return [];
+        const currentMemberIds = displayGroup?.members || [];
+        
+        const memberMap = new Map(members.map(m => [m.id, m]));
+        const ordered = currentMemberIds.map(id => memberMap.get(id)).filter(Boolean);
+        const orderedIds = new Set(ordered.map(m => m.id));
+        const remaining = members.filter(m => !orderedIds.has(m.id));
+        return [...ordered, ...remaining];
+    }, [members, displayGroup?.members]);
+
+    const editingMembersList = useMemo(() => {
+        const memberIds = formData.members || [];
+        const memberMap = new Map(allIdols.map(m => [m.id, m]));
+        return memberIds.map(id => memberMap.get(id)).filter(Boolean);
+    }, [formData.members, allIdols]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target) && searchInputRef.current && !searchInputRef.current.contains(event.target)) {
+                setMemberSearch('');
+            }
+        };
+
+        if (memberSearch) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [memberSearch]);
 
     const timelineMembers = useMemo(() => {
         return [...(members || [])].sort((a, b) => {
@@ -167,12 +231,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     }, [members]);
 
     useEffect(() => {
-        if (!group?.id) return;
+        setSelectedTimelineMember(null);
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (!displayGroup?.id) return;
         setLoadingComments(true);
 
         const q = query(
             collection(db, 'comments'),
-            where('targetId', '==', group.id),
+            where('targetId', '==', displayGroup.id),
             where('targetType', '==', 'group')
         );
 
@@ -198,29 +266,130 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setLoadingComments(false);
         });
         return () => unsubscribe();
-    }, [group?.id, user]);
+    }, [displayGroup?.id, user]);
 
     useEffect(() => {
-        if (!group?.company) return;
+        if (!displayGroup?.company) return;
 
         const fetchSimilar = async () => {
+            setLoadingSimilarGroups(true);
             try {
                 const q = query(
                     collection(db, 'groups'),
-                    where('company', '==', group.company),
+                    where('company', '==', displayGroup.company),
                     limit(5)
                 );
                 const snapshot = await getDocs(q);
                 const results = snapshot.docs
                     .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(g => g.id !== group.id);
+                    .filter(g => g.id !== displayGroup.id);
                 setSimilarGroups(results);
             } catch (err) {
                 console.error("Error fetching similar groups", err);
+            } finally {
+                setLoadingSimilarGroups(false);
             }
         };
         fetchSimilar();
-    }, [group?.company, group?.id]);
+    }, [displayGroup?.company, displayGroup?.id]);
+
+    useEffect(() => {
+        if (activeTab === 'news' && displayGroup?.name) {
+            fetchNews();
+        }
+    }, [activeTab, displayGroup?.name]);
+
+    const fetchNews = async () => {
+        setLoadingNews(true);
+        try {
+            const groupNameLower = displayGroup.name.toLowerCase();
+            const koreanNameLower = (displayGroup.koreanName || '').toLowerCase();
+            let mappedNews = [];
+
+            // 1. Try Koreaboo RSS via rss2json
+            try {
+                const rssUrl = 'https://www.koreaboo.com/feed/';
+                const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
+            
+                const response = await fetch(apiUrl);
+                const data = await response.json();
+
+                if (data.status === 'ok') {
+                    const filteredItems = data.items.filter(item => {
+                        const title = (item.title || '').toLowerCase();
+                        return title.includes(groupNameLower) || (koreanNameLower && title.includes(koreanNameLower));
+                    });
+
+                    if (filteredItems.length > 0) {
+                        mappedNews = filteredItems.map(item => {
+                            // Try to find image in description if not in thumbnail/enclosure
+                            let contentImg = null;
+                            const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
+                            if (imgMatch) {
+                                contentImg = imgMatch[1];
+                            }
+
+                            return {
+                            name: item.title,
+                            url: item.link,
+                            description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
+                            datePublished: item.pubDate,
+                            provider: [{ name: data.feed?.title || 'Koreaboo' }],
+                            image: { 
+                                thumbnail: { 
+                                    // Prioritize thumbnail, then enclosure, then extracted from content, then fallback
+                                    contentUrl: item.thumbnail || item.enclosure?.link || contentImg || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'
+                                } 
+                            }
+                        }});
+                    }
+                }
+            } catch (err) {
+                console.warn("Koreaboo fetch failed, trying fallback...", err);
+            }
+
+            // 2. Fallback: Google News RSS via rss2json
+            if (mappedNews.length === 0) {
+                try {
+                    const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(displayGroup.name + ' kpop')}&hl=en-US&gl=US&ceid=US:en`;
+                    const googleApiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleRssUrl)}`;
+                    
+                    const response = await fetch(googleApiUrl);
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        mappedNews = data.items.map(item => {
+                            // Try to find image in description if not in thumbnail/enclosure
+                            let contentImg = null;
+                            const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
+                            if (imgMatch) {
+                                contentImg = imgMatch[1];
+                            }
+                            return {
+                            name: item.title,
+                            url: item.link,
+                            description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
+                            datePublished: item.pubDate,
+                            provider: [{ name: 'Google News' }],
+                            image: { 
+                            thumbnail: {
+                                    contentUrl: item.thumbnail || item.enclosure?.link || contentImg || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'
+                                } 
+                            }
+                        }});
+                    }
+                } catch (err) {
+                    console.error("Google News fallback failed", err);
+                }
+            }
+
+            setNews(mappedNews);
+        } catch (error) {
+            console.error("Error fetching news:", error);
+        } finally {
+            setLoadingNews(false);
+        }
+    };
 
     const createMentions = async (text, commentId) => {
         const mentionRegex = /@([a-zA-Z0-9_]+)/g;
@@ -243,9 +412,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             senderName: user.name || 'Anonymous',
                             senderAvatar: user.avatar || '',
                             type: 'mention',
-                            targetId: group.id,
+                            targetId: displayGroup.id,
                             targetType: 'group',
-                            targetName: group.name,
+                            targetName: displayGroup.name,
                             commentId: commentId,
                             text: text,
                             createdAt: serverTimestamp(),
@@ -268,7 +437,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 user: user.name || 'Anonymous',
                 username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
-                targetId: group.id,
+                targetId: displayGroup.id,
                 targetType: 'group',
                 createdAt: serverTimestamp(),
                 likes: 0,
@@ -290,7 +459,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 user: user.name || 'Anonymous',
                 username: (user.username || '').toLowerCase().trim(),
                 avatar: user.avatar || '',
-                targetId: group.id,
+                targetId: displayGroup.id,
                 targetType: 'group',
                 parentId: parentId,
                 createdAt: serverTimestamp(),
@@ -399,6 +568,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     // Sync activeImage when group data changes from Firestore
     useEffect(() => {
         if (group) {
+            setDisplayGroup(group);
             setActiveImage(group.image);
             setFormData(group);
         }
@@ -406,7 +576,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
     useEffect(() => {
         setVisibleComments(5);
-    }, [group?.id]);
+    }, [displayGroup?.id]);
 
     const { scrollY } = useScroll();
     const y1 = useTransform(scrollY, [0, 500], [0, 150]);
@@ -414,7 +584,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const opacity = useTransform(scrollY, [0, 400], [1, 0]);
     const y2 = useTransform(scrollY, [0, 400], [0, -50]);
 
-    const allImages = group ? [group.image, ...(group.gallery || [])].filter(Boolean) : [];
+    const allImages = displayGroup ? [displayGroup.image, ...(displayGroup.gallery || [])].filter(Boolean) : [];
 
     // Filter root comments and replies
     const rootComments = comments.filter(c => !c.parentId);
@@ -459,7 +629,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [lightboxImage, allImages]);
 
-    if (!group) return (
+    if (!displayGroup) return (
         <div className="py-20 text-center">
             <h2 className="text-4xl font-black text-white">Group not found</h2>
             <button onClick={onBack} className="mt-8 px-10 py-4 bg-brand-pink text-white rounded-2xl font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-brand-pink/20">Go Back Home</button>
@@ -467,9 +637,50 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     );
 
     const handleSaveGroup = async () => {
-        await onUpdateGroup(group.id, formData);
+        let imageToSave = formData.image;
+        if (heroCroppedArea && activeImage) {
+            try {
+                const croppedImage = await getCroppedImgDataUrl(activeImage, heroCroppedArea);
+                imageToSave = croppedImage;
+            } catch (e) {
+                console.error("Failed to crop hero image", e);
+            }
+        }
+
+        // Handle Member Updates
+        const originalMemberIds = group.members || [];
+        const newMemberIds = formData.members || [];
+        
+        const addedMembers = newMemberIds.filter(id => !originalMemberIds.includes(id));
+        const removedMembers = originalMemberIds.filter(id => !newMemberIds.includes(id));
+
+        if (addedMembers.length > 0 || removedMembers.length > 0) {
+            const batch = writeBatch(db);
+            
+            // Update added members
+            addedMembers.forEach(idolId => {
+                const idolRef = doc(db, 'idols', idolId);
+                batch.update(idolRef, { 
+                    groupId: displayGroup.id, 
+                    group: formData.name 
+                });
+            });
+
+            // Update removed members
+            removedMembers.forEach(idolId => {
+                const idolRef = doc(db, 'idols', idolId);
+                batch.update(idolRef, { 
+                    groupId: null, 
+                    group: null 
+                });
+            });
+            await batch.commit();
+        }
+
+        await onUpdateGroup(displayGroup.id, { ...formData, image: imageToSave, members: newMemberIds });
         setIsEditing(false);
-        setActiveImage(formData.image);
+        setIsReordering(false);
+        setActiveImage(imageToSave);
     };
 
     const handleAddAward = () => {
@@ -517,27 +728,110 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         setFormData({ ...formData, albums: newAlbums });
     };
 
+    const handleRefresh = async () => {
+        if (!displayGroup?.id) return;
+        setRefreshing(true);
+        try {
+            const docRef = doc(db, 'groups', displayGroup.id);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const newData = { id: docSnap.id, ...docSnap.data() };
+                setDisplayGroup(newData);
+                setFormData(newData);
+                setActiveImage(newData.image);
+            }
+        } catch (error) {
+            console.error("Error refreshing group:", error);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     return (
-        <div className="py-8 space-y-20 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+        <div className="py-6 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+            {/* Social Media Links (Top) */}
+            {!isEditing && (displayGroup?.instagram || displayGroup?.twitter || displayGroup?.youtube) && (
+                <div className="flex justify-end gap-3 px-2">
+                    {displayGroup.instagram && (
+                        <a href={displayGroup.instagram} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-pink-500 hover:bg-pink-500 hover:text-white border border-white/10" : "bg-white text-pink-500 hover:bg-pink-500 hover:text-white border border-slate-100")}>
+                            <Instagram size={18} />
+                            <span className="hidden sm:inline">Instagram</span>
+                        </a>
+                    )}
+                    {displayGroup.twitter && (
+                        <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-sky-500 hover:bg-sky-500 hover:text-white border border-white/10" : "bg-white text-sky-500 hover:bg-sky-500 hover:text-white border border-slate-100")}>
+                        <X size={18} />
+                            <span className="hidden sm:inline">X</span>
+                        </a>
+                    )}
+                    {displayGroup.youtube && (
+                        <a href={displayGroup.youtube} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-red-500 hover:bg-red-500 hover:text-white border border-white/10" : "bg-white text-red-500 hover:bg-red-500 hover:text-white border border-slate-100")}>
+                            <Youtube size={18} />
+                            <span className="hidden sm:inline">YouTube</span>
+                        </a>
+                    )}
+                </div>
+            )}
+
             {/* Header / Hero Section */}
-            <section className="relative h-[500px] md:h-[700px] rounded-[32px] md:rounded-[60px] overflow-hidden shadow-[0_40px_100px_-20px_rgba(0,0,0,0.5)] group/hero perspective-1000">
+            <section className="relative h-[40vh] min-h-[350px] md:h-[55vh] max-h-[600px] rounded-[24px] md:rounded-[48px] overflow-hidden shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] group/hero perspective-1000">
                 <motion.div
                     style={{ y: y1, scale }}
                     className="absolute inset-0 w-full h-full transition-all duration-700"
                 >
-                    <img
-                        src={convertDriveLink(activeImage)}
-                        alt={group.name}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.src = '';
-                        }}
-                    />
+                    {isEditing ? (
+                        <div className="relative w-full h-full bg-slate-900">
+                            <Cropper
+                                image={activeImage}
+                                crop={heroCrop}
+                                zoom={heroZoom}
+                                aspect={16 / 9}
+                                onCropChange={setHeroCrop}
+                                onCropComplete={(_, pixels) => setHeroCroppedArea(pixels)}
+                                onZoomChange={setHeroZoom}
+                                showGrid={false}
+                                objectFit="horizontal-cover"
+                            />
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
+                                <ZoomOut size={14} className="text-white/80" />
+                                <input
+                                    type="range"
+                                    min={1}
+                                    max={3}
+                                    step={0.1}
+                                    value={heroZoom}
+                                    onChange={(e) => setHeroZoom(Number(e.target.value))}
+                                    className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
+                                />
+                                <ZoomIn size={14} className="text-white/80" />
+                            </div>
+                        </div>
+                    ) : (
+                        <img
+                            src={convertDriveLink(activeImage)}
+                            alt={displayGroup.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = '';
+                            }}
+                        />
+                    )}
                 </motion.div>
 
                 <div className="absolute top-8 right-8 z-20 flex flex-col items-end gap-3">
                     <div className="flex gap-2">
+                        <button
+                            onClick={handleRefresh}
+                            disabled={refreshing}
+                            className={cn(
+                                "p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95",
+                                refreshing && "opacity-50 cursor-not-allowed"
+                            )}
+                            title="Refresh Data"
+                        >
+                            <RefreshCw size={20} className={cn(refreshing && "animate-spin")} />
+                        </button>
                         <button
                             onClick={() => {
                                 navigator.clipboard.writeText(window.location.href);
@@ -568,7 +862,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             ) : (
                                 <>
                                 <button
-                                    onClick={() => onDeleteGroup(group.id)}
+                                    onClick={() => onDeleteGroup(displayGroup.id)}
                                     className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40 active:scale-95"
                                     title="Delete Group"
                                 >
@@ -606,7 +900,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                 <motion.div
                     style={{ y: y2, opacity }}
-                    className="absolute bottom-10 md:bottom-20 left-6 md:left-12 right-6 md:right-12 flex flex-col md:flex-row md:items-end justify-between gap-6 md:gap-10 z-10"
+                    className="absolute bottom-6 md:bottom-12 left-4 md:left-10 right-4 md:right-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 z-10"
                 >
                     <div className="max-w-3xl">
                         {isEditing ? (
@@ -614,13 +908,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <input
                                     value={formData.name || ''}
                                     onChange={e => setFormData({...formData, name: e.target.value})}
-                                    className="w-full bg-transparent text-5xl md:text-7xl font-black text-white border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-white/20"
+                                    className="w-full bg-transparent text-3xl md:text-5xl font-black text-white border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-white/20"
                                     placeholder="Group Name"
                                 />
                                 <input
                                     value={formData.koreanName || ''}
                                     onChange={e => setFormData({...formData, koreanName: e.target.value})}
-                                    className="w-full bg-transparent text-xl md:text-3xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
+                                    className="w-full bg-transparent text-lg md:text-2xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
                                     placeholder="Korean Name"
                                 />
                                 <div className="flex items-center gap-2">
@@ -629,67 +923,59 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         value={formData.image || ''}
                                         onChange={(e) => {
                                             const newUrl = e.target.value;
-                                            startCropping(newUrl, (url) => {
-                                                setFormData({ ...formData, image: url });
-                                                setActiveImage(url);
-                                            });
+                                            setFormData({ ...formData, image: newUrl });
+                                            setActiveImage(newUrl);
+                                            setHeroZoom(1);
+                                            setHeroCrop({ x: 0, y: 0 });
                                         }}
                                         className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
                                         placeholder="Hero Image URL"
                                     />
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <Youtube size={16} className="text-white/50" />
-                                    <input
-                                        value={formData.themeSongUrl || ''}
-                                        onChange={e => setFormData({...formData, themeSongUrl: e.target.value})}
-                                        className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
-                                        placeholder="Theme Song URL (YouTube)"
-                                    />
-                                </div>
                             </div>
                         ) : (
                             <>
-                                <h1 className="text-5xl md:text-7xl lg:text-9xl font-black text-white mb-2 md:mb-4 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-                                    {group.name}
+                                <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+                                    {displayGroup.name}
                                 </h1>
-                                <p className="text-xl md:text-3xl lg:text-4xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
-                                    {group.koreanName}
+                                <p className="text-lg md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
+                                    {displayGroup.koreanName}
                                 </p>
                             </>
                         )}
                     </div>
 
-                    <div className="flex gap-4 md:gap-6">
-                        <div className="px-6 md:px-8 py-4 md:py-6 rounded-[24px] md:rounded-[32px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[100px] md:min-w-[140px] group/stat hover:border-brand-pink/50 transition-colors">
-                            <p className="text-xs text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-pink transition-colors">Members</p>
-                            <p className="text-2xl md:text-4xl font-black text-white">{members.length}</p>
+                    <div className="flex gap-3 md:gap-4">
+                        <div className="px-4 md:px-6 py-3 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[80px] md:min-w-[120px] group/stat hover:border-brand-pink/50 transition-colors">
+                            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-pink transition-colors">Members</p>
+                            <p className="text-xl md:text-3xl font-black text-white">{members.length}</p>
                         </div>
-                        <div className="px-6 md:px-8 py-4 md:py-6 rounded-[24px] md:rounded-[32px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[100px] md:min-w-[140px] group/stat hover:border-brand-blue/50 transition-colors">
-                            <p className="text-xs text-white/40 uppercase tracking-[0.3em] font-black mb-1 md:mb-2 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
+                        <div className="px-4 md:px-6 py-3 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[80px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
+                            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
                             {isEditing ? (
                                 <input
                                     value={formData.fanclub || ''}
                                     onChange={e => setFormData({...formData, fanclub: e.target.value})}
-                                    className="w-full bg-transparent text-2xl md:text-4xl font-black text-brand-blue text-center border-b border-white/20 focus:border-brand-blue focus:outline-none"
+                                    className="w-full bg-transparent text-xl md:text-3xl font-black text-brand-blue text-center border-b border-white/20 focus:border-brand-blue focus:outline-none"
                                 />
                             ) : (
-                                <p className="text-2xl md:text-4xl font-black text-brand-blue drop-shadow-sm">{group.fanclub}</p>
+                                <p className="text-xl md:text-3xl font-black text-brand-blue drop-shadow-sm">{displayGroup.fanclub || '-'}</p>
                             )}
                         </div>
                     </div>
                 </motion.div>
             </section>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-16 px-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-2 md:px-4">
                 {/* Left Column: Info & Description */}
-                <div className="lg:col-span-4 space-y-10">
-                    <motion.div
+                {activeTab === 'members' && (
+                    <div className="lg:col-span-4 space-y-6">
+                        <motion.div
                         initial={{ opacity: 0, x: -30 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.5 }}
                         className={cn(
-                            "p-10 rounded-[48px] space-y-10 border shadow-2xl relative overflow-hidden",
+                            "p-6 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
                             theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-slate-200"
                         )}
                     >
@@ -698,16 +984,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         </div>
 
                         <h3 className={cn(
-                            "text-2xl font-black flex items-center gap-4",
+                            "text-xl font-black flex items-center gap-3",
                             theme === 'dark' ? "text-white" : "text-slate-900"
                         )}>
-                            <div className="p-3 rounded-2xl bg-brand-purple/10 text-brand-purple">
-                                <Info size={24} />
+                            <div className="p-2.5 rounded-xl bg-brand-purple/10 text-brand-purple">
+                                <Info size={20} />
                             </div>
-                            The Legacy
+                            Information
                         </h3>
 
-                        <div className="space-y-6">
+                        <div className="space-y-4">
                             <InfoRow
                                 icon={Building2}
                                 label="Foundation"
@@ -717,9 +1003,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         onChange={e => setFormData({...formData, company: e.target.value})}
                                         className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                     />
-                                ) : group.company}
-                                onClick={(!isEditing && onSearch && group.company) ? () => {
-                                    onSearch(group.company);
+                                ) : (displayGroup.company || '-')}
+                                onClick={(!isEditing && onSearch && displayGroup.company) ? () => {
+                                    onSearch(displayGroup.company);
                                     onBack();
                                 } : undefined}
                                 theme={theme}
@@ -734,7 +1020,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         onChange={e => setFormData({...formData, debutDate: e.target.value})}
                                         className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                     />
-                                ) : group.debutDate}
+                                ) : (displayGroup.debutDate || '-')}
                                 theme={theme}
                             />
                             <InfoRow
@@ -746,9 +1032,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             />
                             
                             {/* Awards Section */}
-                            <div className={cn("pt-6 border-t", theme === 'dark' ? "border-white/10" : "border-slate-100")}>
-                                <h4 className={cn("text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                    <Trophy size={14} /> Awards
+                            <div className={cn("pt-4 border-t", theme === 'dark' ? "border-white/10" : "border-slate-100")}>
+                                <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                    <Trophy size={12} /> Awards
                                 </h4>
                                 {isEditing ? (
                                     <div className="space-y-4">
@@ -829,8 +1115,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     </div>
                                 ) : (
                                     <div className="flex flex-wrap gap-2">
-                                        {(group.awards || []).length > 0 ? (
-                                            [...(group.awards || [])].sort((a, b) => { // Sorting logic updated here
+                                        {(displayGroup.awards || []).length > 0 ? (
+                                            [...(displayGroup.awards || [])].sort((a, b) => { // Sorting logic updated here
                                                 const yearA = typeof a === 'object' ? Number(a.year) : 0;
                                                 const yearB = typeof b === 'object' ? Number(b.year) : 0;
                                                 if (yearB !== yearA) return yearB - yearA;
@@ -859,7 +1145,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         </div>
 
                         <div className={cn(
-                            "pt-10 border-t",
+                            "pt-6 border-t",
                             theme === 'dark' ? "border-white/10" : "border-slate-100"
                         )}>
                             {isEditing ? (
@@ -867,17 +1153,80 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     value={formData.description || ''}
                                     onChange={e => setFormData({...formData, description: e.target.value})}
                                     className={cn(
-                                        "w-full h-40 bg-transparent border-2 rounded-xl p-4 focus:outline-none resize-none",
+                                        "w-full h-32 bg-transparent border-2 rounded-xl p-3 focus:outline-none resize-none text-sm",
                                         theme === 'dark' ? "border-white/10 text-slate-300 focus:border-brand-pink" : "border-slate-200 text-slate-600 focus:border-brand-pink"
                                     )}
                                 />
                             ) : (
                                 <p className={cn(
-                                    "leading-relaxed text-lg font-medium italic relative z-10",
+                                    "leading-relaxed text-base font-medium italic relative z-10",
                                     theme === 'dark' ? "text-slate-400" : "text-slate-600"
                                 )}>
-                                    "{group.description}"
+                                    {displayGroup.description ? `"${displayGroup.description}"` : "No description available."}
                                 </p>
+                            )}
+                        </div>
+
+                        {/* Social Media Section */}
+                        <div className={cn(
+                            "pt-6 border-t",
+                            theme === 'dark' ? "border-white/10" : "border-slate-100"
+                        )}>
+                            <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                <Globe size={12} /> Social Media
+                            </h4>
+                            
+                            {isEditing ? (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <Instagram size={16} className="text-slate-400" />
+                                        <input 
+                                            value={formData.instagram || ''} 
+                                            onChange={e => setFormData({...formData, instagram: e.target.value})}
+                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                            placeholder="Instagram URL"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                    <X size={16} className="text-slate-400" />
+                                        <input 
+                                            value={formData.twitter || ''} 
+                                            onChange={e => setFormData({...formData, twitter: e.target.value})}
+                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                            placeholder="X (Twitter) URL"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Youtube size={16} className="text-slate-400" />
+                                        <input 
+                                            value={formData.youtube || ''} 
+                                            onChange={e => setFormData({...formData, youtube: e.target.value})}
+                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                            placeholder="YouTube Channel URL"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap gap-3">
+                                    {displayGroup.instagram && (
+                                        <a href={displayGroup.instagram} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-pink-500/10 to-purple-500/10 text-pink-500 hover:scale-105 transition-transform border border-pink-500/20 font-bold text-xs">
+                                            <Instagram size={16} /> Instagram
+                                        </a>
+                                    )}
+                                    {displayGroup.twitter && (
+                                        <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 text-sky-500 hover:scale-105 transition-transform border border-sky-500/20 font-bold text-xs">
+                                        <X size={16} /> X
+                                        </a>
+                                    )}
+                                    {displayGroup.youtube && (
+                                        <a href={displayGroup.youtube} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-red-500/10 to-orange-500/10 text-red-500 hover:scale-105 transition-transform border border-red-500/20 font-bold text-xs">
+                                            <Youtube size={16} /> YouTube
+                                        </a>
+                                    )}
+                                    {!displayGroup.instagram && !displayGroup.twitter && !displayGroup.youtube && (
+                                        <span className="text-sm text-slate-500 italic">No social media links.</span>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </motion.div>
@@ -889,7 +1238,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             whileInView={{ opacity: 1, scale: 1 }}
                             viewport={{ once: true }}
                             className={cn(
-                                "p-8 rounded-[40px] border",
+                                "p-6 rounded-[32px] border",
                                 theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-xl shadow-slate-200/50"
                             )}
                         >
@@ -937,100 +1286,258 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             )}
                         </motion.div>
                     )}
-                </div>
+                    </div>
+                )}
 
                 {/* Right Column: Members List */}
-                <div className="lg:col-span-8 space-y-12">
-                    <div className="flex items-center justify-between flex-wrap gap-y-4">
-                        <div className="flex items-center gap-4 sm:gap-8 flex-wrap">
-                            <button
+                <div className={cn("space-y-8", activeTab === 'members' ? "lg:col-span-8" : "lg:col-span-12")}>
+                    <div className="flex items-center justify-between flex-wrap gap-y-3">
+                        <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
+                            <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => setActiveTab('members')}
+                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('members')}
                                 className={cn(
-                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
                                     activeTab === 'members'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'members' && (
-                                    <motion.div layoutId="tab-icon" className="p-3 md:p-4 rounded-3xl bg-brand-pink/10 text-brand-pink shadow-inner">
-                                        <Star size={32} fill="currentColor" />
+                                {activeTab === 'members' ? (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
+                                        <Users size={24} />
                                     </motion.div>
-                                )}
-                                The Stars
-                            </button>
-                            <button
+                                ) : <Users size={24} />}
+                                Members
+                            </div>
+                            <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => setActiveTab('timeline')}
+                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('timeline')}
                                 className={cn(
-                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'timeline'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'timeline' && (
-                                    <motion.div layoutId="tab-icon" className="p-3 md:p-4 rounded-3xl bg-brand-pink/10 text-brand-pink shadow-inner">
-                                        <History size={32} />
+                                {activeTab === 'timeline' ? (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
+                                        <History size={24} />
                                     </motion.div>
-                                )}
+                                ) : <History size={24} />}
                                 Timeline
-                            </button>
-                            <button
+                            </div>
+                            <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={() => setActiveTab('discography')}
+                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('discography')}
                                 className={cn(
-                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
                                     activeTab === 'discography'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'discography' && (
-                                    <motion.div layoutId="tab-icon" className="p-3 md:p-4 rounded-3xl bg-brand-purple/10 text-brand-purple shadow-inner">
-                                        <Disc size={32} fill="currentColor" />
+                                {activeTab === 'discography' ? (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-purple/10 text-brand-purple shadow-inner">
+                                        <Disc size={24} fill="currentColor" />
                                     </motion.div>
-                                )}
+                                ) : <Disc size={24} />}
                                 Discography
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('comments')}
+                            </div>
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setActiveTab('news')}
+                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('news')}
                                 className={cn(
-                                    "text-2xl sm:text-3xl md:text-5xl font-black flex items-center gap-4 transition-all",
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
+                                    activeTab === 'news'
+                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
+                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
+                                )}
+                            >
+                                {activeTab === 'news' ? (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-green-500/10 text-green-500 shadow-inner">
+                                        <Newspaper size={24} fill="currentColor" />
+                                    </motion.div>
+                                ) : <Newspaper size={24} />}
+                                News
+                            </div>
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setActiveTab('comments')}
+                                onKeyDown={(e) => e.key === 'Enter' && setActiveTab('comments')}
+                                className={cn(
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
                                     activeTab === 'comments'
                                         ? (theme === 'dark' ? "text-white" : "text-slate-900")
                                         : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
                                 )}
                             >
-                                {activeTab === 'comments' && (
-                                    <motion.div layoutId="tab-icon" className="p-3 md:p-4 rounded-3xl bg-brand-blue/10 text-brand-blue shadow-inner">
-                                        <MessageSquare size={32} fill="currentColor" />
+                                {activeTab === 'comments' ? (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-blue/10 text-brand-blue shadow-inner">
+                                        <MessageSquare size={24} />
                                     </motion.div>
-                                )}
+                                ) : <MessageSquare size={24} />}
                                 Fan Talk
-                                <span className="text-2xl md:text-3xl opacity-30 ml-2">({comments.length})</span>
-                            </button>
+                                <span className="text-xl md:text-2xl opacity-30 ml-2">({comments.length})</span>
+                            </div>
                         </div>
                     </div>
 
                     {activeTab === 'members' ? (
-                        <motion.div
-                            key="members"
-                            variants={{
-                                hidden: { opacity: 0 },
-                                show: { opacity: 1, transition: { staggerChildren: 0.1 } }
-                            }}
-                            initial="hidden"
-                            animate="show"
-                            className="grid grid-cols-1 md:grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8"
-                        >
-                            {(members || []).map((member, idx) => (
-                                <MemberCard
-                                    key={member.id || idx}
-                                    member={member}
-                                    theme={theme}
-                                    onClick={() => onMemberClick(member)}
-                                />
-                            ))}
-                        </motion.div>
+                        <>
+                            {isEditing && !isReordering && (
+                                <div className="flex justify-end mb-4">
+                                    <button
+                                        onClick={() => setIsReordering(!isReordering)}
+                                        className={cn(
+                                            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                                            isReordering 
+                                                ? "bg-brand-pink text-white shadow-lg shadow-brand-pink/20" 
+                                                : (theme === 'dark' ? "bg-slate-800 text-slate-400 hover:text-white" : "bg-white text-slate-500 hover:text-slate-900 border border-slate-200")
+                                        )}
+                                    >
+                                        {isReordering ? <Check size={16} /> : <ListOrdered size={16} />}
+                                        {isReordering ? "Done Reordering" : "Reorder Members"}
+                                    </button>
+                                </div>
+                            )}
+
+                            {isEditing && (
+                                <div className="space-y-6 mb-8 p-6 rounded-2xl border border-dashed border-brand-pink/30 bg-brand-pink/5">
+                                    <div className="space-y-3">
+                                        <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                            <Users size={12} /> Manage Members
+                                        </label>
+                                        
+                                        <div className="relative">
+                                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                                            <input
+                                                ref={searchInputRef}
+                                                value={memberSearch}
+                                                onChange={e => setMemberSearch(e.target.value)}
+                                                className={cn(
+                                                    "w-full rounded-2xl py-3 pl-12 pr-4 border-2 focus:outline-none transition-all text-sm font-bold",
+                                                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+                                                )}
+                                                placeholder="Search idols to add..."
+                                            />
+                                            {memberSearch && (
+                                                <div 
+                                                    ref={dropdownRef}
+                                                    className={cn(
+                                                    "absolute top-full left-0 right-0 mt-2 rounded-2xl border shadow-xl overflow-hidden z-20 max-h-48 overflow-y-auto",
+                                                    theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-white border-slate-200"
+                                                )}>
+                                                    {allIdols.filter(i => 
+                                                        !(formData.members || []).includes(i.id) && 
+                                                        (i.name.toLowerCase().includes(memberSearch.toLowerCase()) || (i.koreanName && i.koreanName.includes(memberSearch)))
+                                                    ).slice(0, 10).map(idol => (
+                                                        <button
+                                                            key={idol.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (idol.groupId && idol.groupId !== displayGroup.id) {
+                                                                    setModalConfig({
+                                                                        isOpen: true,
+                                                                        title: 'Move Member',
+                                                                        message: `${idol.name} is already in "${idol.group}". Do you want to move them to this group?`,
+                                                                        type: 'info',
+                                                                        singleButton: false,
+                                                                        confirmText: 'Move',
+                                                                        onConfirm: () => setFormData(prev => ({ ...prev, members: [...(prev.members || []), idol.id] }))
+                                                                    });
+                                                                    setMemberSearch('');
+                                                                    return;
+                                                                }
+                                                                setFormData(prev => ({ ...prev, members: [...(prev.members || []), idol.id] }));
+                                                                setMemberSearch('');
+                                                                searchInputRef.current?.focus();
+                                                            }}
+                                                            className={cn(
+                                                                "w-full p-3 flex items-center gap-3 hover:bg-brand-pink/10 transition-colors text-left",
+                                                                theme === 'dark' ? "text-white" : "text-slate-900"
+                                                            )}
+                                                        >
+                                                            <img src={convertDriveLink(idol.image)} className="w-8 h-8 rounded-full object-cover" alt="" />
+                                                            <div>
+                                                                <p className="text-sm font-bold">{idol.name}</p>
+                                                                <p className="text-xs text-slate-500">{idol.group || 'Soloist'}</p>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {isReordering ? (
+                                <Reorder.Group 
+                                    axis="y" 
+                                    values={editingMembersList} 
+                                    onReorder={(newOrder) => {
+                                        setFormData(prev => ({
+                                            ...prev,
+                                            members: newOrder.map(m => m.id)
+                                        }));
+                                    }}
+                                    className="space-y-4"
+                                >
+                                    {editingMembersList.map((member) => (
+                                        <Reorder.Item key={member.id} value={member}>
+                                            <div className={cn(
+                                                "flex items-center gap-4 p-4 rounded-2xl border cursor-grab active:cursor-grabbing",
+                                                theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-sm"
+                                            )}>
+                                                <GripVertical className="text-slate-400" />
+                                                <img src={convertDriveLink(member.image)} className="w-12 h-12 rounded-full object-cover" alt="" />
+                                                <div className="font-bold">{member.name}</div>
+                                            </div>
+                                        </Reorder.Item>
+                                    ))}
+                                </Reorder.Group>
+                            ) : isEditing ? (
+                                <div className="grid grid-cols-1 md:grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8">
+                                    {editingMembersList.map((member, idx) => (
+                                        <MemberCard
+                                            key={member.id || idx} member={member} theme={theme}
+                                            onClick={() => onMemberClick(member)} onImageClick={(img) => setLightboxImage(img)}
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <motion.div
+                                    key="members"
+                                    variants={{
+                                        hidden: { opacity: 0 },
+                                        show: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } }
+                                    }}
+                                    initial="hidden"
+                                    animate="show"
+                                    className="grid grid-cols-1 md:grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8"
+                                >
+                                    {sortedMembers.map((member, idx) => (
+                                        <MemberCard
+                                            key={member.id || idx}
+                                            member={member}
+                                            theme={theme}
+                                            onClick={() => onMemberClick(member)}
+                                            onImageClick={(img) => setLightboxImage(img)}
+                                        />
+                                    ))}
+                                </motion.div>
+                            )}
+                        </>
                     ) : activeTab === 'timeline' ? (
                         <motion.div
                             key="timeline"
@@ -1039,12 +1546,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             className="max-w-4xl mx-auto py-8 relative"
                         >
                             {/* Vertical Line */}
-                            <div className={cn(
-                                "absolute left-8 md:left-1/2 top-0 bottom-0 w-0.5 -ml-px",
-                                theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
-                            )} />
+                            <motion.div 
+                                initial={{ height: 0 }}
+                                animate={{ height: "100%" }}
+                                transition={{ duration: 1.5, ease: "easeInOut" }}
+                                className={cn(
+                                    "absolute left-8 md:left-1/2 top-0 w-0.5 -ml-px",
+                                    theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
+                                )} 
+                            />
 
-                            {timelineMembers.map((member, index) => (
+                            {timelineMembers.map((member, index) => {
+                                const isSelected = selectedTimelineMember?.id === member.id;
+                                return (
                                 <div key={member.id} className={cn(
                                     "relative flex items-center mb-12 last:mb-0",
                                     index % 2 === 0 ? "md:flex-row-reverse" : ""
@@ -1054,8 +1568,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     
                                     {/* Dot */}
                                     <div className={cn(
-                                        "absolute left-8 md:left-1/2 w-4 h-4 rounded-full border-4 -ml-2 z-10",
-                                        theme === 'dark' ? "bg-slate-900 border-brand-pink" : "bg-white border-brand-pink"
+                                        "absolute left-8 md:left-1/2 w-4 h-4 rounded-full border-4 -ml-2 z-10 transition-colors duration-300",
+                                        isSelected ? "bg-brand-pink border-brand-pink" : (theme === 'dark' ? "bg-slate-900 border-brand-pink" : "bg-white border-brand-pink")
                                     )} />
 
                                     {/* Content */}
@@ -1063,12 +1577,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         "flex-1 ml-16 md:ml-0 pl-0",
                                         index % 2 === 0 ? "md:pr-12 md:text-right" : "md:pl-12"
                                     )}>
-                                        <div className={cn(
-                                            "p-6 rounded-3xl border transition-all hover:scale-105 cursor-pointer group",
-                                            theme === 'dark' ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 hover:border-brand-pink/30 shadow-lg"
-                                        )} onClick={() => onMemberClick(member)}>
+                                        <motion.div 
+                                            layout
+                                            className={cn(
+                                            "rounded-3xl border transition-all cursor-pointer group overflow-hidden",
+                                            theme === 'dark' ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 hover:border-brand-pink/30 shadow-lg",
+                                            isSelected && "ring-2 ring-brand-pink border-brand-pink/50"
+                                        )} onClick={() => setSelectedTimelineMember(isSelected ? null : member)}>
                                             <div className={cn(
                                                 "flex items-center gap-4",
+                                                "p-6",
                                                 index % 2 === 0 ? "md:flex-row-reverse" : ""
                                             )}>
                                                 <img 
@@ -1083,15 +1601,156 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     <h4 className={cn("text-xl font-black group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                                         {member.name}
                                                     </h4>
+                                                    {member.birthDate && member.debutDate && (
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-wider mb-1", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                                            Debut Age: {calculateAgeAtDate(member.birthDate, member.debutDate)}
+                                                        </p>
+                                                    )}
                                                     <p className={cn("text-xs font-bold", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                                         {member.debutDate || 'Date N/A'}
                                                     </p>
                                                 </div>
                                             </div>
-                                        </div>
+
+                                            <AnimatePresence>
+                                                {isSelected && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: "auto", opacity: 1 }}
+                                                        exit={{ height: 0, opacity: 0 }}
+                                                        className={cn(
+                                                            "border-t border-dashed",
+                                                            theme === 'dark' ? "border-white/10" : "border-slate-200"
+                                                        )}
+                                                    >
+                                                        <div className={cn("p-6 space-y-6 text-left")}>
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Full Name</p>
+                                                                    <p className={cn("font-bold text-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.fullEnglishName || '-'}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Korean Name</p>
+                                                                    <p className={cn("font-bold text-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.koreanName || '-'}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Birth Date</p>
+                                                                    <p className={cn("font-bold text-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.birthDate || '-'}</p>
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Nationality</p>
+                                                                    <p className={cn("font-bold text-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.nationality || '-'}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            {member.positions && member.positions.length > 0 && (
+                                                                <div>
+                                                                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-2 tracking-wider">Positions</p>
+                                                                    <div className="flex flex-wrap gap-2">
+                                                                        {member.positions.map((pos, i) => (
+                                                                            <span key={i} className={cn(
+                                                                                "px-2 py-1 rounded-lg text-[10px] font-bold border",
+                                                                                theme === 'dark' ? "bg-slate-800 border-white/10 text-slate-300" : "bg-slate-100 border-slate-200 text-slate-700"
+                                                                            )}>
+                                                                                {pos}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    onMemberClick(member);
+                                                                }}
+                                                                className="w-full py-3 rounded-xl bg-brand-pink text-white font-black uppercase tracking-widest hover:bg-brand-pink/90 transition-all shadow-lg shadow-brand-pink/20 flex items-center justify-center gap-2 text-xs"
+                                                            >
+                                                                <User size={14} />
+                                                                View Full Profile
+                                                            </button>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </motion.div>
                                     </div>
                                 </div>
-                            ))}
+                            )})}
+                        </motion.div>
+                    ) : activeTab === 'news' ? (
+                        <motion.div
+                            key="news"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-8"
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => setNewsSourceFilter('all')} className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors", newsSourceFilter === 'all' ? 'bg-brand-pink text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}>All</button>
+                                    <button onClick={() => setNewsSourceFilter('Koreaboo')} className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors", newsSourceFilter === 'Koreaboo' ? 'bg-brand-pink text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}>Koreaboo</button>
+                                    <button onClick={() => setNewsSourceFilter('Google')} className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors", newsSourceFilter === 'Google' ? 'bg-brand-pink text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400')}>Google News</button>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); fetchNews(); }} disabled={loadingNews} className="p-3 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                                    <RefreshCw size={16} className={cn(loadingNews && "animate-spin")} />
+                                </button>
+                            </div>
+
+                            {loadingNews ? (
+                                <div className="flex justify-center py-20">
+                                    <Loader2 className="animate-spin text-brand-pink" size={40} />
+                                </div>
+                            ) : filteredNews.length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {filteredNews.map((item, idx) => (
+                                        <motion.a 
+                                            key={idx} 
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: idx * 0.1 }}
+                                            whileHover={{ scale: 1.02 }}
+                                            href={item.url} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                "block rounded-3xl border transition-all hover:scale-[1.02] group overflow-hidden flex flex-col h-full",
+                                                theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 shadow-lg hover:shadow-xl"
+                                            )}
+                                        >
+                                            <div className="h-48 w-full relative overflow-hidden shrink-0">
+                                                <img 
+                                                    src={item.image?.thumbnail?.contentUrl || 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60'} 
+                                                    alt={item.name}
+                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                    onError={(e) => {
+                                                        e.target.onerror = null;
+                                                        e.target.src = 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=800&auto=format&fit=crop&q=60';
+                                                    }}
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
+                                                <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+                                                     <span className="text-[10px] font-black uppercase tracking-widest text-white bg-brand-pink/90 px-2 py-1 rounded-lg backdrop-blur-md shadow-lg">
+                                                        {item.provider?.[0]?.name.replace(' News', '') || 'News'}
+                                                     </span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="p-6 flex flex-col flex-1">
+                                                <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 font-bold">
+                                                    <Calendar size={12} />
+                                                    <span>{getRelativeTime(new Date(item.datePublished).getTime())}</span>
+                                                </div>
+                                                <h3 className={cn("text-lg font-bold mb-3 line-clamp-2 group-hover:text-brand-pink transition-colors leading-tight", theme === 'dark' ? "text-white" : "text-slate-900")}>{item.name}</h3>
+                                                <p className={cn("text-sm line-clamp-3 leading-relaxed flex-1", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>{item.description}</p>
+                                            </div>
+                                        </motion.a>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-20">
+                                    <p className="text-slate-500 font-medium">No news found.</p>
+                                </div>
+                            )}
                         </motion.div>
                     ) : activeTab === 'comments' ? (
                         <motion.div
@@ -1099,7 +1758,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             className={cn(
-                                "p-8 md:p-12 rounded-[40px] border space-y-10",
+                                "p-6 md:p-8 rounded-[32px] border space-y-8",
                                 theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-xl"
                             )}
                         >
@@ -1401,8 +2060,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    {(group.albums || []).length > 0 ? (
-                                        (group.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
+                                    {(displayGroup.albums || []).length > 0 ? (
+                                        (displayGroup.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
                                             <motion.div
                                                 layout
                                                 initial={{ opacity: 0, scale: 0.9 }}
@@ -1464,24 +2123,42 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             </div>
 
             {/* Similar Groups Section */}
-            {similarGroups.length > 0 && (
+            {(loadingSimilarGroups || similarGroups.length > 0) && (
                 <div className="border-t border-dashed border-slate-200 dark:border-slate-800 pt-10">
                     <h3 className={cn(
                         "text-2xl font-black mb-8 flex items-center gap-3",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}>
                         <Users className="text-brand-purple" />
-                        Similar Groups from {group.company}
+                        Similar Groups from {displayGroup.company}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {similarGroups.map(g => (
-                            <GroupCard 
-                                key={g.id} 
-                                group={g} 
-                                onClick={() => onGroupClick && onGroupClick(g.id)}
-                                onFavorite={() => {}}
-                            />
-                        ))}
+                        {loadingSimilarGroups ? (
+                            Array.from({ length: 4 }).map((_, i) => (
+                                <div key={i} className={cn(
+                                    "aspect-[3/4.2] rounded-[48px] overflow-hidden relative",
+                                    theme === 'dark' ? "bg-slate-900" : "bg-slate-100"
+                                )}>
+                                    <div className={cn(
+                                        "absolute inset-0 animate-pulse",
+                                        theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
+                                    )} />
+                                    <div className="absolute bottom-8 left-8 right-8 space-y-4 opacity-50">
+                                        <div className={cn("h-3 w-1/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
+                                        <div className={cn("h-8 w-2/3 rounded-full", theme === 'dark' ? "bg-slate-700" : "bg-slate-300")} />
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            similarGroups.map(g => (
+                                <GroupCard 
+                                    key={g.id} 
+                                    group={g} 
+                                    onClick={() => onGroupClick && onGroupClick(g.id)}
+                                    onFavorite={() => {}}
+                                />
+                            ))
+                        )}
                     </div>
                 </div>
             )}
@@ -1646,7 +2323,7 @@ function getRelativeTime(timestamp) {
     return 'Just now';
 }
 
-function MemberCard({ member, theme, onClick }) {
+function MemberCard({ member, theme, onClick, onImageClick }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
     
     const x = useMotionValue(0);
@@ -1676,10 +2353,13 @@ function MemberCard({ member, theme, onClick }) {
     };
 
     return (
-        <motion.button
+        <motion.div
             variants={{
                 hidden: { opacity: 0, y: 30, scale: 0.95 },
-                show: { opacity: 1, y: 0, scale: 1 }
+                show: { 
+                    opacity: 1, y: 0, scale: 1,
+                    transition: { type: "spring", stiffness: 300, damping: 30 }
+                }
             }}
             whileHover={{ scale: 1.02, y: -5 }}
             whileTap={{ scale: 0.98 }}
@@ -1687,7 +2367,7 @@ function MemberCard({ member, theme, onClick }) {
             onMouseLeave={handleMouseLeave}
             onClick={onClick}
             className={cn(
-                "group p-6 md:p-10 rounded-[32px] md:rounded-[48px] border text-left relative overflow-hidden transition-all duration-500",
+                "group p-5 md:p-8 rounded-[24px] md:rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
                 theme === 'dark'
                     ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30 hover:bg-slate-900 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)]"
                     : "bg-white border-slate-100 shadow-2xl shadow-slate-200/50 hover:border-brand-pink/30 hover:shadow-brand-pink/10"
@@ -1705,13 +2385,17 @@ function MemberCard({ member, theme, onClick }) {
             <div className="flex flex-col sm:flex-row items-center gap-6 md:gap-10 relative z-10">
                 <motion.div 
                     style={{ rotateX, rotateY, perspective: 1000 }}
-                    className="relative shrink-0"
+                    className="relative shrink-0 cursor-zoom-in"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onImageClick && onImageClick(member.image);
+                    }}
                 >
                     <div className="absolute inset-0 bg-brand-pink blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500 rounded-full" />
                     <img
                         src={convertDriveLink(member.image)}
                         alt={member.name}
-                        className="w-32 h-32 md:w-40 md:h-40 rounded-[32px] md:rounded-[40px] object-cover border-4 border-white/5 shadow-2xl transition-all duration-700 group-hover:scale-110"
+                        className="w-24 h-24 md:w-32 md:h-32 rounded-[24px] md:rounded-[32px] object-cover border-4 border-white/5 shadow-2xl transition-all duration-700 group-hover:scale-110"
                     />
                     {member.isFavorite && (
                         <div className="absolute -top-3 -right-3 p-3 bg-brand-pink rounded-full text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-4 border-slate-950">
@@ -1725,7 +2409,7 @@ function MemberCard({ member, theme, onClick }) {
                         {(member.positions && member.positions[0]) || 'Member'}
                     </p>
                     <h4 className={cn(
-                        "text-2xl md:text-3xl lg:text-4xl font-black transition-colors leading-tight tracking-tight",
+                        "text-xl md:text-2xl lg:text-3xl font-black transition-colors leading-tight tracking-tight",
                         theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink"
                     )}>
                         {member.name}
@@ -1751,7 +2435,7 @@ function MemberCard({ member, theme, onClick }) {
                     <ChevronRight size={32} />
                 </div>
             </div>
-        </motion.button>
+        </motion.div>
     );
 }
 

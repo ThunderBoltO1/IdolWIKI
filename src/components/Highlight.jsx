@@ -6,7 +6,7 @@ export const Highlight = ({ text = '', highlight = '' }) => {
     }
     // Escape special characters in the highlight string for use in regex
     const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escapedHighlight})`, 'gi');
+    const regex = new RegExp(`(${escapedHighlight})`, 'i');
     const parts = text.split(regex);
 
     return (

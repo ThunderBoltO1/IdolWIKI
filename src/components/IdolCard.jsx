@@ -6,30 +6,7 @@ import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 import { AutoplayVideo } from './AutoplayVideo';
-
-const Highlight = ({ text = '', highlight = '' }) => {
-    if (!highlight?.trim() || !text) {
-        return <>{text}</>;
-    }
-    // Escape special characters in the highlight string for use in regex
-    const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escapedHighlight})`, 'gi');
-    const parts = text.split(regex);
-
-    return (
-        <>
-            {parts.filter(String).map((part, i) =>
-                regex.test(part) ? (
-                    <mark key={i} className="bg-brand-pink/50 text-white rounded not-italic px-0.5 mx-0">
-                        {part}
-                    </mark>
-                ) : (
-                    <span key={i}>{part}</span>
-                )
-            )}
-        </>
-    );
-};
+import { Highlight } from './Highlight';
 
 export function IdolCard({ idol, onLike, onClick, onQuickView, searchTerm }) {
     const { theme } = useTheme();
@@ -44,15 +21,19 @@ export function IdolCard({ idol, onLike, onClick, onQuickView, searchTerm }) {
         let videoId = null;
         try {
             const urlObj = new URL(url);
-            if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname === '/watch') {
+            const hostname = urlObj.hostname;
+            if (hostname.includes('youtube.com') && urlObj.pathname === '/watch') {
                 videoId = urlObj.searchParams.get('v');
-            } else if (urlObj.hostname === 'youtu.be') {
+            } else if (hostname === 'youtu.be') {
                 videoId = urlObj.pathname.substring(1);
-            } else if (urlObj.hostname === 'www.youtube.com' && urlObj.pathname.startsWith('/embed/')) {
-                videoId = urlObj.pathname.substring('/embed/'.length);
+            } else if (hostname.includes('youtube.com')) {
+                if (urlObj.pathname.startsWith('/embed/')) videoId = urlObj.pathname.substring(7);
+                else if (urlObj.pathname.startsWith('/shorts/')) videoId = urlObj.pathname.substring(8);
             }
         } catch (e) {
-             // Fallback for raw ID or other formats if needed
+            if (url && url.length === 11 && !url.includes('/') && !url.includes('.')) {
+                videoId = url;
+            }
         }
         return videoId;
     };
@@ -79,7 +60,8 @@ export function IdolCard({ idol, onLike, onClick, onQuickView, searchTerm }) {
             exit={{ opacity: 0, scale: 0.9 }}
             whileHover={{ y: -12, scale: 1.02 }}
             onMouseMove={handleMouseMove}
-            onMouseLeave={() => { mouseX.set(0); mouseY.set(0); }}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => { mouseX.set(0); mouseY.set(0); setIsHovered(false); }}
             className={cn(
                 "group relative overflow-hidden rounded-[40px] cursor-pointer transition-all duration-500 shadow-2xl",
                 theme === 'dark' ? "glass-card hover:shadow-brand-pink/10" : "bg-white shadow-slate-200 border border-slate-100 hover:shadow-brand-pink/5"

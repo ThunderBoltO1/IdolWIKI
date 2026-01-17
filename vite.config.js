@@ -1,12 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Debug: แสดงข้อมูล Environment ของ Server ใน Build Logs
-console.log('========================================');
-console.log('SERVER NODE VERSION:', process.version);
-console.log('SERVER PLATFORM:', process.platform);
-console.log('========================================');
-
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],

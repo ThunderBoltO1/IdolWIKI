@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Twitter, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,13 @@ import { ConfirmationModal } from './ConfirmationModal';
 import { IdolCard } from './IdolCard';
 import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
+import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
 
 const defaultIdolData = {
     name: '',
@@ -70,6 +77,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         award: ''
     });
     const [similarIdols, setSimilarIdols] = useState([]);
+    const [isAwardAdded, setIsAwardAdded] = useState(false);
+    const [editingAwardIndex, setEditingAwardIndex] = useState(null);
+    const [awardSearch, setAwardSearch] = useState('');
+    const [selectedAward, setSelectedAward] = useState(null);
 
     const [imageCrop, setImageCrop] = useState({ x: 0, y: 0 });
     const [imageZoom, setImageZoom] = useState(1);
@@ -81,6 +92,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [showHistory, setShowHistory] = useState(false);
     const [historyLogs, setHistoryLogs] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const fileInputRef = useRef(null);
+    const galleryInputRef = useRef(null);
     
     const { awards: awardData } = useAwards();
     const [isYTCopied, setIsYTCopied] = useState(false);
@@ -192,8 +207,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 year: new Date().getFullYear(),
                 category: 'K-Pop & Music Awards',
                 show: '',
-                award: ''
+                award: '',
+                image: ''
             });
+            setAwardSearch('');
             setVisibleComments(5);
         } else {
             setHistory([]);
@@ -299,7 +316,21 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     };
 
     const removeGalleryImage = (index) => {
-        setFormData(prev => ({ ...prev, gallery: (prev.gallery || []).filter((_, i) => i !== index) }));
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Image',
+            message: 'Are you sure you want to delete this image? This action cannot be undone.',
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                const urlToRemove = (formData.gallery || [])[index];
+                if (urlToRemove) {
+                    await deleteImage(urlToRemove);
+                }
+                setFormData(prev => ({ ...prev, gallery: (prev.gallery || []).filter((_, i) => i !== index) }));
+            }
+        });
     };
 
     const handlePositionsChange = (e) => {
@@ -309,12 +340,69 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const handleAddAward = () => {
         if (!newAward.show || !newAward.award) return;
-        setFormData(prev => ({ ...prev, awards: [...(prev.awards || []), { ...newAward }] }));
-        setNewAward(prev => ({ ...prev, award: '' })); // Reset for next entry
+
+        setFormData(prev => {
+            let updatedAwards;
+            if (editingAwardIndex !== null) {
+                updatedAwards = [...(prev.awards || [])];
+                updatedAwards[editingAwardIndex] = { ...newAward };
+            } else {
+                updatedAwards = [...(prev.awards || []), { ...newAward }];
+            }
+            
+            // Sort by year descending
+            updatedAwards.sort((a, b) => {
+                const yearA = typeof a === 'object' ? Number(a.year) : 0;
+                const yearB = typeof b === 'object' ? Number(b.year) : 0;
+                return yearB - yearA;
+            });
+
+            return { ...prev, awards: updatedAwards };
+        });
+
+        if (editingAwardIndex !== null) {
+             setNewAward({
+                year: new Date().getFullYear(),
+                category: 'K-Pop & Music Awards',
+                show: '',
+                award: '',
+                image: ''
+            });
+        } else {
+             setNewAward(prev => ({ ...prev, award: '' }));
+        }
+        
+        setEditingAwardIndex(null);
+        setIsAwardAdded(true);
+        setTimeout(() => setIsAwardAdded(false), 2000);
     };
 
     const handleRemoveAward = (index) => {
         setFormData(prev => ({ ...prev, awards: (prev.awards || []).filter((_, i) => i !== index) }));
+        if (editingAwardIndex === index) {
+            setEditingAwardIndex(null);
+            setNewAward(prev => ({ ...prev, award: '' }));
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingAwardIndex(null);
+        setNewAward({
+            year: new Date().getFullYear(),
+            category: 'K-Pop & Music Awards',
+            show: '',
+            award: '',
+            image: ''
+        });
+        setAwardSearch('');
+    };
+
+    const handleEditAward = (index) => {
+        const awardToEdit = formData.awards[index];
+        if (typeof awardToEdit === 'object') {
+            setNewAward(awardToEdit);
+            setEditingAwardIndex(index);
+        }
     };
 
     const handleAlbumChange = (index, field, value) => {
@@ -362,6 +450,80 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         }
     };
 
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // 1. Validate Size
+        try {
+            validateFile(file, 5); // Limit 5MB
+        } catch (error) {
+            alert(error.message);
+            return;
+        }
+
+        // 2. Preview Immediately (ใช้ Object URL ชั่วคราว)
+        const objectUrl = URL.createObjectURL(file);
+        setActiveImage(objectUrl);
+        setFormData(prev => ({ ...prev, image: objectUrl }));
+
+        setIsUploading(true);
+        setUploadProgress(0);
+        try {
+            // 3. Compress Image
+            const compressedFile = await compressImage(file);
+
+            // ลบรูปเก่าถ้ามี (เช็คว่าเป็นรูปจาก firebase จริงๆ ไม่ใช่ blob url ชั่วคราว)
+            if (formData.image && formData.image.includes('firebasestorage')) {
+                await deleteImage(formData.image);
+            }
+            
+            // 4. Upload Compressed File
+            const url = await uploadImage(compressedFile, 'idols', (progress) => setUploadProgress(progress));
+            
+            setFormData(prev => ({ ...prev, image: url }));
+            setActiveImage(url);
+            setImageZoom(1);
+            setImageCrop({ x: 0, y: 0 });
+        } catch (error) {
+            console.error("Upload failed:", error);
+            alert("Failed to upload image");
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleGalleryUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        // Validate all files
+        for (const file of files) {
+            try {
+                validateFile(file, 5);
+            } catch (error) {
+                alert(`File ${file.name} is too large. Max 5MB.`);
+                return;
+            }
+        }
+
+        setIsUploading(true);
+        try {
+            const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
+            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'idols/gallery'));
+            const urls = await Promise.all(uploadPromises);
+            setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ...urls] }));
+        } catch (error) {
+            console.error("Gallery upload error", error);
+            alert("Failed to upload gallery images");
+        } finally {
+            setIsUploading(false);
+            if (galleryInputRef.current) galleryInputRef.current.value = '';
+        }
+    };
+
     const handleDiscard = () => {
         if (JSON.stringify(formData) !== JSON.stringify(idol)) {
             if (!window.confirm("Discard unsaved changes?")) return;
@@ -395,12 +557,23 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setLoadingHistory(true); // Reuse loading state or create a new one for saving
         
         let imageToSave = formData.image;
-        if (imageCroppedArea && activeImage) {
+        // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
+        if (imageCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
             try {
                 const croppedImage = await getCroppedImgDataUrl(activeImage, imageCroppedArea);
-                imageToSave = croppedImage;
+                // Convert Base64 to File and Upload
+                const file = dataURLtoFile(croppedImage, `cropped_${Date.now()}.jpg`);
+                
+                // Delete old image if it exists and is different
+                if (formData.image && formData.image.includes('firebasestorage') && formData.image !== activeImage) {
+                    await deleteImage(formData.image);
+                }
+
+                const uploadedUrl = await uploadImage(file, 'idols');
+                imageToSave = uploadedUrl;
             } catch (e) {
                 console.error("Failed to crop image", e);
             }
@@ -415,6 +588,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         setImageCroppedArea(null);
 
         setEditMode(false);
+        setLoadingHistory(false);
 
         if (successTimeoutRef.current) {
             clearTimeout(successTimeoutRef.current);
@@ -587,6 +761,25 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         navigate(`/u/${u}`);
         if (onUserClick) onUserClick(u);
     };
+
+    const groupedAwards = useMemo(() => {
+        const awards = formData.awards || [];
+        const groups = {};
+        const legacy = [];
+
+        awards.forEach(award => {
+            if (typeof award === 'object' && award.year) {
+                const y = award.year;
+                if (!groups[y]) groups[y] = [];
+                groups[y].push(award);
+            } else {
+                legacy.push(award);
+            }
+        });
+
+        const sortedYears = Object.keys(groups).sort((a, b) => b - a);
+        return { sortedYears, groups, legacy };
+    }, [formData.awards]);
 
     if (!isOpen) return null;
 
@@ -1104,7 +1297,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Media & Links</h3>
                                             <div className="space-y-4">
                                             <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
-                                            <DetailItem icon={X} label="X (Twitter) URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
+                                            <DetailItem icon={XIcon} label="X URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
                                                 
                                                 {/* Videos Section */}
                                                 <div className="space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
@@ -1129,9 +1322,19 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 <div className="space-y-2">
                                                     <div className="flex items-center justify-between mb-1"> 
                                                         <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
-                                                            <Globe size={12} />
-                                                            Photo URL
+                                                            <Globe size={12} /> Photo URL
                                                         </label>
+                                                        <input 
+                                                            type="file" 
+                                                            ref={fileInputRef} 
+                                                            onChange={handleFileUpload} 
+                                                            className="hidden" 
+                                                            accept="image/*" 
+                                                        />
+                                                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                                            {isUploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload File'}
+                                                        </button>
                                                     </div>
                                                     <div className="relative group/input">
                                                         <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-brand-pink transition-colors">
@@ -1160,15 +1363,22 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     <div className="flex items-center justify-between"> 
                                                         <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
                                                             <Globe size={12} />
-                                                            Gallery Images
+                                                            Gallery
                                                         </label>
-                                                        <button
-                                                            type="button"
-                                                            onClick={addGalleryImage}
-                                                            className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
-                                                        >
-                                                            <Plus size={12} /> Add Image
-                                                        </button>
+                                                        <div className="flex gap-3">
+                                                            <input 
+                                                                type="file" 
+                                                                multiple 
+                                                                ref={galleryInputRef} 
+                                                                className="hidden" 
+                                                                onChange={handleGalleryUpload} 
+                                                                accept="image/*"
+                                                            />
+                                                            <button type="button" onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                                                {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                                                Upload
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({...prev, gallery: newGallery}))} className="space-y-2">
                                                     {(formData.gallery || []).map((url, idx) => (
@@ -1223,25 +1433,55 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         <option value="">Select Award Show</option>
                                                         {newAward.category && awardData[newAward.category] && Object.keys(awardData[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
                                                     </select>
-                                                    <select value={newAward.award} onChange={e => setNewAward({ ...newAward, award: e.target.value })} disabled={!newAward.show} className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}>
-                                                        <option value="">Select Award</option>
-                                                        {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
-                                                    </select>
+                                                    <div className="relative">
+                                                        <select 
+                                                            value={newAward.award} 
+                                                            onChange={e => {
+                                                                if (e.target.value === 'search_input') return;
+                                                                setNewAward({ ...newAward, award: e.target.value });
+                                                            }} 
+                                                            disabled={!newAward.show} 
+                                                            className={cn("w-full p-2 rounded-xl text-xs font-bold outline-none border appearance-none", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
+                                                        >
+                                                            <option value="">Select Award</option>
+                                                            {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].filter(award => award.toLowerCase().includes(awardSearch.toLowerCase())).map(award => <option key={award} value={award}>{award}</option>)}
+                                                        </select>
+                                                        {newAward.show && <input type="text" value={awardSearch} onChange={e => setAwardSearch(e.target.value)} placeholder="Search..." className={cn("absolute top-0 right-8 h-full w-24 bg-transparent text-xs font-bold outline-none text-right pr-2 placeholder:text-slate-500", theme === 'dark' ? "text-white" : "text-slate-900")} onClick={e => e.stopPropagation()} />}
+                                                    </div>
+                                                    <input 
+                                                        placeholder="Award Image URL (Optional)" 
+                                                        value={newAward.image || ''} 
+                                                        onChange={e => setNewAward({ ...newAward, image: e.target.value })} 
+                                                        className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")} 
+                                                    />
                                                 </div>
-                                                <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={handleAddAward} disabled={!newAward.show || !newAward.award} className="w-full py-2 rounded-xl bg-brand-pink text-white text-xs font-black uppercase tracking-widest hover:bg-brand-pink/90 disabled:opacity-50">
-                                                    Add Award
-                                                </motion.button>
+                                                <div className="flex gap-2">
+                                                    <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={handleAddAward} disabled={!newAward.show || !newAward.award} className={cn(
+                                                        "flex-1 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50",
+                                                        isAwardAdded ? "bg-green-500 text-white" : "bg-brand-pink text-white hover:bg-brand-pink/90"
+                                                    )}>
+                                                        {isAwardAdded ? <span className="flex items-center justify-center gap-2"><Check size={14} /> Added!</span> : (editingAwardIndex !== null ? "Update Award" : "Add Award")}
+                                                    </motion.button>
+                                                    {editingAwardIndex !== null && (
+                                                        <motion.button whileTap={{ scale: 0.95 }} type="button" onClick={handleCancelEdit} className={cn("px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-colors", theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>
+                                                            Cancel
+                                                        </motion.button>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar">
                                                 <AnimatePresence mode="popLayout" initial={false}>
                                                     {(formData.awards || []).map((item, idx) => (
-                                                        <motion.div layout key={`${item.year}-${item.show}-${item.award}-${idx}`} initial={{ opacity: 0, x: -20, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 20, scale: 0.9 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} className={cn("flex items-center justify-between p-3 rounded-xl border", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-white border-slate-100")}>
+                                                        <motion.div layout key={`${item.year}-${item.show}-${item.award}-${idx}`} initial={{ opacity: 0, x: -20, scale: 0.9 }} animate={{ opacity: 1, x: 0, scale: 1 }} exit={{ opacity: 0, x: 20, scale: 0.9 }} transition={{ type: "spring", stiffness: 500, damping: 30 }} className={cn("flex items-center justify-between p-3 rounded-xl border", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-white border-slate-100", editingAwardIndex === idx && "border-brand-pink ring-1 ring-brand-pink")}>
                                                             <div className="text-xs">
                                                                 <span className="font-black text-brand-pink mr-2">{item.year}</span>
                                                                 <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
                                                                 <div className="text-xs text-slate-500 font-medium">{item.award}</div>
                                                             </div>
-                                                            <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
+                                                            <div className="flex gap-1">
+                                                                <button type="button" onClick={() => handleEditAward(idx)} className="text-slate-400 hover:text-brand-pink hover:bg-brand-pink/10 p-1.5 rounded-lg"><Edit2 size={14} /></button>
+                                                                <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
+                                                            </div>
                                                         </motion.div>
                                                     ))}
                                                 </AnimatePresence>
@@ -1320,31 +1560,55 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                                         <div className="sm:col-span-2 space-y-3">
                                             <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block flex items-center gap-2">
-                                                <Trophy size={12} /> Awards
+                                                <Trophy size={12} /> Awards <span className="text-brand-pink ml-1">({(formData.awards || []).length})</span>
                                             </label>
-                                            <div className="flex flex-col gap-2">
+                                            <div className="space-y-2 pl-2">
                                                 {(formData.awards || []).length > 0 ? (
-                                                    [...(formData.awards || [])].sort((a, b) => {
-                                                        const yearA = typeof a === 'object' ? Number(a.year) : 0;
-                                                        const yearB = typeof b === 'object' ? Number(b.year) : 0;
-                                                        if (yearB !== yearA) return yearB - yearA;
-                                                        const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
-                                                        const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
-                                                        return nameA.localeCompare(nameB);
-                                                    }).map((award, i) => (
-                                                        <div key={i} className={cn("px-5 py-3 rounded-2xl text-sm font-medium border transition-all flex items-center gap-3", theme === 'dark' ? "bg-slate-800/50 border-white/5 text-slate-300" : "bg-white border-slate-200 text-slate-600")}>
-                                                            <Trophy size={14} className="text-yellow-500 shrink-0" />
-                                                            <div className="flex-1">
-                                                                {typeof award === 'object' ? (
-                                                                    <>
-                                                                        <span className="font-bold text-brand-pink mr-2">{award.year}</span>
-                                                                        <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{award.show}</span>
-                                                                        <div className="text-xs text-slate-500">{award.award}</div>
-                                                                    </>
-                                                                ) : award}
+                                                    <>
+                                                        {groupedAwards.sortedYears.map(year => (
+                                                            <div key={year} className={cn("relative pl-8 pb-8 border-l-2 last:border-l-0 last:pb-0", theme === 'dark' ? "border-white/10" : "border-slate-200")}>
+                                                                <div className={cn(
+                                                                    "absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4",
+                                                                    theme === 'dark' ? "bg-brand-pink border-slate-900" : "bg-brand-pink border-white"
+                                                                )} />
+                                                                <h5 className={cn("text-2xl font-black mb-4 leading-none -mt-1.5", theme === 'dark' ? "text-white" : "text-slate-900")}>{year}</h5>
+                                                                <div className="grid grid-cols-1 gap-3">
+                                                                    {groupedAwards.groups[year].map((award, i) => (
+                                                                        <div key={i} className={cn(
+                                                                            "p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] hover:shadow-lg",
+                                                                            theme === 'dark' ? "bg-slate-800/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 hover:border-slate-200 shadow-sm",
+                                                                            award.image && "cursor-pointer"
+                                                                        )} onClick={() => award.image && setSelectedAward(award)}>
+                                                                            <div className={cn("p-3 rounded-xl shrink-0", theme === 'dark' ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-600")}>
+                                                                                <Trophy size={20} />
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className={cn("font-bold text-base", theme === 'dark' ? "text-white" : "text-slate-900")}>{award.show}</p>
+                                                                                <p className={cn("text-xs font-medium mt-0.5", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>{award.award}</p>
+                                                                            </div>
+                                                                            {award.image && <ImageIcon size={16} className="text-slate-500 ml-auto opacity-50" />}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))
+                                                        ))}
+                                                        {groupedAwards.legacy.length > 0 && (
+                                                            <div className="relative pl-8 pt-8">
+                                                                <h5 className={cn("text-xl font-black mb-4 leading-none", theme === 'dark' ? "text-white" : "text-slate-900")}>Others</h5>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {groupedAwards.legacy.map((award, i) => (
+                                                                        <span key={i} className={cn(
+                                                                            "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border flex items-center gap-2",
+                                                                            theme === 'dark' ? "bg-slate-800 border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"
+                                                                        )}>
+                                                                            <Trophy size={12} className="text-slate-400" />
+                                                                            {award}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </>
                                                 ) : (
                                                     <p className="text-slate-500 italic text-sm">No awards recorded yet.</p>
                                                 )}
@@ -1406,7 +1670,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         rel="noopener noreferrer"
                                                         className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
                                                     >
-                                                        <X size={20} /> X
+                                                        <XIcon size={20} /> X
                                                     </a>
                                                 )}
                                                 </div>
@@ -1860,6 +2124,49 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         />
                                     </div>
                                 )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Award Detail Modal */}
+            <AnimatePresence>
+                {selectedAward && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedAward(null)}
+                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={e => e.stopPropagation()}
+                            className={cn("w-full max-w-lg rounded-[32px] overflow-hidden flex flex-col shadow-2xl", theme === 'dark' ? "bg-slate-900" : "bg-white")}
+                        >
+                            <div className="relative aspect-video w-full bg-black">
+                                <img 
+                                    src={convertDriveLink(selectedAward.image)} 
+                                    alt={selectedAward.award} 
+                                    className="w-full h-full object-contain"
+                                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/500x300?text=No+Image'; }}
+                                />
+                                <button onClick={() => setSelectedAward(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60"><X size={20} /></button>
+                            </div>
+                            <div className="p-6">
+                                <h3 className={cn("text-xl font-black leading-tight mb-1", theme === 'dark' ? "text-white" : "text-slate-900")}>{selectedAward.award}</h3>
+                                <p className={cn("text-sm font-bold mb-4", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>{selectedAward.show}</p>
+                                <div className="flex items-center gap-2">
+                                    <span className="px-3 py-1 rounded-lg bg-brand-pink/10 text-brand-pink text-xs font-black uppercase tracking-widest">
+                                        {selectedAward.year}
+                                    </span>
+                                    <span className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 text-xs font-bold uppercase tracking-widest">
+                                        {selectedAward.category}
+                                    </span>
+                                </div>
                             </div>
                         </motion.div>
                     </motion.div>

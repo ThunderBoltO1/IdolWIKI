@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search } from 'lucide-react';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { ImageCropper } from './ImageCropper';
@@ -9,6 +9,13 @@ import { getDocs, query, where, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { convertDriveLink } from '../lib/storage';
 import { useAwards } from '../hooks/useAwards.js';
+import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
 
 function DateSelect({ value, onChange, theme }) {
     const date = value ? new Date(value) : new Date();
@@ -96,6 +103,10 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const [selectedMembers, setSelectedMembers] = useState([]);
     const searchInputRef = useRef(null);
     const dropdownRef = useRef(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const fileInputRef = useRef(null);
+    const galleryInputRef = useRef(null);
     const [formData, setFormData] = useState({
         name: '',
         koreanName: '',
@@ -191,9 +202,84 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     };
 
     const handleImageChange = (value) => {
-        startCropping(value, (newUrl) => {
-            setFormData(prev => ({ ...prev, image: newUrl || '' }));
+        startCropping(value, async (newUrl) => {
+            if (newUrl && newUrl.startsWith('data:')) {
+                // If it's a base64 string (from cropper), upload it
+                setIsUploading(true);
+                try {
+                    const file = dataURLtoFile(newUrl, `group_cropped_${Date.now()}.jpg`);
+                    const uploadedUrl = await uploadImage(file, 'groups');
+                    setFormData(prev => ({ ...prev, image: uploadedUrl }));
+                } catch (error) {
+                    console.error("Failed to upload cropped image", error);
+                } finally {
+                    setIsUploading(false);
+                }
+            } else {
+                setFormData(prev => ({ ...prev, image: newUrl || '' }));
+            }
         }, 3 / 4.2);
+    };
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            validateFile(file, 5);
+        } catch (error) {
+            alert(error.message);
+            return;
+        }
+
+        // Preview
+        const objectUrl = URL.createObjectURL(file);
+        handleImageChange(objectUrl); // This sets formData.image and calls startCropping
+
+        setIsUploading(true);
+        setUploadProgress(0);
+        try {
+            const compressedFile = await compressImage(file);
+            if (formData.image && formData.image.includes('firebasestorage')) {
+                await deleteImage(formData.image);
+            }
+            const url = await uploadImage(compressedFile, 'groups', (progress) => setUploadProgress(progress));
+            handleImageChange(url);
+        } catch (error) {
+            console.error("Upload failed:", error);
+            alert("Failed to upload image");
+        } finally {
+            setIsUploading(false);
+            setUploadProgress(0);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const handleGalleryUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        for (const file of files) {
+            try {
+                validateFile(file, 5);
+            } catch (error) {
+                alert(`File ${file.name} is too large. Max 5MB.`);
+                return;
+            }
+        }
+
+        setIsUploading(true);
+        try {
+            const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
+            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'groups/gallery'));
+            const urls = await Promise.all(uploadPromises);
+            setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ...urls] }));
+        } catch (error) {
+            console.error("Gallery upload error", error);
+        } finally {
+            setIsUploading(false);
+            if (galleryInputRef.current) galleryInputRef.current.value = '';
+        }
     };
 
     const handleGalleryChange = (index, value) => {
@@ -257,7 +343,35 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                             <InputGroup label="Korean Name" value={formData.koreanName} onChange={e => setFormData({...formData, koreanName: e.target.value})} theme={theme} icon={Globe} placeholder="e.g. 블랙핑크" />
                             
                             <div className="md:col-span-2">
-                                <InputGroup label="Image URL" value={formData.image} onChange={e => handleImageChange(e.target.value)} theme={theme} icon={ImageIcon} placeholder="https://..." />
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <ImageIcon size={12} /> Image URL
+                                    </label>
+                                    <div className="flex gap-3">
+                                        {formData.image && (
+                                            <button type="button" onClick={() => handleImageChange(formData.image)} className="flex items-center gap-1 text-xs text-brand-purple font-black uppercase tracking-wider hover:underline">
+                                                <CropIcon size={12} /> Re-frame
+                                            </button>
+                                        )}
+                                        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                            {isUploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload File'}
+                                        </button>
+                                    </div>
+                                </div>
+                                {formData.image && (
+                                    <div className="mb-4 flex justify-center">
+                                        <div className="relative w-32 aspect-[3/4.2] rounded-xl overflow-hidden shadow-lg border-2 border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-slate-800">
+                                            <img 
+                                                src={convertDriveLink(formData.image)} 
+                                                alt="Preview" 
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                <input value={formData.image || ''} onChange={e => handleImageChange(e.target.value)} className={cn("w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")} placeholder="https://..." />
                             </div>
 
                             <InputGroup label="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
@@ -463,13 +577,13 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                     <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                         <ImageIcon size={12} /> Gallery Images
                                     </label>
-                                    <button
-                                        type="button"
-                                        onClick={addGalleryImage}
-                                        className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline"
-                                    >
-                                        <Plus size={12} /> Add Image
-                                    </button>
+                                    <div className="flex gap-3">
+                                        <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
+                                        <button type="button" onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                            Upload
+                                        </button>
+                                    </div>
                                 </div>
                                 {(formData.gallery || []).map((url, idx) => (
                                     <div key={idx} className="flex gap-2 items-center">

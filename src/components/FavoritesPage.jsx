@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGroup, onFavoriteIdol, onFavoriteGroup }) => {
     const { theme } = useTheme();
@@ -16,6 +17,7 @@ export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGro
 
     return (
         <div className="container mx-auto px-4 py-8 min-h-screen max-w-7xl">
+            <BackgroundShapes />
             <div className="flex items-center gap-4 mb-12">
                 <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>
                     <ArrowLeft size={24} />

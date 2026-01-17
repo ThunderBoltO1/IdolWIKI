@@ -9,6 +9,7 @@ import { convertDriveLink } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { ConfirmationModal } from './ConfirmationModal';
+import { BackgroundShapes } from './BackgroundShapes';
 
 function getRelativeTime(timestamp) {
   if (!timestamp) return 'Just now';
@@ -381,6 +382,7 @@ export function PublicProfilePage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-10">
+      <BackgroundShapes image={profile?.avatar} />
       <div className="flex items-center justify-between gap-4">
         <button
           type="button"

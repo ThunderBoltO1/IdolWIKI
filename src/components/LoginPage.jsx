@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Lock, Mail, Loader2, AlertCircle, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
     const { login, user } = useAuth();
@@ -37,6 +38,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
 
     return (
         <div className="flex items-center justify-center min-h-[70vh] px-4 py-12">
+            <BackgroundShapes />
             <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -45,12 +47,6 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
-                {/* Visual Accent */}
-                <div className={cn(
-                    "absolute top-0 left-1/2 -translate-x-1/2 w-48 h-48 blur-[80px] rounded-full pointer-events-none -mt-24 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-purple/30" : "bg-brand-purple/10"
-                )} />
-
                 <div className="text-center mb-10 relative z-10">
                     <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-brand-pink to-brand-purple shadow-lg shadow-brand-pink/20 mb-6 transition-transform hover:scale-110">
                         <Sparkles className="text-white" size={24} />

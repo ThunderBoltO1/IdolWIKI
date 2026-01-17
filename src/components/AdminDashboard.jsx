@@ -7,6 +7,7 @@ import { db } from '../lib/firebase';
 import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw, History } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export function AdminDashboard({ onBack }) {
     const { isAdmin } = useAuth();
@@ -234,24 +235,32 @@ export function AdminDashboard({ onBack }) {
     if (!isAdmin) return <div className="p-10 text-center text-red-500 font-bold">Access Denied: Admin privileges required.</div>;
 
     const statCards = [
-        { label: 'Total Users', value: stats.users, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-        { label: 'Daily Active', value: stats.dailyActiveUsers, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-        { label: 'Online Users', value: stats.onlineUsers, icon: Activity, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-        { label: 'Total Idols', value: stats.idols, icon: Star, color: 'text-pink-500', bg: 'bg-pink-500/10' },
-        { label: 'Total Groups', value: stats.groups, icon: Building2, color: 'text-purple-500', bg: 'bg-purple-500/10' },
-        { label: 'Total Comments', value: stats.comments, icon: MessageSquare, color: 'text-green-500', bg: 'bg-green-500/10' },
+        { label: 'Total Users', value: stats.users, icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+        { label: 'Daily Active', value: stats.dailyActiveUsers, icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+        { label: 'Online Users', value: stats.onlineUsers, icon: Activity, color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+        { label: 'Total Idols', value: stats.idols, icon: Star, color: 'text-pink-500', bg: 'bg-pink-500/10', border: 'border-pink-500/20' },
+        { label: 'Total Groups', value: stats.groups, icon: Building2, color: 'text-purple-500', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
+        { label: 'Total Comments', value: stats.comments, icon: MessageSquare, color: 'text-green-500', bg: 'bg-green-500/10', border: 'border-green-500/20' },
     ];
 
     return (
-        <div className="container mx-auto px-4 py-8 min-h-screen max-w-6xl">
-            <div className="flex items-center gap-4 mb-8">
-                <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>
-                    <ArrowLeft size={24} />
-                </button>
-                <h1 className={cn("text-3xl font-black flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                    <LayoutDashboard className="text-brand-pink" />
-                    Admin Dashboard
-                </h1>
+        <div className="container mx-auto px-4 py-8 min-h-screen max-w-7xl">
+            <BackgroundShapes />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+                <div className="flex items-center gap-4">
+                    <button onClick={onBack} className={cn("p-3 rounded-2xl transition-all active:scale-95 shadow-sm border", theme === 'dark' ? "bg-slate-800 border-white/5 hover:bg-slate-700 text-white" : "bg-white border-slate-100 hover:bg-slate-50 text-slate-900")}>
+                        <ArrowLeft size={20} />
+                    </button>
+                    <div>
+                        <h1 className={cn("text-3xl md:text-4xl font-black tracking-tight flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            <LayoutDashboard className="text-brand-pink" size={32} />
+                            Dashboard
+                        </h1>
+                        <p className={cn("text-sm font-medium mt-1", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                            System Overview & Management
+                        </p>
+                    </div>
+                </div>
             </div>
 
             {error && (
@@ -271,7 +280,7 @@ export function AdminDashboard({ onBack }) {
                 </div>
             ) : (
                 <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-10">
                     {statCards.map((stat, index) => (
                         <motion.div
                             key={stat.label}
@@ -279,16 +288,19 @@ export function AdminDashboard({ onBack }) {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: index * 0.1 }}
                             className={cn(
-                                "p-6 rounded-3xl border flex items-center gap-5",
-                                theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
+                                "p-5 rounded-3xl border flex flex-col justify-between relative overflow-hidden group",
+                                theme === 'dark' ? "bg-slate-900/60 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 shadow-sm hover:shadow-md"
                             )}
                         >
-                            <div className={cn("p-4 rounded-2xl", stat.bg, stat.color)}>
-                                <stat.icon size={28} />
+                            <div className={cn("absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity scale-150", stat.color)}>
+                                <stat.icon size={64} />
+                            </div>
+                            <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center mb-4", stat.bg, stat.color)}>
+                                <stat.icon size={20} />
                             </div>
                             <div>
                                 <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-1">{stat.label}</p>
-                                <p className={cn("text-3xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                <p className={cn("text-2xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                     {stat.value.toLocaleString()}
                                 </p>
                             </div>
@@ -296,177 +308,163 @@ export function AdminDashboard({ onBack }) {
                     ))}
                 </div>
 
-                <div className="mt-16">
-                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        <TrendingUp className="text-orange-500" />
-                        Weekly Active Users
-                    </h2>
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.5 }}
-                        className={cn(
-                            "p-6 rounded-3xl border h-80",
-                            theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
-                        )}
-                    >
-                        <div className="w-full h-full flex items-center justify-center text-slate-500 font-medium">
-                            Please install 'recharts' to view this graph
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 mb-10">
+                    <div className="xl:col-span-2">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className={cn("text-xl font-black flex items-center gap-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                <TrendingUp className="text-orange-500" size={20} />
+                                Activity Overview
+                            </h2>
                         </div>
-                    </motion.div>
-                </div>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className={cn(
+                                "p-8 rounded-[32px] border h-80 flex items-center justify-center relative overflow-hidden",
+                                theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-sm"
+                            )}
+                        >
+                            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-transparent" />
+                            <div className="text-center relative z-10">
+                                <Activity size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
+                                <p className="text-slate-500 font-medium">Chart visualization requires 'recharts'</p>
+                            </div>
+                        </motion.div>
+                    </div>
 
-                <div className="mt-16">
-                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        <Heart className="text-brand-pink" />
-                        Top 5 Most Loved Idols
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                        {topIdols.map((idol, index) => (
-                            <motion.div
-                                key={idol.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.05 }}
-                                className={cn(
-                                    "p-4 rounded-3xl border flex flex-col items-center gap-4 text-center relative overflow-hidden",
-                                    theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
-                                )}
-                            >
-                                <div className={cn(
-                                    "absolute top-3 left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black",
-                                    index === 0 ? "bg-yellow-400 text-yellow-900" : 
-                                    index === 1 ? "bg-slate-300 text-slate-900" :
-                                    index === 2 ? "bg-amber-600 text-amber-100" :
-                                    theme === 'dark' ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"
-                                )}>
-                                    #{index + 1}
-                                </div>
-
-                                <img 
-                                    src={convertDriveLink(idol.image)} 
-                                    alt={idol.name}
-                                    className="w-20 h-20 rounded-full object-cover border-4 border-white/10 shadow-lg"
-                                    onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${idol.name}&background=random`}
-                                />
-                                
-                                <div className="min-w-0 w-full">
-                                    <p className={cn("font-black text-lg truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{idol.name}</p>
-                                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 truncate">
-                                        {idol.group || 'Soloist'}
-                                    </p>
-                                </div>
-                                
-                                <div className={cn(
-                                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2",
-                                    theme === 'dark' ? "bg-brand-pink/10 text-brand-pink" : "bg-brand-pink/5 text-brand-pink"
-                                )}>
-                                    <Heart size={14} fill="currentColor" />
-                                    {(idol.likes || 0).toLocaleString()}
-                                </div>
-                            </motion.div>
-                        ))}
+                    <div>
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className={cn("text-xl font-black flex items-center gap-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                <Trophy className="text-brand-purple" size={20} />
+                                Top Awarded
+                            </h2>
+                        </div>
+                        <div className="space-y-3">
+                            {groupAwards.slice(0, 5).map((group, index) => (
+                                <motion.div
+                                    key={group.name}
+                                    initial={{ opacity: 0, x: 20 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: index * 0.05 }}
+                                    className={cn(
+                                        "p-3 rounded-2xl border flex items-center gap-4 transition-colors",
+                                        theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 hover:bg-slate-50"
+                                    )}
+                                >
+                                    <div className="font-black text-slate-300 w-6 text-center">{index + 1}</div>
+                                    <img 
+                                        src={convertDriveLink(group.image)} 
+                                        alt={group.name}
+                                        className="w-10 h-10 rounded-xl object-cover bg-slate-200"
+                                        onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <p className={cn("font-bold text-sm truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{group.name}</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                            {group.awardCount} Awards
+                                        </p>
+                                    </div>
+                                    {index === 0 && <Crown size={16} className="text-yellow-500" />}
+                                </motion.div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                <div className="mt-16">
-                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        <Crown className="text-yellow-500" />
-                        Top 5 Most Favorited Groups
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                        {topGroups.map((group, index) => (
-                            <motion.div
-                                key={group.id}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.05 }}
-                                className={cn(
-                                    "p-4 rounded-3xl border flex flex-col items-center gap-4 text-center relative overflow-hidden",
-                                    theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
-                                )}
-                            >
-                                <div className={cn(
-                                    "absolute top-3 left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-black",
-                                    index === 0 ? "bg-yellow-400 text-yellow-900" : 
-                                    index === 1 ? "bg-slate-300 text-slate-900" :
-                                    index === 2 ? "bg-amber-600 text-amber-100" :
-                                    theme === 'dark' ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"
-                                )}>
-                                    #{index + 1}
-                                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+                    <div>
+                        <h2 className={cn("text-xl font-black mb-6 flex items-center gap-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            <Heart className="text-brand-pink" size={20} />
+                            Most Loved Idols
+                        </h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {topIdols.map((idol, index) => (
+                                <motion.div
+                                    key={idol.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: index * 0.05 }}
+                                    className={cn(
+                                        "p-4 rounded-3xl border flex items-center gap-4 relative overflow-hidden",
+                                        theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 shadow-sm hover:shadow-md"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "absolute top-0 left-0 w-1 h-full",
+                                        index === 0 ? "bg-yellow-400" : index === 1 ? "bg-slate-300" : index === 2 ? "bg-amber-600" : "bg-transparent"
+                                    )} />
+                                    <img 
+                                        src={convertDriveLink(idol.image)} 
+                                        alt={idol.name}
+                                        className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
+                                        onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${idol.name}&background=random`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <p className={cn("font-black text-base truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{idol.name}</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">
+                                            {idol.group || 'Soloist'}
+                                        </p>
+                                    </div>
+                                    <div className={cn("px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5", theme === 'dark' ? "bg-brand-pink/10 text-brand-pink" : "bg-brand-pink/5 text-brand-pink")}>
+                                        <Heart size={12} fill="currentColor" />
+                                        {idol.likes?.toLocaleString()}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
+                    </div>
 
-                                <img 
-                                    src={convertDriveLink(group.image)} 
-                                    alt={group.name}
-                                    className="w-20 h-20 rounded-full object-cover border-4 border-white/10 shadow-lg"
-                                    onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}
-                                />
-                                
-                                <div className="min-w-0 w-full">
-                                    <p className={cn("font-black text-lg truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{group.name}</p>
-                                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500 truncate">
-                                        {group.company || 'Unknown'}
-                                    </p>
-                                </div>
-                                
-                                <div className={cn(
-                                    "px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-2",
-                                    theme === 'dark' ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-500/5 text-yellow-600"
-                                )}>
-                                    <Star size={14} fill="currentColor" />
-                                    {(group.favorites || 0).toLocaleString()}
-                                </div>
-                            </motion.div>
-                        ))}
+                    <div>
+                        <h2 className={cn("text-xl font-black mb-6 flex items-center gap-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            <Crown className="text-yellow-500" size={20} />
+                            Most Favorited Groups
+                        </h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            {topGroups.map((group, index) => (
+                                <motion.div
+                                    key={group.id}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: index * 0.05 }}
+                                    className={cn(
+                                        "p-4 rounded-3xl border flex items-center gap-4 relative overflow-hidden",
+                                        theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 shadow-sm hover:shadow-md"
+                                    )}
+                                >
+                                    <div className={cn(
+                                        "absolute top-0 left-0 w-1 h-full",
+                                        index === 0 ? "bg-yellow-400" : index === 1 ? "bg-slate-300" : index === 2 ? "bg-amber-600" : "bg-transparent"
+                                    )} />
+                                    <img 
+                                        src={convertDriveLink(group.image)} 
+                                        alt={group.name}
+                                        className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
+                                        onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <p className={cn("font-black text-base truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{group.name}</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">
+                                            {group.company || 'Unknown'}
+                                        </p>
+                                    </div>
+                                    <div className={cn("px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5", theme === 'dark' ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-500/5 text-yellow-600")}>
+                                        <Star size={12} fill="currentColor" />
+                                        {group.favorites?.toLocaleString()}
+                                    </div>
+                                </motion.div>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
-                <div className="mt-16">
-                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        <Trophy className="text-brand-purple" />
-                        Award Rankings
-                    </h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {groupAwards.map((group, index) => (
-                            <motion.div
-                                key={group.name}
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.05 }}
-                                className={cn(
-                                    "p-6 rounded-3xl border flex items-center gap-5",
-                                    theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
-                                )}
-                            >
-                                <img 
-                                    src={convertDriveLink(group.image)} 
-                                    alt={group.name}
-                                    className="w-12 h-12 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700"
-                                    onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}
-                                />
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-bold text-lg truncate">{group.name}</p>
-                                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                                        {group.awardCount} Awards
-                                    </p>
-                                </div>
-                                <div className="text-3xl font-black text-brand-purple">
-                                    #{index + 1}
-                                </div>
-                            </motion.div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="mt-16">
-                    <h2 className={cn("text-2xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        <History className="text-blue-500" />
+                <div className="mb-10">
+                    <h2 className={cn("text-xl font-black mb-6 flex items-center gap-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                        <History className="text-blue-500" size={20} />
                         System Audit Logs
                     </h2>
                     <div className={cn(
-                        "rounded-3xl border overflow-hidden",
-                        theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-lg shadow-slate-200/50"
+                        "rounded-[32px] border overflow-hidden",
+                        theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-sm"
                     )}>
                         {logsLoading ? (
                             <div className="p-10 flex justify-center">
@@ -523,7 +521,7 @@ export function AdminDashboard({ onBack }) {
                     </div>
                 </div>
 
-                <div className="mt-16 mb-8 p-6 rounded-3xl border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-900/30">
+                <div className="mb-8 p-8 rounded-[32px] border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-900/30">
                     <h2 className="text-xl font-black text-red-600 dark:text-red-400 mb-4 flex items-center gap-2">
                         <AlertCircle size={24} /> Danger Zone
                     </h2>

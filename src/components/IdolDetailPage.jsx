@@ -1,12 +1,22 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Twitter, Globe } from 'lucide-react';
+import { motion, AnimatePresence, useScroll, useTransform, Reorder } from 'framer-motion';
+import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Globe, Upload, Loader2, X, ChevronLeft, ChevronRight, Maximize2, PlayCircle, Search, Share2, Check, GripVertical } from 'lucide-react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
+import { BackgroundShapes } from './BackgroundShapes';
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
 
 export function IdolDetailPage() {
   const { idolId } = useParams();
@@ -43,6 +53,16 @@ export function IdolDetailPage() {
   const [videosDraft, setVideosDraft] = useState([]);
   const [galleryDraft, setGalleryDraft] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const galleryInputRef = useRef(null);
+  const albumCoverInputRef = useRef(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [videoSearch, setVideoSearch] = useState('');
+  const [isCopied, setIsCopied] = useState(false);
+
+  const { scrollY } = useScroll();
+  const y = useTransform(scrollY, [0, 500], [0, 100]);
 
   useEffect(() => {
     if (!idolId) return;
@@ -78,8 +98,16 @@ export function IdolDetailPage() {
     setIsEditingWorks(false);
     setAlbumsDraft(idol?.albums || []);
     setVideosDraft(idol?.videos || []);
-    setGalleryDraft(idol?.gallery || []);
+    setGalleryDraft((idol?.gallery || []).map((url, idx) => ({ id: `gal-${idx}-${Date.now()}`, url })));
   }, [idol?.id]);
+
+  const filteredVideos = useMemo(() => {
+    const videos = idol?.videos || [];
+    if (!videoSearch.trim()) return videos;
+    return videos.filter(v => 
+        (v.title || '').toLowerCase().includes(videoSearch.toLowerCase())
+    );
+  }, [idol?.videos, videoSearch]);
 
   const normalizedAlbums = useMemo(() => {
     const albums = isEditingWorks ? albumsDraft : (idol?.albums || []);
@@ -113,7 +141,7 @@ export function IdolDetailPage() {
   };
 
   const addVideo = () => {
-    setVideosDraft((prev) => [...(prev || []), { title: '', url: '' }]);
+    setVideosDraft((prev) => [...(prev || []), { title: '', url: '', date: new Date().toISOString().split('T')[0] }]);
   };
 
   const updateVideo = (index, field, value) => {
@@ -128,19 +156,20 @@ export function IdolDetailPage() {
     setVideosDraft((prev) => (prev || []).filter((_, i) => i !== index));
   };
 
-  const addGalleryImage = () => {
-    setGalleryDraft((prev) => [...(prev || []), '']);
-  };
-
   const updateGalleryImage = (index, value) => {
     setGalleryDraft((prev) => {
       const next = [...(prev || [])];
-      next[index] = value;
+      next[index] = { ...next[index], url: value };
       return next;
     });
   };
 
-  const removeGalleryImage = (index) => {
+  const removeGalleryImage = async (index) => {
+    if (!window.confirm("Are you sure you want to delete this image?")) return;
+    const urlToRemove = galleryDraft[index]?.url;
+    if (urlToRemove) {
+        await deleteImage(urlToRemove);
+    }
     setGalleryDraft((prev) => (prev || []).filter((_, i) => i !== index));
   };
 
@@ -152,7 +181,7 @@ export function IdolDetailPage() {
       await updateDoc(doc(db, 'idols', idolId), {
         albums: albumsDraft,
         videos: videosDraft,
-        gallery: galleryDraft,
+        gallery: galleryDraft.map(item => item.url),
         updatedAt: new Date().toISOString()
       });
       setIsEditingWorks(false);
@@ -162,6 +191,133 @@ export function IdolDetailPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleGalleryUpload = async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+
+      for (const file of files) {
+          try {
+              validateFile(file, 5);
+          } catch (error) {
+              alert(`File ${file.name} is too large. Max 5MB.`);
+              return;
+          }
+      }
+
+      setIsUploading(true);
+      try {
+          const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
+          const uploadPromises = compressedFiles.map(file => uploadImage(file, 'idols/gallery'));
+          const urls = await Promise.all(uploadPromises);
+          setGalleryDraft(prev => [...(prev || []), ...urls.map((url, i) => ({ id: `new-${Date.now()}-${i}`, url }))]);
+      } catch (error) {
+          console.error("Gallery upload error", error);
+          alert("Failed to upload images");
+      } finally {
+          setIsUploading(false);
+          if (galleryInputRef.current) galleryInputRef.current.value = '';
+      }
+  };
+
+  const handleRemoveAlbumCover = async (index) => {
+    const album = albumsDraft[index];
+    if (!album || !album.cover) return;
+
+    if (album.cover.includes('firebasestorage')) {
+        if (window.confirm("Are you sure you want to remove this cover? This will also delete the image from the server.")) {
+            try {
+                await deleteImage(album.cover);
+                updateAlbum(index, 'cover', '');
+            } catch (error) {
+                console.error("Error deleting album cover:", error);
+                alert("Failed to delete album cover.");
+            }
+        }
+    } else {
+        // It's a local preview (blob URL), just clear it
+        updateAlbum(index, 'cover', '');
+    }
+  };
+
+  const handleAlbumCoverUpload = async (e, index) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+          validateFile(file, 5);
+      } catch (error) {
+          alert(error.message);
+          return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      setAlbumsDraft(prev => {
+          const next = [...prev];
+          next[index] = { ...next[index], cover: objectUrl };
+          return next;
+      });
+
+      setIsUploading(true);
+      try {
+          const compressedFile = await compressImage(file);
+          const url = await uploadImage(compressedFile, 'idols/albums');
+          
+          setAlbumsDraft(prev => {
+              const next = [...prev];
+              next[index] = { ...next[index], cover: url };
+              return next;
+          });
+      } catch (error) {
+          console.error("Album cover upload error", error);
+          alert("Failed to upload album cover");
+      } finally {
+          setIsUploading(false);
+          if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
+      }
+  };
+
+  const allImages = useMemo(() => {
+    if (!idol) return [];
+    return [idol.image, ...(idol.gallery || [])].filter(Boolean);
+  }, [idol]);
+
+  const currentImageIndex = allImages.indexOf(lightboxImage);
+
+  const handleNextImage = (e) => {
+      e?.stopPropagation();
+      if (currentImageIndex === -1) return;
+      const nextIndex = (currentImageIndex + 1) % allImages.length;
+      setLightboxImage(allImages[nextIndex]);
+  };
+
+  const handlePrevImage = (e) => {
+      e?.stopPropagation();
+      if (currentImageIndex === -1) return;
+      const prevIndex = (currentImageIndex - 1 + allImages.length) % allImages.length;
+      setLightboxImage(allImages[prevIndex]);
+  };
+
+  useEffect(() => {
+      const handleKeyDown = (e) => {
+          if (!lightboxImage) return;
+          if (e.key === 'ArrowRight') handleNextImage();
+          if (e.key === 'ArrowLeft') handlePrevImage();
+          if (e.key === 'Escape') setLightboxImage(null);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxImage, allImages]);
+
+  const getLightboxCaption = (url) => {
+      if (!url || !idol) return null;
+      if (url === idol.image) return { title: idol.name };
+      
+      const album = (idol.albums || []).find(a => a.cover === url);
+      if (album) return { title: album.title, subtitle: album.date };
+
+      return null;
   };
 
   if (loading) {
@@ -201,17 +357,32 @@ export function IdolDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
+      <BackgroundShapes image={idol.image} />
       <div className="flex items-center justify-between gap-4">
-        <button
-          type="button"
-          onClick={() => navigate(-1)}
-          className={cn(
-            'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
-            theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50'
-          )}
-        >
-          <ArrowLeft size={14} /> Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className={cn(
+              'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+              theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50'
+            )}
+          >
+            <ArrowLeft size={14} /> Back
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                setIsCopied(true);
+                setTimeout(() => setIsCopied(false), 2000);
+            }}
+            className={cn("p-2 rounded-2xl border transition-colors", theme === 'dark' ? "border-white/10 text-white hover:bg-white/5" : "border-slate-200 text-slate-900 hover:bg-slate-50")}
+            title="Copy Link"
+          >
+            {isCopied ? <Check size={14} /> : <Share2 size={14} />}
+          </button>
+        </div>
 
         {isAdmin && (
           <div className="flex items-center gap-2">
@@ -260,14 +431,20 @@ export function IdolDetailPage() {
       )}>
         <div className="grid grid-cols-1 md:grid-cols-12">
           <div className="md:col-span-5">
-            <div className="aspect-[3/4] relative overflow-hidden">
-              <img
+            <div className="aspect-[3/4] relative overflow-hidden group cursor-zoom-in" onClick={() => setLightboxImage(idol.image)}>
+              <motion.img
+                style={{ y }}
                 src={convertDriveLink(idol.image)}
                 alt={idol.name}
-                className="w-full h-full object-cover"
+                className="w-full h-[120%] object-cover -mt-[10%]"
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                  <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10">
+                      <Maximize2 size={24} />
+                  </div>
+              </div>
             </div>
           </div>
 
@@ -315,7 +492,7 @@ export function IdolDetailPage() {
                       theme === 'dark' ? 'border-white/10 text-sky-400 bg-slate-950/40' : 'border-slate-200 text-sky-600 bg-slate-50'
                     )}
                   >
-                    <Twitter size={14} /> X
+                    <XIcon size={14} /> X
                   </a>
                 )}
               </div>
@@ -374,60 +551,82 @@ export function IdolDetailPage() {
         {isEditingWorks ? (
           <div className="space-y-3">
             {videosDraft.map((video, idx) => (
-              <div key={idx} className="flex gap-2 items-center">
-                <input
-                  value={video.title}
-                  onChange={(e) => updateVideo(idx, 'title', e.target.value)}
-                  className={cn(
-                    "w-1/3 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                  )}
-                  placeholder="Title (e.g. MV)"
-                />
-                <input
-                  value={video.url}
-                  onChange={(e) => updateVideo(idx, 'url', e.target.value)}
-                  className={cn(
-                    "flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                  )}
-                  placeholder="YouTube URL..."
-                />
-                <button
-                  type="button"
-                  onClick={() => removeVideo(idx)}
-                  className={cn(
-                    "p-3 rounded-2xl transition-colors shrink-0",
-                    theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100"
-                  )}
-                >
-                  <Trash2 size={16} />
-                </button>
+              <div key={idx} className={cn("p-4 rounded-2xl border space-y-3", theme === 'dark' ? "bg-slate-800/50 border-white/5" : "bg-slate-50 border-slate-100")}>
+                  <div className="flex justify-between items-center">
+                      <h4 className="font-bold text-xs text-brand-pink uppercase tracking-wider">Video #{idx + 1}</h4>
+                      <button type="button" onClick={() => removeVideo(idx)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/10"><Trash2 size={14} /></button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                          value={video.title || ''}
+                          onChange={e => updateVideo(idx, 'title', e.target.value)}
+                          className={cn("w-full p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                          placeholder="Title (e.g. MV)"
+                      />
+                      <div className="flex gap-2">
+                          <input type="date" value={video.date || ''} onChange={e => updateVideo(idx, 'date', e.target.value)} className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                          <button type="button" onClick={() => updateVideo(idx, 'date', new Date().toISOString().split('T')[0])} className={cn("p-2 rounded-lg border font-bold text-[10px] uppercase", theme === 'dark' ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-50")}>
+                              Today
+                          </button>
+                      </div>
+                  </div>
+                  <input
+                      value={video.url || ''}
+                      onChange={e => updateVideo(idx, 'url', e.target.value)}
+                      className={cn("w-full p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                      placeholder="YouTube URL..."
+                  />
               </div>
             ))}
             {videosDraft.length === 0 && <p className="text-sm text-slate-500 italic">No videos added.</p>}
           </div>
         ) : (
           (idol.videos && idol.videos.length > 0) ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {idol.videos.map((video, idx) => (
-                <div key={idx} className="space-y-2">
-                  <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
-                    <iframe
-                      width="100%"
-                      height="100%"
-                      src={`https://www.youtube.com/embed/${getYouTubeVideoId(video.url)}`}
-                      title="YouTube video player"
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                      className="absolute inset-0"
-                    />
-                  </div>
-                  <p className={cn("text-sm font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled'}</p>
-                </div>
-              ))}
+            <>
+            <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                    type="text"
+                    placeholder="Search videos..."
+                    value={videoSearch}
+                    onChange={(e) => setVideoSearch(e.target.value)}
+                    className={cn("w-full pl-10 pr-4 py-2 rounded-xl border focus:outline-none transition-all text-sm font-medium", theme === 'dark' ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600" : "bg-white border-slate-200 focus:border-brand-pink text-slate-900")}
+                />
             </div>
+            {filteredVideos.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {filteredVideos.map((video, idx) => {
+                const videoId = getYouTubeVideoId(video.url);
+                const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
+
+                return (
+                <div key={idx} className="space-y-2">
+                  <div 
+                    className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative z-0 group cursor-pointer"
+                    onClick={() => setSelectedVideo(video)}
+                  >
+                    {thumbnailUrl && (
+                        <img src={thumbnailUrl} alt={video.title} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" loading="lazy" />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="p-4 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl group-hover:scale-110 transition-transform duration-300">
+                            <PlayCircle size={32} fill="currentColor" />
+                        </div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className={cn("text-sm font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled'}</p>
+                    {video.date && (
+                        <p className={cn("text-xs font-medium", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>{video.date}</p>
+                    )}
+                  </div>
+                </div>
+              )})}
+            </div>
+            ) : (
+                <p className="text-sm text-slate-500 italic">No videos found matching "{videoSearch}".</p>
+            )}
+            </>
           ) : (
             <p className="text-sm text-slate-500 italic">No videos available.</p>
           )
@@ -620,25 +819,33 @@ export function IdolDetailPage() {
             <ImageIcon size={20} /> Gallery
           </h2>
           {isEditingWorks && (
-            <button
-              type="button"
-              onClick={addGalleryImage}
-              className={cn(
-                'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
-                'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90'
-              )}
-            >
-              <Plus size={14} /> Add Image
-            </button>
+            <>
+                <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
+                <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                disabled={isUploading}
+                className={cn(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                    'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90 disabled:opacity-50'
+                )}
+                >
+                {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
+                </button>
+            </>
           )}
         </div>
 
         {isEditingWorks ? (
           <div className="space-y-3">
-            {galleryDraft.map((url, idx) => (
-              <div key={idx} className="flex gap-2 items-center">
+            <Reorder.Group axis="y" values={galleryDraft} onReorder={setGalleryDraft} className="space-y-3">
+            {galleryDraft.map((item, idx) => (
+              <Reorder.Item key={item.id} value={item} className="flex gap-2 items-center bg-black/5 dark:bg-white/5 p-2 rounded-xl">
+                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                    <GripVertical size={16} />
+                </div>
                 <input
-                  value={url}
+                  value={item.url}
                   onChange={(e) => updateGalleryImage(idx, e.target.value)}
                   className={cn(
                     "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
@@ -656,22 +863,25 @@ export function IdolDetailPage() {
                 >
                   <Trash2 size={16} />
                 </button>
-              </div>
+              </Reorder.Item>
             ))}
+            </Reorder.Group>
             {galleryDraft.length === 0 && <p className="text-sm text-slate-500 italic">No images added.</p>}
           </div>
         ) : (
           (idol.gallery && idol.gallery.length > 0) ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {idol.gallery.map((img, idx) => (
-                <div key={idx} className="aspect-square rounded-2xl overflow-hidden shadow-md hover:scale-105 transition-transform duration-300 cursor-pointer">
+                <div key={idx} className="aspect-square rounded-2xl overflow-hidden shadow-md hover:scale-105 transition-transform duration-300 cursor-pointer group relative" onClick={() => setLightboxImage(img)}>
                   <img
                     src={convertDriveLink(img)}
                     alt={`Gallery ${idx}`}
                     className="w-full h-full object-cover"
                     loading="lazy"
-                    onClick={() => window.open(convertDriveLink(img), '_blank')}
                   />
+                  <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <Maximize2 className="text-white drop-shadow-lg" size={24} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -680,6 +890,120 @@ export function IdolDetailPage() {
           )
         )}
       </div>
+
+      {/* Lightbox Modal */}
+      {createPortal(
+          <AnimatePresence>
+          {lightboxImage && (
+              <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setLightboxImage(null)}
+                        className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+              >
+                  <button
+                      onClick={() => setLightboxImage(null)}
+                      className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                  >
+                      <X size={24} />
+                  </button>
+                  
+                  {allImages.length > 1 && (
+                      <>
+                          <button
+                              onClick={handlePrevImage}
+                              className="absolute left-4 md:left-8 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                          >
+                              <ChevronLeft size={32} />
+                          </button>
+                          <button
+                              onClick={handleNextImage}
+                              className="absolute right-4 md:right-8 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                          >
+                              <ChevronRight size={32} />
+                          </button>
+                      </>
+                  )}
+
+                  <motion.img
+                      key={lightboxImage}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      src={convertDriveLink(lightboxImage)}
+                      loading="lazy"
+                      alt="Full size"
+                      className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+                      onClick={(e) => e.stopPropagation()}
+                  />
+
+                      {(() => {
+                          const caption = getLightboxCaption(lightboxImage);
+                          if (!caption) return null;
+                          return (
+                              <div className="absolute bottom-8 left-0 right-0 text-center pointer-events-none z-20 px-4">
+                                  <motion.div 
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="bg-black/40 backdrop-blur-md inline-block px-6 py-3 rounded-2xl border border-white/10"
+                                  >
+                                      <p className="text-white font-bold text-lg drop-shadow-md">{caption.title}</p>
+                                      {caption.subtitle && <p className="text-white/70 text-xs font-bold uppercase tracking-widest mt-1">{caption.subtitle}</p>}
+                                  </motion.div>
+                              </div>
+                          );
+                      })()}
+              </motion.div>
+          )}
+          </AnimatePresence>,
+          document.body
+      )}
+
+      {/* Video Lightbox */}
+      {createPortal(
+          <AnimatePresence>
+          {selectedVideo && (
+              <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setSelectedVideo(null)}
+                  className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+              >
+                  <button
+                      onClick={() => setSelectedVideo(null)}
+                      className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                  >
+                      <X size={24} />
+                  </button>
+                  
+                  <motion.div
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full max-w-5xl aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl relative"
+                  >
+                      <iframe
+                          width="100%"
+                          height="100%"
+                          src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedVideo.url)}?autoplay=1`}
+                          title={selectedVideo.title || "YouTube video player"}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                          className="absolute inset-0"
+                      />
+                  </motion.div>
+                  <div className="absolute bottom-10 left-0 right-0 text-center pointer-events-none px-4">
+                      <h3 className="text-2xl font-black text-white drop-shadow-lg">{selectedVideo.title}</h3>
+                  </div>
+              </motion.div>
+          )}
+          </AnimatePresence>,
+          document.body
+      )}
     </div>
   );
 }

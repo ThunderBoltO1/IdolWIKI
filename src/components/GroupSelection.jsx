@@ -6,17 +6,18 @@ import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm }) {
     const { theme } = useTheme();
     const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
     const [cardSize, setCardSize] = useState(300);
-    const [visibleCount, setVisibleCount] = useState(24);
+    const [visibleCount, setVisibleCount] = useState(48);
     const loadMoreRef = useRef(null);
     const [quickViewIdol, setQuickViewIdol] = useState(null);
 
     useEffect(() => {
-        setVisibleCount(24);
+        setVisibleCount(48);
     }, [viewMode, searchTerm, selectedCompany]);
 
     const filteredGroups = useMemo(() => (groups || []).filter(group => {
@@ -61,42 +62,16 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && !loading && visibleCount < allItems.length) {
-                    setVisibleCount(prev => prev + 12);
+                    setVisibleCount(prev => prev + 24);
                 }
             },
-            { threshold: 0.1, rootMargin: '400px' }
+            { threshold: 0, rootMargin: '800px' }
         );
 
         if (loadMoreRef.current) observer.observe(loadMoreRef.current);
 
         return () => observer.disconnect();
     }, [loading, visibleCount, allItems.length]);
-
-    // Background Floating Shapes
-    const BackgroundShapes = () => (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-            <motion.div
-                animate={{
-                    y: [0, -40, 0],
-                    rotate: [0, 10, 0],
-                    scale: [1, 1.1, 1]
-                }}
-                transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-                style={{ willChange: "transform" }}
-                className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-brand-pink/5 rounded-full blur-[100px]"
-            />
-            <motion.div
-                animate={{
-                    y: [0, 50, 0],
-                    rotate: [0, -10, 0],
-                    scale: [1, 1.2, 1]
-                }}
-                transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-                style={{ willChange: "transform" }}
-                className="absolute bottom-[-10%] right-[-10%] w-[700px] h-[700px] bg-brand-purple/5 rounded-full blur-[100px]"
-            />
-        </div>
-    );
 
     return (
         <div className="space-y-12 py-12 relative">
@@ -240,7 +215,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
             >
                 <AnimatePresence mode='popLayout'>
                     {loading ? (
-                        Array.from({ length: 8 }).map((_, i) => (
+                        Array.from({ length: 12 }).map((_, i) => (
                             <SkeletonCard key={`skeleton-${i}`} theme={theme} />
                         ))
                     ) : (

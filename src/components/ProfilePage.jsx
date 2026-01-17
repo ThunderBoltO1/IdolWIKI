@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2 } from 'lucide-react';
+import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { ImageCropper } from './ImageCropper';
 import { isDataUrl } from '../lib/cropImage';
+import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
@@ -32,6 +34,9 @@ export const ProfilePage = ({ onBack }) => {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 1 });
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
+    const fileInputRef = useRef(null);
 
     const startCropping = (url, callback, aspect = 1) => {
         if (!url || isDataUrl(url)) {
@@ -56,8 +61,39 @@ export const ProfilePage = ({ onBack }) => {
         }
     };
 
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            validateFile(file, 5);
+        } catch (error) {
+            alert(error.message);
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        startCropping(objectUrl, async (croppedUrl) => {
+             setIsUploading(true);
+             try {
+                 // Convert cropped base64 to File and upload
+                 const croppedFile = dataURLtoFile(croppedUrl, `avatar_${Date.now()}.jpg`);
+                 
+                 const url = await uploadImage(croppedFile, 'avatars', (progress) => setUploadProgress(progress));
+                 setFormData(prev => ({ ...prev, avatar: url }));
+             } catch (error) {
+                 console.error("Upload failed", error);
+                 alert("Failed to upload image");
+             } finally {
+                 setIsUploading(false);
+                 if (fileInputRef.current) fileInputRef.current.value = '';
+             }
+        }, 1);
+    };
+
     return (
         <div className="flex items-center justify-center min-h-[70vh] py-12 px-4">
+            <BackgroundShapes image={user?.avatar} />
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -66,16 +102,6 @@ export const ProfilePage = ({ onBack }) => {
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
-                {/* Decorative Elements */}
-                <div className={cn(
-                    "absolute top-0 right-0 w-64 h-64 blur-[100px] rounded-full pointer-events-none -mr-32 -mt-32 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-pink/20" : "bg-brand-pink/10"
-                )} />
-                <div className={cn(
-                    "absolute bottom-0 left-0 w-64 h-64 blur-[100px] rounded-full pointer-events-none -ml-32 -mb-32 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-purple/20" : "bg-brand-purple/10"
-                )} />
-
                 <button
                     onClick={onBack}
                     className={cn(
@@ -128,33 +154,59 @@ export const ProfilePage = ({ onBack }) => {
                                 </div>
                             )}
                         </div>
-                        {formData.avatar && (
-                            <button
-                                type="button"
-                                onClick={() => setFormData(prev => ({ ...prev, avatar: '' }))}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors text-xs font-black uppercase tracking-widest"
-                            >
-                                <Trash2 size={14} />
-                                Reset Avatar
-                            </button>
-                        )}
+                        <div className="flex gap-2">
+                            {formData.avatar && (
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({ ...prev, avatar: '' }))}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors text-xs font-black uppercase tracking-widest"
+                                >
+                                    <Trash2 size={14} />
+                                    Remove
+                                </button>
+                            )}
+                            {formData.avatar !== (user?.avatar || '') && (
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData(prev => ({ ...prev, avatar: user?.avatar || '' }))}
+                                    className={cn("flex items-center gap-2 px-4 py-2 rounded-xl transition-colors text-xs font-black uppercase tracking-widest", theme === 'dark' ? "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900")}
+                                >
+                                    <RotateCcw size={14} />
+                                    Reset
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="grid gap-8 md:grid-cols-2">
                         <div className="md:col-span-2">
-                            <InputGroup
-                                icon={Globe}
-                                label="Avatar URL"
-                                name="avatar"
-                                value={formData.avatar}
-                                onChange={e => {
-                                    startCropping(e.target.value, (newUrl) => {
-                                        setFormData(prev => ({ ...prev, avatar: newUrl }));
-                                    }, 1);
-                                }}
-                                theme={theme}
-                                placeholder="https://example.com/image.jpg"
-                            />
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <label className={cn("text-xs uppercase font-black tracking-[0.2em] flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <Globe size={14} /> Avatar URL
+                                    </label>
+                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                        {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                        {isUploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload File'}
+                                    </button>
+                                </div>
+                                <input
+                                    value={formData.avatar}
+                                    onChange={e => {
+                                        startCropping(e.target.value, (newUrl) => {
+                                            setFormData(prev => ({ ...prev, avatar: newUrl }));
+                                        }, 1);
+                                    }}
+                                    className={cn(
+                                        "w-full rounded-[20px] py-4 px-5 focus:outline-none border-2 transition-all text-sm font-bold",
+                                        theme === 'dark'
+                                            ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
+                                            : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+                                    )}
+                                    placeholder="https://example.com/image.jpg"
+                                />
+                            </div>
                         </div>
 
                         <div className="md:col-span-2">

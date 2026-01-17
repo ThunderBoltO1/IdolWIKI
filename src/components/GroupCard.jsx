@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, useMotionValue, useTransform, useMotionTemplate } from 'framer-motion';
 import { Users, Star, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -13,6 +13,7 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
     
     const mouseX = useMotionValue(0);
     const mouseY = useMotionValue(0);
+    const [imageLoaded, setImageLoaded] = useState(false);
 
     const rotateX = useTransform(mouseY, [-0.5, 0.5], [10, -10]);
     const rotateY = useTransform(mouseX, [-0.5, 0.5], [-10, 10]);
@@ -62,7 +63,8 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
             }}
             className={cn(
                 "group relative aspect-[3/4.2] rounded-[48px] overflow-hidden cursor-pointer transition-all duration-300",
-                theme === 'dark' ? "bg-slate-900 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)]" : "bg-white shadow-2xl shadow-slate-200"
+                theme === 'dark' ? "bg-slate-900 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.8)]" : "bg-white shadow-2xl shadow-slate-200",
+                !imageLoaded && "animate-pulse bg-slate-800"
             )}
         >
             <div className="absolute top-5 left-5 z-20">
@@ -95,11 +97,25 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
             />
 
             {/* Background Image */}
-            <img
+            {/* Low Quality Placeholder (Blur) */}
+            <motion.img
+                initial={{ opacity: 1 }}
+                animate={{ opacity: imageLoaded ? 0 : 1 }}
+                transition={{ duration: 0.5 }}
+                src={convertDriveLink(group.image)}
+                alt={group.name}
+                className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
+            />
+            
+            {/* Main Image */}
+            <motion.img
+                initial={{ opacity: 0 }}
+                animate={{ opacity: imageLoaded ? 1 : 0 }}
                 src={convertDriveLink(group.image)}
                 alt={group.name}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"
+                onLoad={() => setImageLoaded(true)}
             />
 
             {/* Overlay */}

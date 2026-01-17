@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Mail, Loader2, AlertCircle, CheckCircle2, ArrowLeft, KeyRound } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export const ForgotPasswordPage = ({ onNavigate }) => {
     const { resetPassword } = useAuth();
@@ -30,6 +31,7 @@ export const ForgotPasswordPage = ({ onNavigate }) => {
 
     return (
         <div className="flex items-center justify-center min-h-[70vh] px-4 py-12">
+            <BackgroundShapes />
             <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 30 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -38,18 +40,6 @@ export const ForgotPasswordPage = ({ onNavigate }) => {
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
-                {/* Visual Accent */}
-                <div className={cn(
-                    "absolute top-0 right-0 w-64 h-64 blur-[100px] rounded-full pointer-events-none -mr-32 -mt-32 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-pink/20" : "bg-brand-pink/10"
-                )} />
-
-                {/* Visual Accent - Bottom Left */}
-                <div className={cn(
-                    "absolute bottom-0 left-0 w-64 h-64 blur-[100px] rounded-full pointer-events-none -ml-32 -mb-32 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-purple/20" : "bg-brand-purple/10"
-                )} />
-
                 <button
                     onClick={() => onNavigate('login')}
                     className={cn(

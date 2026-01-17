@@ -4,18 +4,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import getCroppedImgDataUrl from '../lib/cropImage';
-import { Check, X, ZoomIn, ZoomOut, Crop as CropIcon, Loader2, Maximize, Minimize } from 'lucide-react';
+import { Check, X, ZoomIn, ZoomOut, Crop as CropIcon, Loader2, Maximize, Minimize, RotateCw, Square, RectangleHorizontal, RectangleVertical } from 'lucide-react';
 
 export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 }) {
     const { theme } = useTheme();
     const [crop, setCrop] = useState({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
+    const [rotation, setRotation] = useState(0);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
     const [objectFit, setObjectFit] = useState('contain');
     const [cropShape, setCropShape] = useState("round"); // Default to round, can be "rect"
     const [loading, setLoading] = useState(true);
     const [image, setImage] = useState(null);
     const [error, setError] = useState(null);
+    const [currentAspect, setCurrentAspect] = useState(aspect);
 
     const onCropChange = useCallback((location) => {
         setCrop(location);
@@ -51,7 +53,8 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
         try {
             const croppedImageDataUrl = await getCroppedImgDataUrl(
                 image,
-                croppedAreaPixels
+                croppedAreaPixels,
+                rotation
             );
             onCropComplete(croppedImageDataUrl);
         } catch (e) {
@@ -102,9 +105,11 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                                 image={image}
                                 crop={crop}
                                 zoom={zoom}
-                                aspect={aspect}
+                                rotation={rotation}
+                                aspect={currentAspect}
                                 onCropChange={onCropChange}
                                 onZoomChange={onZoomChange}
+                                onRotationChange={setRotation}
                                 onCropComplete={onCropFull}
                             />
                         )}
@@ -113,7 +118,7 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                         "p-4 border-t flex items-center justify-between",
                         theme === 'dark' ? 'border-white/10 bg-slate-950/50' : 'border-slate-200 bg-slate-50'
                     )}>
-                        <div className="flex items-center gap-2 w-1/3">
+                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                             <ZoomOut size={20} className="text-slate-500" />
                             <input
                                 type="range"
@@ -127,6 +132,16 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                             />
                             <ZoomIn size={20} className="text-slate-500" />
                             <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2" />
+                            <motion.button
+                                type="button"
+                                onClick={() => setRotation((prev) => prev + 90)}
+                                whileTap={{ rotate: 90 }}
+                                transition={{ duration: 0.2 }}
+                                className={cn("p-2 rounded-lg transition-colors", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")}
+                                title="Rotate"
+                            >
+                                <RotateCw size={20} />
+                            </motion.button>
                             <button
                                 type="button"
                                 onClick={() => setObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
@@ -134,6 +149,31 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                                 title={objectFit === 'contain' ? "Fill Frame" : "Fit Image"}
                             >
                                 {objectFit === 'contain' ? <Maximize size={20} /> : <Minimize size={20} />}
+                            </button>
+                            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2" />
+                            <button
+                                type="button"
+                                onClick={() => setCurrentAspect(1)}
+                                className={cn("p-2 rounded-lg transition-colors", currentAspect === 1 ? "text-brand-pink bg-brand-pink/10" : (theme === 'dark' ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"))}
+                                title="1:1"
+                            >
+                                <Square size={20} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentAspect(4 / 3)}
+                                className={cn("p-2 rounded-lg transition-colors", currentAspect === 4 / 3 ? "text-brand-pink bg-brand-pink/10" : (theme === 'dark' ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"))}
+                                title="4:3"
+                            >
+                                <RectangleVertical size={20} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentAspect(16 / 9)}
+                                className={cn("p-2 rounded-lg transition-colors", currentAspect === 16 / 9 ? "text-brand-pink bg-brand-pink/10" : (theme === 'dark' ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"))}
+                                title="16:9"
+                            >
+                                <RectangleHorizontal size={20} />
                             </button>
                         </div>
                         <div className="flex gap-3">

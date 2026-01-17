@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Lock, Mail, User, Loader2, AlertCircle, Rocket } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
     const { register } = useAuth();
@@ -53,6 +54,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
 
     return (
         <div className="flex items-center justify-center min-h-[70vh] px-4 py-12">
+            <BackgroundShapes />
             <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 30 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -61,12 +63,6 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
-                {/* Visual Accent */}
-                <div className={cn(
-                    "absolute bottom-0 right-0 w-64 h-64 blur-[100px] rounded-full pointer-events-none -mr-32 -mb-32 transition-colors duration-1000",
-                    theme === 'dark' ? "bg-brand-blue/30" : "bg-brand-blue/10"
-                )} />
-
                 <div className="text-center mb-10 relative z-10">
                     <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-brand-blue to-brand-purple shadow-lg shadow-brand-blue/20 mb-6 transition-transform hover:rotate-12">
                         <Rocket className="text-white" size={24} />

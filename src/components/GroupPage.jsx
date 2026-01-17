@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, Twitter, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -14,8 +14,27 @@ import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { GroupCard } from './GroupCard';
 import Cropper from 'react-easy-crop';
-import { MusicPlayer } from './MusicPlayer';
 import { useAwards } from '../hooks/useAwards.js';
+import { deleteImage, uploadImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { BackgroundShapes } from './BackgroundShapes';
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
+
+const TikTokIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
+
+const SpotifyIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141 4.439-1.38 9.9-0.78 13.619 1.5.42.18.6.72.122 1.321zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+    </svg>
+);
 
 export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [] }) {
     const { isAdmin, user } = useAuth();
@@ -25,6 +44,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [displayGroup, setDisplayGroup] = useState(group);
     const [activeImage, setActiveImage] = useState(group?.image || '');
     const [lightboxImage, setLightboxImage] = useState(null);
+    const [selectedVideo, setSelectedVideo] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
     const [isReordering, setIsReordering] = useState(false);
     const [formData, setFormData] = useState(group || {});
@@ -59,6 +79,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [heroCrop, setHeroCrop] = useState({ x: 0, y: 0 });
     const [heroZoom, setHeroZoom] = useState(1);
     const [heroCroppedArea, setHeroCroppedArea] = useState(null);
+    const [heroObjectFit, setHeroObjectFit] = useState('horizontal-cover');
 
     const [memberSearch, setMemberSearch] = useState('');
     const [editingMembers, setEditingMembers] = useState([]);
@@ -66,6 +87,22 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [news, setNews] = useState([]);
     const [loadingNews, setLoadingNews] = useState(false);
     const [newsSourceFilter, setNewsSourceFilter] = useState('all');
+    const [isDragging, setIsDragging] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const [isHeroUploading, setIsHeroUploading] = useState(false);
+    const [heroUploadProgress, setHeroUploadProgress] = useState(0);
+    const heroFileInputRef = useRef(null);
+    const galleryInputRef = useRef(null);
+    const [galleryItems, setGalleryItems] = useState((group?.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
+    const [videoList, setVideoList] = useState((group?.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+    const [albumList, setAlbumList] = useState((group?.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+    const [videoPage, setVideoPage] = useState(1);
+    const videosPerPage = 6;
+    const [videoSearch, setVideoSearch] = useState('');
+    const [socialLinksOrder, setSocialLinksOrder] = useState([]);
+    const [isPreviewDescription, setIsPreviewDescription] = useState(false);
+    const [isAwardAdded, setIsAwardAdded] = useState(false);
+    const [selectedGalleryIndices, setSelectedGalleryIndices] = useState(new Set());
     const { awards: awardData } = useAwards();
 
     const calculateAgeAtDate = (birthDate, targetDate) => {
@@ -214,7 +251,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     });
 
                     // If no news found with group name, try searching by member names
-                    if (filteredItems.length === 0 && members.length > 0) {
+                    if (filteredItems.length > 0 && members.length > 0) {
                         const memberNames = members.map(m => m.name.toLowerCase());
                         filteredItems = data.items.filter(item => {
                             const title = (item.title || '').toLowerCase();
@@ -541,6 +578,37 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setDisplayGroup(group);
             setActiveImage(group.image);
             setFormData(group);
+            setGalleryItems((group.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
+            setVideoList((group.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+            setAlbumList((group.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+            setVideoPage(1);
+            
+            // Initialize social links order if not present or update it
+            const defaultOrder = [
+                { id: 'instagram', label: 'Instagram', icon: Instagram, color: 'text-pink-500', hover: 'hover:text-pink-600' },
+                { id: 'twitter', label: 'X', icon: XIcon, color: 'text-sky-500', hover: 'hover:text-sky-600' },
+                { id: 'youtube', label: 'YouTube', icon: Youtube, color: 'text-red-500', hover: 'hover:text-red-600' },
+                { id: 'tiktok', label: 'TikTok', icon: TikTokIcon, color: 'text-black dark:text-white', hover: 'hover:text-gray-700 dark:hover:text-gray-300' },
+                { id: 'appleMusic', label: 'Apple Music', icon: Music2, color: 'text-rose-500', hover: 'hover:text-rose-600' },
+                { id: 'spotify', label: 'Spotify', icon: SpotifyIcon, color: 'text-green-500', hover: 'hover:text-green-600' }
+            ];
+            
+            // If group has a saved order, use it (you'd need to save this to DB), otherwise use default
+            // For now, we'll just use default order but allow reordering in UI state
+            if (group.socialOrder) {
+                // Reconstruct icons for saved order
+                const savedOrderWithIcons = group.socialOrder.map(item => {
+                    const defaultItem = defaultOrder.find(d => d.id === item.id);
+                    return defaultItem ? { ...defaultItem, ...item } : null;
+                }).filter(Boolean);
+                
+                // Add any new default items that might be missing from saved order
+                const missingItems = defaultOrder.filter(d => !savedOrderWithIcons.find(s => s.id === d.id));
+                
+                setSocialLinksOrder([...savedOrderWithIcons, ...missingItems]);
+            } else {
+                setSocialLinksOrder(defaultOrder);
+            }
         }
     }, [group]);
 
@@ -580,6 +648,51 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         setLightboxImage(allImages[prevIndex]);
     };
 
+    const handleHeroFileUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        try {
+            validateFile(file, 5);
+        } catch (error) {
+            alert(error.message);
+            return;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        setActiveImage(objectUrl);
+        setHeroZoom(1);
+        setHeroCrop({ x: 0, y: 0 });
+    };
+
+    const handleGalleryUpload = async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length === 0) return;
+
+        for (const file of files) {
+            try {
+                validateFile(file, 5);
+            } catch (error) {
+                alert(`File ${file.name} is too large. Max 5MB.`);
+                return;
+            }
+        }
+
+        setIsUploading(true);
+        try {
+            const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
+            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'groups/gallery'));
+            const urls = await Promise.all(uploadPromises);
+            setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ...urls] }));
+        } catch (error) {
+            console.error("Gallery upload error", error);
+            alert("Failed to upload images");
+        } finally {
+            setIsUploading(false);
+            if (galleryInputRef.current) galleryInputRef.current.value = '';
+        }
+    };
+
     const startCropping = (url, callback, aspect = 16 / 9) => {
         if (!url || isDataUrl(url)) {
             callback(url);
@@ -599,21 +712,29 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [lightboxImage, allImages]);
 
-    if (!displayGroup) return (
-        <div className="py-20 text-center">
-            <h2 className="text-4xl font-black text-white">Group not found</h2>
-            <button onClick={onBack} className="mt-8 px-10 py-4 bg-brand-pink text-white rounded-2xl font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-brand-pink/20">Go Back Home</button>
-        </div>
-    );
-
     const handleSaveGroup = async () => {
         let imageToSave = formData.image;
-        if (heroCroppedArea && activeImage) {
+        // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
+        if (heroCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
+            setIsHeroUploading(true);
             try {
                 const croppedImage = await getCroppedImgDataUrl(activeImage, heroCroppedArea);
-                imageToSave = croppedImage;
+                
+                // Upload cropped image
+                const file = dataURLtoFile(croppedImage, `hero_${Date.now()}.jpg`);
+
+                // Delete old image if exists
+                if (displayGroup.image && displayGroup.image.includes('firebasestorage')) {
+                    await deleteImage(displayGroup.image);
+                }
+
+                const uploadedUrl = await uploadImage(file, 'groups');
+                imageToSave = uploadedUrl;
+                
             } catch (e) {
                 console.error("Failed to crop hero image", e);
+            } finally {
+                setIsHeroUploading(false);
             }
         }
 
@@ -647,7 +768,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             await batch.commit();
         }
 
-        await onUpdateGroup(displayGroup.id, { ...formData, image: imageToSave, members: newMemberIds });
+        // Strip out icon components before saving to Firestore
+        const socialOrderToSave = socialLinksOrder.map(({ icon, ...rest }) => rest);
+
+        await onUpdateGroup(displayGroup.id, { ...formData, image: imageToSave, members: newMemberIds, socialOrder: socialOrderToSave });
         setIsEditing(false);
         setIsReordering(false);
         setActiveImage(imageToSave);
@@ -655,7 +779,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
     const handleAddAward = () => {
         if (!newAward.show || !newAward.award) return;
-        setFormData({ ...formData, awards: [...(formData.awards || []), { ...newAward }] });
+        setFormData(prev => ({ ...prev, awards: [...(prev.awards || []), { ...newAward }] }));
+        setNewAward(prev => ({ ...prev, award: '' }));
+        setIsAwardAdded(true);
+        setTimeout(() => setIsAwardAdded(false), 2000);
     };
 
     const handleRemoveAward = (index) => {
@@ -663,39 +790,193 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const handleGalleryChange = (index, value) => {
-        startCropping(value, (newUrl) => {
-            const newGallery = [...(formData.gallery || [])];
-            newGallery[index] = newUrl;
-            setFormData({ ...formData, gallery: newGallery });
-        }, 1 / 1);
+        startCropping(value, async (newUrl) => {
+            let finalUrl = newUrl;
+            if (newUrl && newUrl.startsWith('data:')) {
+                setIsUploading(true);
+                try {
+                    const file = dataURLtoFile(newUrl, `gallery_cropped_${Date.now()}.jpg`);
+                    finalUrl = await uploadImage(file, 'groups/gallery');
+                } catch (error) {
+                    console.error("Failed to upload cropped gallery image", error);
+                } finally {
+                    setIsUploading(false);
+                }
+            }
+            
+            const newItems = [...galleryItems];
+            newItems[index] = { ...newItems[index], url: finalUrl };
+            setGalleryItems(newItems);
+            setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
+        }, 1);
     };
 
     const addGalleryImage = () => {
-        setFormData({ ...formData, gallery: [...(formData.gallery || []), ''] });
+        const newItems = [...galleryItems, { id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url: '' }];
+        setGalleryItems(newItems);
+        setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
     };
 
-    const removeGalleryImage = (index) => {
-        const newGallery = (formData.gallery || []).filter((_, i) => i !== index);
-        setFormData({ ...formData, gallery: newGallery });
+    const toggleGallerySelection = (index) => {
+        const newSelection = new Set(selectedGalleryIndices);
+        if (newSelection.has(index)) {
+            newSelection.delete(index);
+        } else {
+            newSelection.add(index);
+        }
+        setSelectedGalleryIndices(newSelection);
     };
 
-    const handleAlbumChange = (index, field, value) => {
-        const newAlbums = [...(formData.albums || [])];
-        if (!newAlbums[index]) newAlbums[index] = {};
-        newAlbums[index][field] = value;
-        setFormData({ ...formData, albums: newAlbums });
-    };
+    const deleteSelectedGalleryImages = () => {
+        if (selectedGalleryIndices.size === 0) return;
+        
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Selected Images',
+            message: `Are you sure you want to delete ${selectedGalleryIndices.size} images?`,
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                const indices = Array.from(selectedGalleryIndices).sort((a, b) => b - a); // Delete from end to avoid index shift issues if processing sequentially, though filter is better
+                
+                // Optional: Delete from storage if needed
+                for (const idx of indices) {
+                    const urlToRemove = galleryItems[idx]?.url;
+                    if (urlToRemove && urlToRemove.includes('firebasestorage')) {
+                        await deleteImage(urlToRemove);
+                    }
+                }
 
-    const addAlbum = () => {
-        setFormData({
-            ...formData,
-            albums: [...(formData.albums || []), { title: '', cover: '', date: '', youtube: '', tracks: [] }]
+                const newItems = galleryItems.filter((_, i) => !selectedGalleryIndices.has(i));
+                setGalleryItems(newItems);
+                setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
+                setSelectedGalleryIndices(new Set());
+            }
         });
     };
 
+    const selectAllGalleryImages = () => {
+        if (selectedGalleryIndices.size === galleryItems.length) {
+            setSelectedGalleryIndices(new Set());
+        } else {
+            setSelectedGalleryIndices(new Set(galleryItems.map((_, i) => i)));
+        }
+    };
+
+    const removeGalleryImage = (index) => {
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Image',
+            message: 'Are you sure you want to delete this image? This action cannot be undone.',
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                const urlToRemove = galleryItems[index]?.url;
+                if (urlToRemove) {
+                    await deleteImage(urlToRemove);
+                }
+                const newItems = galleryItems.filter((_, i) => i !== index);
+                setGalleryItems(newItems);
+                setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
+            }
+        });
+    };
+
+    const handleAlbumChange = (index, field, value) => {
+        const newList = [...albumList];
+        if (!newList[index]) return;
+        newList[index] = { ...newList[index], [field]: value };
+        setAlbumList(newList);
+        
+        // Sync to formData
+        const newAlbums = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
+    const addAlbum = () => {
+        const newAlbum = { title: '', cover: '', date: '', youtube: '', tracks: [], internalId: `alb-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
+        const newList = [...albumList, newAlbum];
+        setAlbumList(newList);
+        
+        const newAlbums = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
     const removeAlbum = (index) => {
-        const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
-        setFormData({ ...formData, albums: newAlbums });
+        const newList = albumList.filter((_, i) => i !== index);
+        setAlbumList(newList);
+        
+        const newAlbums = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
+    const handleVideoChange = (index, field, value) => {
+        const newList = [...videoList];
+        if (!newList[index]) return;
+        newList[index] = { ...newList[index], [field]: value };
+        setVideoList(newList);
+        
+        // Sync to formData
+        const newVideos = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, videos: newVideos }));
+    };
+
+    const insertFormat = (tag) => {
+        const textarea = document.getElementById('group-description');
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = formData.description || '';
+        
+        const prefix = `<${tag}>`;
+        const suffix = `</${tag}>`;
+        
+        const newText = text.substring(0, start) + prefix + text.substring(start, end) + suffix + text.substring(end);
+        setFormData(prev => ({ ...prev, description: newText }));
+        
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(start + prefix.length, end + prefix.length);
+        }, 0);
+    };
+
+    const fetchVideoDate = async (index, url) => {
+        if (!url) return;
+        try {
+            // Try using noembed service which supports CORS and returns basic info including upload date sometimes, 
+            // or just use current date as fallback if not found. 
+            // YouTube oEmbed doesn't always return upload date directly in a standard format.
+            // For a robust solution without API key, we might just set it to today or let user input.
+            // But let's try to fetch title at least.
+            
+            // Since fetching upload date from YouTube client-side without API key is tricky due to CORS and scraping limits,
+            // we will just focus on letting the user input it easily, or maybe default to today.
+            // If you have a backend, you could proxy this request.
+            
+            // For now, let's just ensure the date field is there and maybe auto-fill today if empty.
+        } catch (e) {
+            console.error("Failed to fetch video date", e);
+        }
+    };
+
+    const addVideo = () => {
+        const newVideo = { title: '', url: '', date: new Date().toISOString().split('T')[0], internalId: `vid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
+        const newList = [...videoList, newVideo];
+        setVideoList(newList);
+        
+        const newVideos = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, videos: newVideos }));
+    };
+
+    const removeVideo = (index) => {
+        const newList = videoList.filter((_, i) => i !== index);
+        setVideoList(newList);
+        
+        const newVideos = newList.map(({ internalId, ...rest }) => rest);
+        setFormData(prev => ({ ...prev, videos: newVideos }));
     };
 
     const handleRefresh = async () => {
@@ -709,6 +990,29 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 setDisplayGroup(newData);
                 setFormData(newData);
                 setActiveImage(newData.image);
+                setGalleryItems((newData.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
+                setVideoList((newData.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+                setAlbumList((newData.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+                setVideoPage(1);
+                const defaultOrder = [
+                    { id: 'instagram', label: 'Instagram', icon: Instagram },
+                    { id: 'twitter', label: 'X', icon: XIcon },
+                    { id: 'youtube', label: 'YouTube', icon: Youtube },
+                    { id: 'tiktok', label: 'TikTok', icon: TikTokIcon },
+                    { id: 'appleMusic', label: 'Apple Music', icon: Music2 },
+                    { id: 'spotify', label: 'Spotify', icon: SpotifyIcon }
+                ];
+                
+                if (newData.socialOrder) {
+                    const savedOrderWithIcons = newData.socialOrder.map(item => {
+                        const defaultItem = defaultOrder.find(d => d.id === item.id);
+                        return defaultItem ? { ...defaultItem, ...item } : null;
+                    }).filter(Boolean);
+                    const missingItems = defaultOrder.filter(d => !savedOrderWithIcons.find(s => s.id === d.id));
+                    setSocialLinksOrder([...savedOrderWithIcons, ...missingItems]);
+                } else {
+                    setSocialLinksOrder(defaultOrder);
+                }
             }
         } catch (error) {
             console.error("Error refreshing group:", error);
@@ -717,6 +1021,55 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         }
     };
 
+    const displayVideos = useMemo(() => {
+        const list = [];
+        if (displayGroup?.themeSongUrl) {
+            list.push({ title: 'Theme Song', url: displayGroup.themeSongUrl });
+        }
+        if (displayGroup?.videos && Array.isArray(displayGroup.videos)) {
+            list.push(...displayGroup.videos);
+        }
+        return list;
+    }, [displayGroup]);
+
+    const filteredVideos = useMemo(() => {
+        if (!videoSearch.trim()) return displayVideos;
+        return displayVideos.filter(v => 
+            (v.title || '').toLowerCase().includes(videoSearch.toLowerCase())
+        );
+    }, [displayVideos, videoSearch]);
+
+    const totalVideoPages = Math.ceil(filteredVideos.length / videosPerPage);
+    const currentVideos = filteredVideos.slice((videoPage - 1) * videosPerPage, videoPage * videosPerPage);
+
+    const groupedAwards = useMemo(() => {
+        const awards = displayGroup?.awards || [];
+        const groups = {};
+        const legacy = [];
+
+        awards.forEach(award => {
+            if (typeof award === 'object' && award.year) {
+                const y = award.year;
+                if (!groups[y]) groups[y] = [];
+                groups[y].push(award);
+            } else {
+                legacy.push(award);
+            }
+        });
+
+        const sortedYears = Object.keys(groups).sort((a, b) => b - a);
+        return { sortedYears, groups, legacy };
+    }, [displayGroup?.awards]);
+
+    if (!displayGroup) {
+        return (
+            <div className="py-20 text-center">
+                <h2 className="text-4xl font-black text-white">Group not found</h2>
+                <button onClick={onBack} className="mt-8 px-10 py-4 bg-brand-pink text-white rounded-2xl font-black uppercase tracking-widest hover:scale-105 transition-all shadow-xl shadow-brand-pink/20">Go Back Home</button>
+            </div>
+        );
+    }
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -724,29 +1077,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             transition={{ type: "spring", stiffness: 260, damping: 30 }}
             className="py-6 space-y-10"
         >
-            {/* Social Media Links (Top) */}
-            {!isEditing && (displayGroup?.instagram || displayGroup?.twitter || displayGroup?.youtube) && (
-                <div className="flex justify-end gap-3 px-2">
-                    {displayGroup.instagram && (
-                        <a href={displayGroup.instagram} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-pink-500 hover:bg-pink-500 hover:text-white border border-white/10" : "bg-white text-pink-500 hover:bg-pink-500 hover:text-white border border-slate-100")}>
-                            <Instagram size={18} />
-                            <span className="hidden sm:inline">Instagram</span>
-                        </a>
-                    )}
-                    {displayGroup.twitter && (
-                        <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-sky-500 hover:bg-sky-500 hover:text-white border border-white/10" : "bg-white text-sky-500 hover:bg-sky-500 hover:text-white border border-slate-100")}>
-                            <Twitter size={18} />
-                            <span className="hidden sm:inline">X</span>
-                        </a>
-                    )}
-                    {displayGroup.youtube && (
-                        <a href={displayGroup.youtube} target="_blank" rel="noopener noreferrer" className={cn("p-3 rounded-2xl transition-all hover:scale-110 shadow-lg flex items-center gap-2 font-bold text-xs uppercase tracking-widest", theme === 'dark' ? "bg-slate-900 text-red-500 hover:bg-red-500 hover:text-white border border-white/10" : "bg-white text-red-500 hover:bg-red-500 hover:text-white border border-slate-100")}>
-                            <Youtube size={18} />
-                            <span className="hidden sm:inline">YouTube</span>
-                        </a>
-                    )}
-                </div>
-            )}
+            <BackgroundShapes />
 
             {/* Header / Hero Section */}
             <section className="relative h-[40vh] min-h-[350px] md:h-[55vh] max-h-[600px] rounded-[24px] md:rounded-[48px] overflow-hidden shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] group/hero perspective-1000">
@@ -754,6 +1085,24 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     style={{ y: y1, scale }}
                     className="absolute inset-0 w-full h-full transition-all duration-700"
                 >
+                    {isHeroUploading && (
+                        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm transition-all duration-300">
+                            <div className="w-1/3 min-w-[200px] max-w-[300px] space-y-3">
+                                <div className="flex justify-between text-xs font-black text-white uppercase tracking-widest">
+                                    <span>Uploading</span>
+                                    <span>{Math.round(heroUploadProgress)}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-white/20 rounded-full overflow-hidden">
+                                    <motion.div 
+                                        className="h-full bg-brand-pink shadow-[0_0_15px_rgba(236,72,153,0.8)]"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${heroUploadProgress}%` }}
+                                        transition={{ ease: "linear" }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     {isEditing ? (
                         <div className="relative w-full h-full bg-slate-900">
                             <Cropper
@@ -767,7 +1116,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             cropShape="rect"
                                             restrictPosition={false}
                                 showGrid={false}
-                                objectFit="horizontal-cover"
+                                objectFit={heroObjectFit}
                             />
                             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
                                 <ZoomOut size={14} className="text-white/80" />
@@ -781,6 +1130,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
                                 />
                                 <ZoomIn size={14} className="text-white/80" />
+                                <div className="w-px h-4 bg-white/20 mx-1" />
+                                <button
+                                    type="button"
+                                    onClick={() => setHeroObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
+                                    className="text-white/80 hover:text-white transition-colors"
+                                    title={heroObjectFit === 'contain' ? "Fill Frame" : "Fit Image"}
+                                >
+                                    {heroObjectFit === 'contain' ? <Maximize size={14} /> : <Minimize size={14} />}
+                                </button>
                             </div>
                         </div>
                     ) : (
@@ -869,7 +1227,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     animate={{ opacity: 1, x: 0 }}
                     whileHover={{ scale: 1.05, x: 10 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={onBack}
+                    onClick={() => navigate('/')}
                     className="absolute top-8 left-8 flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/10 backdrop-blur-2xl text-white hover:bg-white/20 transition-all z-20 font-black text-xs uppercase tracking-[0.2em] border border-white/20 shadow-2xl"
                 >
                     <ArrowLeft size={16} />
@@ -895,8 +1253,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     className="w-full bg-transparent text-lg md:text-2xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
                                     placeholder="Korean Name"
                                 />
-                                <div className="flex items-center gap-2">
-                                    <Globe size={16} className="text-white/50" />
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-xs text-white/50 uppercase font-black tracking-widest flex items-center gap-2"><Globe size={14} /> Hero Image URL</label>
+                                        <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
+                                        <button type="button" onClick={() => heroFileInputRef.current?.click()} disabled={isHeroUploading} className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                            {isHeroUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                            {isHeroUploading ? 'Uploading...' : 'Upload'}
+                                        </button>
+                                    </div>
                                     <input
                                         value={formData.image || ''}
                                         onChange={(e) => {
@@ -908,15 +1273,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         }}
                                         className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
                                         placeholder="Hero Image URL"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Youtube size={16} className="text-white/50" />
-                                    <input
-                                        value={formData.themeSongUrl || ''}
-                                        onChange={e => setFormData({...formData, themeSongUrl: e.target.value})}
-                                        className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
-                                        placeholder="Theme Song URL (YouTube)"
                                     />
                                 </div>
                             </div>
@@ -1017,6 +1373,64 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 theme={theme}
                                 valueClass="text-green-500 font-black tracking-[0.2em] uppercase text-xs"
                             />
+
+                            {/* Social Media Links (Moved to Information) */}
+                            {!isEditing && socialLinksOrder.some(link => displayGroup?.[link.id]) && (
+                                <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
+                                    <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <Globe size={12} /> Social Media
+                                    </h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {socialLinksOrder.map(link => {
+                                            const url = displayGroup[link.id];
+                                            if (!url) return null;
+                                            
+                                            // Determine colors based on link type if not provided in state (fallback)
+                                            let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
+                                            if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
+                                            else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
+                                            else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
+                                            else if (link.id === 'tiktok') colorClass = theme === 'dark' ? "bg-slate-800 text-white hover:bg-black hover:text-white border-white/5" : "bg-slate-50 text-black hover:bg-black hover:text-white border-slate-100";
+                                            else if (link.id === 'appleMusic') colorClass = theme === 'dark' ? "bg-slate-800 text-rose-500 hover:bg-rose-500 hover:text-white border-white/5" : "bg-slate-50 text-rose-500 hover:bg-rose-500 hover:text-white border-slate-100";
+                                            else if (link.id === 'spotify') colorClass = theme === 'dark' ? "bg-slate-800 text-green-500 hover:bg-green-500 hover:text-white border-white/5" : "bg-slate-50 text-green-500 hover:bg-green-500 hover:text-white border-slate-100";
+
+                                            return (
+                                                <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
+                                                    <link.icon size={14} /> {link.label}
+                                                </a>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Social Media Inputs (Edit Mode) */}
+                            {isEditing && (
+                                <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
+                                    <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <Globe size={12} /> Social Media
+                                    </h4>
+                                    <Reorder.Group axis="y" values={socialLinksOrder} onReorder={setSocialLinksOrder} className="space-y-2">
+                                        {socialLinksOrder.map((link) => (
+                                            <Reorder.Item key={link.id} value={link} className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl">
+                                                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                    <GripVertical size={16} />
+                                                </div>
+                                                <div className="flex items-center gap-2 min-w-[100px]">
+                                                    <link.icon size={14} className="text-slate-500" />
+                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{link.label}</span>
+                                                </div>
+                                                <input 
+                                                    value={formData[link.id] || ''} 
+                                                    onChange={e => setFormData({...formData, [link.id]: e.target.value})}
+                                                    className={cn("flex-1 bg-transparent border-b p-1 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                                    placeholder={`${link.label} URL`}
+                                                />
+                                            </Reorder.Item>
+                                        ))}
+                                    </Reorder.Group>
+                                </div>
+                            )}
                             
                             {/* Awards Section */}
                             <div className={cn("pt-4 border-t", theme === 'dark' ? "border-white/10" : "border-slate-100")}>
@@ -1066,9 +1480,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 type="button"
                                                 onClick={handleAddAward}
                                                 disabled={!newAward.show || !newAward.award}
-                                                className="w-full py-2 rounded-xl bg-brand-pink text-white text-xs font-black uppercase tracking-widest hover:bg-brand-pink/90 disabled:opacity-50"
+                                                className={cn(
+                                                    "w-full py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50",
+                                                    isAwardAdded ? "bg-green-500 text-white" : "bg-brand-pink text-white hover:bg-brand-pink/90"
+                                                )}
                                             >
-                                                Add Award
+                                                {isAwardAdded ? <span className="flex items-center justify-center gap-2"><Check size={14} /> Added!</span> : "Add Award"}
                                             </motion.button>
                                         </div>
                                         <div className="space-y-2">
@@ -1101,28 +1518,51 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="flex flex-wrap gap-2">
+                                    <div className="space-y-2 pl-2">
                                         {(displayGroup.awards || []).length > 0 ? (
-                                            [...(displayGroup.awards || [])].sort((a, b) => { // Sorting logic updated here
-                                                const yearA = typeof a === 'object' ? Number(a.year) : 0;
-                                                const yearB = typeof b === 'object' ? Number(b.year) : 0;
-                                                if (yearB !== yearA) return yearB - yearA;
-                                                const nameA = typeof a === 'object' ? `${a.show || ''} ${a.award || ''}` : String(a);
-                                                const nameB = typeof b === 'object' ? `${b.show || ''} ${b.award || ''}` : String(b);
-                                                return nameA.localeCompare(nameB);
-                                            }).map((award, i) => (
-                                                <span key={i} className={cn(
-                                                    "px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border flex items-center gap-2",
-                                                    theme === 'dark' ? "bg-slate-800 border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"
-                                                )}>
-                                                    {typeof award === 'object' ? (
-                                                        <>
-                                                            <span className="text-brand-pink">{award.year}</span>
-                                                            <span>{award.show} - {award.award}</span>
-                                                        </>
-                                                    ) : award}
-                                                </span>
-                                            ))
+                                            <>
+                                                {groupedAwards.sortedYears.map(year => (
+                                                    <div key={year} className={cn("relative pl-8 pb-8 border-l-2 last:border-l-0 last:pb-0", theme === 'dark' ? "border-white/10" : "border-slate-200")}>
+                                                        <div className={cn(
+                                                            "absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4",
+                                                            theme === 'dark' ? "bg-brand-pink border-slate-900" : "bg-brand-pink border-white"
+                                                        )} />
+                                                        <h5 className={cn("text-2xl font-black mb-4 leading-none -mt-1.5", theme === 'dark' ? "text-white" : "text-slate-900")}>{year}</h5>
+                                                        <div className="grid grid-cols-1 gap-3">
+                                                            {groupedAwards.groups[year].map((award, i) => (
+                                                                <div key={i} className={cn(
+                                                                    "p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] hover:shadow-lg",
+                                                                    theme === 'dark' ? "bg-slate-800/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 hover:border-slate-200 shadow-sm"
+                                                                )}>
+                                                                    <div className={cn("p-3 rounded-xl shrink-0", theme === 'dark' ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-600")}>
+                                                                        <Trophy size={20} />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p className={cn("font-bold text-base", theme === 'dark' ? "text-white" : "text-slate-900")}>{award.show}</p>
+                                                                        <p className={cn("text-xs font-medium mt-0.5", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>{award.award}</p>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {groupedAwards.legacy.length > 0 && (
+                                                    <div className="relative pl-8 pt-8">
+                                                        <h5 className={cn("text-xl font-black mb-4 leading-none", theme === 'dark' ? "text-white" : "text-slate-900")}>Others</h5>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {groupedAwards.legacy.map((award, i) => (
+                                                                <span key={i} className={cn(
+                                                                    "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border flex items-center gap-2",
+                                                                    theme === 'dark' ? "bg-slate-800 border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"
+                                                                )}>
+                                                                    <Trophy size={12} className="text-slate-400" />
+                                                                    {award}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </>
                                         ) : (
                                             <span className="text-sm text-slate-500 italic">No awards yet.</span>
                                         )}
@@ -1136,88 +1576,75 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             theme === 'dark' ? "border-white/10" : "border-slate-100"
                         )}>
                             {isEditing ? (
-                                <textarea
-                                    value={formData.description || ''}
-                                    onChange={e => setFormData({...formData, description: e.target.value})}
-                                    className={cn(
-                                        "w-full h-32 bg-transparent border-2 rounded-xl p-3 focus:outline-none resize-none text-sm",
-                                        theme === 'dark' ? "border-white/10 text-slate-300 focus:border-brand-pink" : "border-slate-200 text-slate-600 focus:border-brand-pink"
+                                <div className="space-y-2">
+                                    <div className="flex gap-2">
+                                        <button type="button" onClick={() => insertFormat('b')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Bold">
+                                            <Bold size={16} />
+                                        </button>
+                                        <button type="button" onClick={() => insertFormat('i')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Italic">
+                                            <Italic size={16} />
+                                        </button>
+                                        <div className="flex-1" />
+                                        <button type="button" onClick={() => setIsPreviewDescription(!isPreviewDescription)} className={cn("px-3 py-2 rounded-lg border transition-colors text-xs font-bold uppercase tracking-wider flex items-center gap-2", isPreviewDescription ? "bg-brand-pink text-white border-brand-pink" : (theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700"))}>
+                                            {isPreviewDescription ? <Edit2 size={14} /> : <Eye size={14} />}
+                                            {isPreviewDescription ? "Edit" : "Preview"}
+                                        </button>
+                                    </div>
+                                    {!isPreviewDescription ? (
+                                        <textarea
+                                            id="group-description"
+                                            value={formData.description || ''}
+                                            onChange={e => setFormData({...formData, description: e.target.value})}
+                                            className={cn(
+                                                "w-full h-96 bg-transparent border-2 rounded-xl p-4 focus:outline-none resize-none text-sm leading-relaxed font-mono",
+                                                theme === 'dark' ? "border-white/10 text-slate-300 focus:border-brand-pink" : "border-slate-200 text-slate-600 focus:border-brand-pink"
+                                            )}
+                                            placeholder="Enter group history and description... Use <b>text</b> for bold and <i>text</i> for italic."
+                                        />
+                                    ) : (
+                                        <div className={cn(
+                                            "w-full h-96 overflow-y-auto border-2 rounded-xl p-4 text-sm leading-relaxed",
+                                            theme === 'dark' ? "border-white/10 bg-slate-900/50" : "border-slate-200 bg-slate-50"
+                                        )}>
+                                            {(formData.description || "No description.").split('\n').map((paragraph, idx) => {
+                                                if (!paragraph.trim()) return <div key={idx} className="h-4" />;
+                                                const __html = paragraph
+                                                    .replace(/</g, "&lt;")
+                                                    .replace(/>/g, "&gt;")
+                                                    .replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>")
+                                                    .replace(/&lt;\/b&gt;/g, "</strong>")
+                                                    .replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>")
+                                                    .replace(/&lt;\/i&gt;/g, "</em>");
+                                                return <p key={idx} dangerouslySetInnerHTML={{ __html }} className="mb-2" />;
+                                            })}
+                                        </div>
                                     )}
-                                />
+                                </div>
                             ) : (
-                                <p className={cn(
-                                    "leading-relaxed text-base font-medium italic relative z-10",
-                                    theme === 'dark' ? "text-slate-400" : "text-slate-600"
+                                <div className={cn(
+                                    "leading-loose text-lg font-medium relative z-10 text-justify space-y-4",
+                                    theme === 'dark' ? "text-slate-300" : "text-slate-600"
                                 )}>
-                                    {displayGroup.description ? `"${displayGroup.description}"` : "No description available."}
-                                </p>
-                            )}
-                        </div>
+                                    {(displayGroup.description || "No description available.").split('\n').map((paragraph, idx) => {
+                                        if (!paragraph.trim()) return <div key={idx} className="h-4" />;
+                                        
+                                        // Simple parser for <b> and <i> tags
+                                        const __html = paragraph
+                                            .replace(/</g, "&lt;")
+                                            .replace(/>/g, "&gt;")
+                                            .replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>")
+                                            .replace(/&lt;\/b&gt;/g, "</strong>")
+                                            .replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>")
+                                            .replace(/&lt;\/i&gt;/g, "</em>");
 
-                        {/* Social Media Section */}
-                        <div className={cn(
-                            "pt-6 border-t",
-                            theme === 'dark' ? "border-white/10" : "border-slate-100"
-                        )}>
-                            <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                <Globe size={12} /> Social Media
-                            </h4>
-                            
-                            {isEditing ? (
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-3">
-                                        <Instagram size={16} className="text-slate-400" />
-                                        <input 
-                                            value={formData.instagram || ''} 
-                                            onChange={e => setFormData({...formData, instagram: e.target.value})}
-                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                            placeholder="Instagram URL"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <Twitter size={16} className="text-slate-400" />
-                                        <input 
-                                            value={formData.twitter || ''} 
-                                            onChange={e => setFormData({...formData, twitter: e.target.value})}
-                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                            placeholder="X (Twitter) URL"
-                                        />
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <Youtube size={16} className="text-slate-400" />
-                                        <input 
-                                            value={formData.youtube || ''} 
-                                            onChange={e => setFormData({...formData, youtube: e.target.value})}
-                                            className={cn("w-full bg-transparent border-b p-2 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                            placeholder="YouTube Channel URL"
-                                        />
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="flex flex-wrap gap-3">
-                                    {displayGroup.instagram && (
-                                        <a href={displayGroup.instagram} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-pink-500/10 to-purple-500/10 text-pink-500 hover:scale-105 transition-transform border border-pink-500/20 font-bold text-xs">
-                                            <Instagram size={16} /> Instagram
-                                        </a>
-                                    )}
-                                    {displayGroup.twitter && (
-                                        <a href={displayGroup.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 text-sky-500 hover:scale-105 transition-transform border border-sky-500/20 font-bold text-xs">
-                                            <Twitter size={16} /> X
-                                        </a>
-                                    )}
-                                    {displayGroup.youtube && (
-                                        <a href={displayGroup.youtube} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-tr from-red-500/10 to-orange-500/10 text-red-500 hover:scale-105 transition-transform border border-red-500/20 font-bold text-xs">
-                                            <Youtube size={16} /> YouTube
-                                        </a>
-                                    )}
-                                    {!displayGroup.instagram && !displayGroup.twitter && !displayGroup.youtube && (
-                                        <span className="text-sm text-slate-500 italic">No social media links.</span>
-                                    )}
+                                        return (
+                                            <p key={idx} dangerouslySetInnerHTML={{ __html }} />
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
-                    </motion.div>
-
+</motion.div>
                     {/* Gallery Thumbnails */}
                     {(isEditing || allImages.length > 1) && (
                         <motion.div
@@ -1232,28 +1659,145 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className={cn("text-xl font-black tracking-tight uppercase tracking-[0.2em] text-xs", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Official Archives</h3>
                                 {isEditing && (
-                                    <button onClick={addGalleryImage} className="text-xs font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline">
-                                        <Plus size={12} /> Add Image
-                                    </button>
+                                    <>
+                                        <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
+                                        <button onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="text-xs font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline disabled:opacity-50">
+                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                                        </button>
+                                    </>
+                                )}
+                                {isEditing && galleryItems.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={selectAllGalleryImages} className="text-xs font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700 flex items-center gap-1">
+                                            {selectedGalleryIndices.size === galleryItems.length ? <CheckSquare size={14} /> : <Square size={14} />}
+                                            Select All
+                                        </button>
+                                        {selectedGalleryIndices.size > 0 && (
+                                            <button onClick={deleteSelectedGalleryImages} className="text-xs font-bold uppercase tracking-wider text-red-500 hover:text-red-600 flex items-center gap-1 ml-2">
+                                                <Trash2 size={14} />
+                                                Delete ({selectedGalleryIndices.size})
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             
                             {isEditing ? (
-                                <div className="space-y-3">
-                                    {(formData.gallery || []).map((url, idx) => (
-                                        <div key={idx} className="flex gap-2">
-                                            <input
-                                                value={url}
-                                                onChange={(e) => handleGalleryChange(idx, e.target.value)}
-                                                className={cn("w-full bg-transparent border-b p-2 text-xs font-medium focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                                placeholder="Image URL..."
-                                            />
-                                            <button onClick={() => removeGalleryImage(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-lg">
-                                                <Trash2 size={14} />
-                                            </button>
+                                <div 
+                                    className="relative min-h-[200px] rounded-2xl transition-all"
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        setIsDragging(true);
+                                    }}
+                                    onDragLeave={(e) => {
+                                        e.preventDefault();
+                                        if (e.currentTarget.contains(e.relatedTarget)) return;
+                                        setIsDragging(false);
+                                    }}
+                                    onDrop={async (e) => {
+                                        e.preventDefault();
+                                        setIsDragging(false);
+                                        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+                                        if (files.length === 0) return;
+
+                                        for (const file of files) {
+                                            try {
+                                                validateFile(file, 5);
+                                            } catch (error) {
+                                                alert(`File ${file.name} is too large. Max 5MB.`);
+                                                return;
+                                            }
+                                        }
+
+                                        setIsUploading(true);
+                                        try {
+                                            const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
+                                            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'groups/gallery'));
+                                            const urls = await Promise.all(uploadPromises);
+            const newItems = [...galleryItems, ...urls.map((url, index) => ({ id: `upload-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url }))];
+            setGalleryItems(newItems);
+            setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
+                                        } catch (error) {
+                                            console.error("Gallery upload error", error);
+                                            alert("Failed to upload dropped images");
+                                        } finally {
+                                            setIsUploading(false);
+                                        }
+                                    }}
+                                >
+                                    {isDragging && (
+                                        <div className="absolute inset-0 z-50 bg-brand-pink/10 border-2 border-dashed border-brand-pink rounded-2xl flex flex-col items-center justify-center backdrop-blur-sm animate-in fade-in">
+                                            <Upload size={48} className="text-brand-pink mb-2" />
+                                            <p className="text-brand-pink font-black uppercase tracking-widest">Drop images to upload</p>
                                         </div>
+                                    )}
+                                    
+                                    {isUploading && (
+                                        <div className="absolute inset-0 z-50 bg-black/50 rounded-2xl flex flex-col items-center justify-center backdrop-blur-sm">
+                                            <Loader2 size={48} className="text-white animate-spin mb-2" />
+                                            <p className="text-white font-bold">Uploading...</p>
+                                        </div>
+                                    )}
+
+                                    <Reorder.Group axis="y" values={galleryItems} onReorder={(newOrder) => {
+                                        setGalleryItems(newOrder);
+                                        setFormData(prev => ({...prev, gallery: newOrder.map(i => i.url)}));
+                                    }} className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                                    {galleryItems.map((item, idx) => (
+                                        <Reorder.Item 
+                                            key={item.id} 
+                                            value={item} 
+                                            className={cn(
+                                                "relative aspect-square rounded-2xl overflow-hidden border group transition-all cursor-grab active:cursor-grabbing",
+                                                selectedGalleryIndices.has(idx) ? "ring-4 ring-brand-pink ring-offset-2" : "",
+                                                theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-slate-100 border-slate-200"
+                                            )}
+                                        >
+                                            <img 
+                                                src={convertDriveLink(item.url)} 
+                                                alt="" 
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = 'https://via.placeholder.com/300?text=No+Image';
+                                                }}
+                                            />
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
+                                                <div className="flex justify-between items-start">
+                                                    <div 
+                                                        className="cursor-pointer text-white/70 hover:text-white p-1 bg-black/20 rounded-lg backdrop-blur-sm"
+                                                        onClick={() => toggleGallerySelection(idx)}
+                                                    >
+                                                        {selectedGalleryIndices.has(idx) ? <CheckSquare size={16} className="text-brand-pink" /> : <Square size={16} />}
+                                                    </div>
+                                                    <div className="flex gap-1">
+                                                        <button 
+                                                            onClick={() => handleGalleryChange(idx, item.url)}
+                                                            className="text-white/70 hover:text-brand-purple p-1.5 rounded-lg bg-black/20 backdrop-blur-sm transition-colors"
+                                                            title="Re-frame"
+                                                        >
+                                                            <CropIcon size={16} />
+                                                        </button>
+                                                        <button onClick={() => removeGalleryImage(idx)} className="text-white/70 hover:text-red-400 p-1.5 rounded-lg bg-black/20 backdrop-blur-sm transition-colors">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <input
+                                                    value={item.url}
+                                                    onChange={(e) => handleGalleryChange(idx, e.target.value)}
+                                                    className="w-full bg-black/40 border border-white/20 rounded-xl p-2 text-[10px] font-medium text-white placeholder:text-white/30 focus:outline-none focus:border-brand-pink backdrop-blur-sm"
+                                                    placeholder="Image URL..."
+                                                />
+                                            </div>
+                                        </Reorder.Item>
                                     ))}
-                                    {(formData.gallery || []).length === 0 && <p className="text-xs text-slate-500 italic">No gallery images added.</p>}
+                                    {galleryItems.length === 0 && (
+                                        <div className="col-span-full py-8 text-center border-2 border-dashed rounded-2xl border-slate-200 dark:border-white/10">
+                                            <p className="text-xs text-slate-500 italic">No gallery images added.</p>
+                                        </div>
+                                    )}
+                                </Reorder.Group>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-3 gap-5">
@@ -1327,6 +1871,22 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     </motion.div>
                                 )}
                                 Discography
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('videos')}
+                                className={cn(
+                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
+                                    activeTab === 'videos'
+                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
+                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
+                                )}
+                            >
+                                {activeTab === 'videos' && (
+                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-red-500/10 text-red-500 shadow-inner">
+                                        <Youtube size={24} fill="currentColor" />
+                                    </motion.div>
+                                )}
+                                Video Gallery
                             </button>
                             <div
                                 onClick={() => setActiveTab('news')}
@@ -1654,6 +2214,132 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
                             )}
                         </motion.div>
+                    ) : activeTab === 'videos' ? (
+                        <motion.div
+                            key="videos"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-8"
+                        >
+                            {isEditing ? (
+                                <div className="space-y-6"> 
+                                    <Reorder.Group axis="y" values={videoList} onReorder={(newOrder) => {
+                                        setVideoList(newOrder);
+                                        setFormData(prev => ({ ...prev, videos: newOrder.map(({ internalId, ...rest }) => rest) }));
+                                    }} className="space-y-6">
+                                    {videoList.map((video, idx) => (
+                                        <Reorder.Item key={video.internalId} value={video} className={cn("p-6 rounded-3xl border space-y-4", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                            <div className="flex justify-between items-center">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                        <GripVertical size={20} />
+                                                    </div>
+                                                    <h4 className="font-black text-sm uppercase tracking-widest text-red-500">Video #{idx + 1}</h4>
+                                                </div>
+                                                <button onClick={() => removeVideo(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl"><Trash2 size={18} /></button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <input placeholder="Video Title" value={video.title || ''} onChange={e => handleVideoChange(idx, 'title', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                <div className="flex gap-2">
+                                                    <input type="date" value={video.date || ''} onChange={e => handleVideoChange(idx, 'date', e.target.value)} className={cn("flex-1 p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                    <button type="button" onClick={() => handleVideoChange(idx, 'date', new Date().toISOString().split('T')[0])} className={cn("p-3 rounded-xl border font-bold text-xs uppercase", theme === 'dark' ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-50")}>
+                                                        Today
+                                                    </button>
+                                                </div>
+                                                <div className="md:col-span-2">
+                                                    <input placeholder="YouTube URL" value={video.url || ''} onChange={e => handleVideoChange(idx, 'url', e.target.value)} className={cn("w-full p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                </div>
+                                            </div>
+                                        </Reorder.Item>
+                                    ))}
+                                    </Reorder.Group>
+                                    <button onClick={addVideo} className="w-full py-4 rounded-2xl border-2 border-dashed border-red-500/30 text-red-500 font-black uppercase tracking-widest hover:bg-red-500/5 transition-colors flex items-center justify-center gap-2">
+                                        <Plus size={20} /> Add Video
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                <div className="relative">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search videos..."
+                                        value={videoSearch}
+                                        onChange={(e) => { setVideoSearch(e.target.value); setVideoPage(1); }}
+                                        className={cn("w-full pl-12 pr-4 py-3 rounded-2xl border-2 focus:outline-none transition-all font-medium", theme === 'dark' ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600" : "bg-white border-slate-200 focus:border-brand-pink text-slate-900")}
+                                    />
+                                </div>
+                                <div className="columns-1 md:columns-2 gap-6 space-y-6">
+                                    {currentVideos.length > 0 ? (
+                                        currentVideos.map((video, idx) => {
+                                            const videoId = getYouTubeVideoId(video.url);
+                                            const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
+                                            
+                                            return (
+                                            <div key={`${videoPage}-${idx}`} className="break-inside-avoid mb-6 space-y-3">
+                                                <div 
+                                                    className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative group cursor-pointer"
+                                                    onClick={() => setSelectedVideo(video)}
+                                                >
+                                                    {thumbnailUrl ? (
+                                                        <img src={thumbnailUrl} alt={video.title} className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" loading="lazy" />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center bg-slate-800">
+                                                            <Youtube size={48} className="text-slate-600" />
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <div className="p-4 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl group-hover:scale-110 transition-transform duration-300">
+                                                            <PlayCircle size={32} fill="currentColor" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <h4 className={cn("font-bold text-lg truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled Video'}</h4>
+                                                    {video.date && (
+                                                        <p className={cn("text-xs font-bold uppercase tracking-widest", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>{video.date}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )})
+                                    ) : (
+                                        <div className="col-span-full text-center py-20">
+                                            <Youtube size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
+                                            <p className="text-slate-500 font-medium">No videos found.</p>
+                                        </div>
+                                    )}
+                                    
+                                    {totalVideoPages > 1 && (
+                                        <div className="col-span-full flex justify-center items-center gap-4 mt-4 pt-4 border-t border-dashed border-slate-200 dark:border-white/10">
+                                            <button
+                                                onClick={() => setVideoPage(prev => Math.max(prev - 1, 1))}
+                                                disabled={videoPage === 1}
+                                                className={cn(
+                                                    "p-2 rounded-full transition-colors",
+                                                    theme === 'dark' ? "hover:bg-white/10 disabled:opacity-30 text-white" : "hover:bg-slate-100 disabled:opacity-30 text-slate-900"
+                                                )}
+                                            >
+                                                <ChevronLeft size={24} />
+                                            </button>
+                                            <span className={cn("text-sm font-bold uppercase tracking-widest", theme === 'dark' ? "text-slate-400" : "text-slate-600")}>
+                                                Page {videoPage} of {totalVideoPages}
+                                            </span>
+                                            <button
+                                                onClick={() => setVideoPage(prev => Math.min(prev + 1, totalVideoPages))}
+                                                disabled={videoPage === totalVideoPages}
+                                                className={cn(
+                                                    "p-2 rounded-full transition-colors",
+                                                    theme === 'dark' ? "hover:bg-white/10 disabled:opacity-30 text-white" : "hover:bg-slate-100 disabled:opacity-30 text-slate-900"
+                                                )}
+                                            >
+                                                <ChevronRight size={24} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                </>
+                            )}
+                        </motion.div>
                     ) : activeTab === 'comments' ? (
                         <motion.div
                             key="comments"
@@ -1934,10 +2620,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         >
                             {isEditing ? (
                                 <div className="space-y-6">
-                                    {(formData.albums || []).map((album, idx) => (
-                                        <div key={idx} className={cn("p-6 rounded-3xl border space-y-4", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                    <Reorder.Group axis="y" values={albumList} onReorder={(newOrder) => {
+                                        setAlbumList(newOrder);
+                                        setFormData(prev => ({ ...prev, albums: newOrder.map(({ internalId, ...rest }) => rest) }));
+                                    }} className="space-y-6">
+                                    {albumList.map((album, idx) => (
+                                        <Reorder.Item key={album.internalId} value={album} className={cn("p-6 rounded-3xl border space-y-4", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
                                             <div className="flex justify-between items-center">
-                                                <h4 className="font-black text-sm uppercase tracking-widest text-brand-pink">Album #{idx + 1}</h4>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                        <GripVertical size={20} />
+                                                    </div>
+                                                    <h4 className="font-black text-sm uppercase tracking-widest text-brand-pink">Album #{idx + 1}</h4>
+                                                </div>
                                                 <button onClick={() => removeAlbum(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl"><Trash2 size={18} /></button>
                                             </div>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1954,8 +2649,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     />
                                                 </div>
                                             </div>
-                                        </div>
+                                        </Reorder.Item>
                                     ))}
+                                    </Reorder.Group>
                                     <button onClick={addAlbum} className="w-full py-4 rounded-2xl border-2 border-dashed border-brand-pink/30 text-brand-pink font-black uppercase tracking-widest hover:bg-brand-pink/5 transition-colors flex items-center justify-center gap-2">
                                         <Plus size={20} /> Add Album
                                     </button>
@@ -1977,7 +2673,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 variants={{ hidden: { opacity: 0, y: 20, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
                                                 key={idx}
                                                 whileHover={{ y: -8 }}
-                                                onClick={() => setSelectedAlbum(album)}
+                                                onClick={() => {
+                                                    if (album.youtube) {
+                                                        setSelectedVideo({ title: album.title, url: album.youtube });
+                                                    } else {
+                                                        setSelectedAlbum(album);
+                                                    }
+                                                }}
                                                 className={cn(
                                                     "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
                                                     theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
@@ -2106,6 +2808,51 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 document.body
             )}
 
+            {/* Video Lightbox */}
+            {createPortal(
+                <AnimatePresence>
+                {selectedVideo && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setSelectedVideo(null)}
+                        className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+                    >
+                        <button
+                            onClick={() => setSelectedVideo(null)}
+                            className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
+                        >
+                            <X size={24} />
+                        </button>
+                        
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full max-w-5xl aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl relative"
+                        >
+                            <iframe
+                                width="100%"
+                                height="100%"
+                                src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedVideo.url)}?autoplay=1`}
+                                title={selectedVideo.title || "YouTube video player"}
+                                frameBorder="0"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                                className="absolute inset-0"
+                            />
+                        </motion.div>
+                        <div className="absolute bottom-10 left-0 right-0 text-center pointer-events-none px-4">
+                            <h3 className="text-2xl font-black text-white drop-shadow-lg">{selectedVideo.title}</h3>
+                        </div>
+                    </motion.div>
+                )}
+                </AnimatePresence>,
+                document.body
+            )}
+
             {cropState.src && (
                 <ImageCropper
                     imageSrc={cropState.src}
@@ -2192,12 +2939,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             <ConfirmationModal
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
-            />
-
-            <MusicPlayer 
-                url={displayGroup.themeSongUrl} 
-                groupName={displayGroup.name} 
-                groupImage={convertDriveLink(displayGroup.image)} 
             />
         </motion.div>
     );

@@ -8,6 +8,7 @@ import { db, auth } from '../lib/firebase';
 import { Loader2, Trash2, Shield, User, Search, CheckCircle2, ArrowLeft, Ban, AlertCircle, History, X, MessageSquare, Send, Megaphone, Activity, KeyRound } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
+import { BackgroundShapes } from './BackgroundShapes';
 
 export function AdminUserManagement({ onBack }) {
     const { user, isAdmin } = useAuth();
@@ -243,6 +244,7 @@ export function AdminUserManagement({ onBack }) {
 
     return (
         <div className="container mx-auto px-4 py-8 min-h-screen max-w-5xl">
+            <BackgroundShapes />
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>

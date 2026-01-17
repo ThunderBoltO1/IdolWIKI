@@ -6,6 +6,7 @@ import { db } from '../lib/firebase';
 import { ArrowLeft, Plus, Trash2, Save, ChevronDown, ChevronRight, Loader2, RotateCcw, X, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAwards } from '../hooks/useAwards.js';
+import { BackgroundShapes } from './BackgroundShapes';
 
 const DEFAULT_AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -222,6 +223,7 @@ export function AdminAwardManagement({ onBack }) {
 
     return (
         <div className="container mx-auto px-4 py-8 min-h-screen max-w-4xl">
+            <BackgroundShapes />
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-4">
                     <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>

@@ -24,6 +24,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
+import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
+import { AdminSubmissionDashboard } from './components/AdminSubmissionDashboard';
 
 function RequireAdmin({ children }) {
   const location = useLocation();
@@ -68,7 +70,8 @@ function AppContent() {
   const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', 'create'
   const [selectedIdol, setSelectedIdol] = useState(null);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
-  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => {} });
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } });
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
 
   // Error Handler
   useEffect(() => {
@@ -180,8 +183,19 @@ function AppContent() {
 
   const handleSaveGroup = async (groupData) => {
     try {
+      if (!isAdmin) {
+        const result = await submitPendingGroup(groupData, user);
+        if (result.success) {
+          alert('Your group has been submitted for admin approval.');
+          setGroupModalOpen(false);
+        } else {
+          alert('Submission failed: ' + result.error);
+        }
+        return;
+      }
+
       const { members: memberIds, ...restGroupData } = groupData;
-      
+
       // Create ID from name (slugify)
       const groupId = restGroupData.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       const groupRef = doc(db, 'groups', groupId);
@@ -196,9 +210,9 @@ function AppContent() {
         const batch = writeBatch(db);
         memberIds.forEach(idolId => {
           const idolRef = doc(db, 'idols', idolId);
-          batch.update(idolRef, { 
-            groupId: groupRef.id, 
-            group: restGroupData.name 
+          batch.update(idolRef, {
+            groupId: groupRef.id,
+            group: restGroupData.name
           });
         });
         await batch.commit();
@@ -232,8 +246,20 @@ function AppContent() {
           createdAt: timestamp,
           updatedAt: timestamp
         };
+
+        if (!isAdmin) {
+          const result = await submitPendingIdol(newIdol, user);
+          if (result.success) {
+            alert('Your idol has been submitted for admin approval.');
+            setModalOpen(false);
+          } else {
+            alert('Submission failed: ' + result.error);
+          }
+          return;
+        }
+
         const docRef = await addDoc(collection(db, 'idols'), newIdol);
-        
+
         if (user) {
           await addDoc(collection(db, 'auditLogs'), {
             targetId: docRef.id,
@@ -248,8 +274,35 @@ function AppContent() {
 
         setModalOpen(false);
       } else if (selectedIdol?.id) {
+        if (!isAdmin) {
+          const reason = prompt('Please explain why you are making these changes (required):');
+          if (!reason) return; // Cancel if no reason
+
+          // Calculate changes
+          const changes = {};
+          Object.keys(idolData).forEach(key => {
+            if (JSON.stringify(idolData[key]) !== JSON.stringify(selectedIdol[key])) {
+              changes[key] = { old: selectedIdol[key] || null, new: idolData[key] };
+            }
+          });
+
+          if (Object.keys(changes).length === 0) {
+            alert('No changes detected.');
+            return;
+          }
+
+          const result = await submitEditRequest('idol', selectedIdol.id, selectedIdol.name, changes, reason, user);
+          if (result.success) {
+            alert('Your edit request has been submitted for approval.');
+            setModalOpen(false);
+          } else {
+            alert('Request failed: ' + result.error);
+          }
+          return;
+        }
+
         const idolRef = doc(db, 'idols', selectedIdol.id);
-        
+
         const changes = {};
         let hasChanges = false;
         Object.keys(idolData).forEach(key => {
@@ -444,7 +497,8 @@ function AppContent() {
         onFavoritesClick={() => navigate('/favorites')}
         onNotificationClick={handleNotificationClick}
         onManageUsersClick={() => navigate('/admin/users')}
-        onDashboardClick={() => navigate('/admin/dashboard')}
+
+        onDashboardClick={() => setIsAdminDashboardOpen(true)}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         onLogoutRequest={handleLogoutRequest}
@@ -670,6 +724,11 @@ function AppContent() {
         confirmText={confirmModal.confirmText}
         confirmButtonClass={confirmModal.confirmButtonClass}
       />
+      <AnimatePresence>
+        {isAdminDashboardOpen && isAdmin && (
+          <AdminSubmissionDashboard onClose={() => setIsAdminDashboardOpen(false)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

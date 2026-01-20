@@ -100,7 +100,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                             <NotificationDropdown onNotificationClick={onNotificationClick} />
                             <FriendDropdown />
 
-                            {isAdmin && <AddMenu onAddClick={onAddClick} onAddGroupClick={onAddGroupClick} />}
+                            <AddMenu onAddClick={onAddClick} onAddGroupClick={onAddGroupClick} />
 
                             <UserDropdown
                                 user={user}

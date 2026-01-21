@@ -24,14 +24,14 @@ export function AddMenu({ onAddClick, onAddGroupClick }) {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={cn(
-                    "hidden sm:flex items-center gap-2 px-4 py-2 rounded-full transition-all text-sm font-bold active:scale-95",
+                    "flex items-center gap-2 p-2 sm:px-4 sm:py-2 rounded-full transition-all text-sm font-bold active:scale-95",
                     theme === 'dark'
                         ? "bg-white/10 hover:bg-white/20 border border-white/10 text-white"
                         : "bg-slate-900 hover:bg-slate-800 text-white shadow-md shadow-slate-200"
                 )}
             >
-                <Plus size={16} />
-                <span>Add New</span>
+                <Plus size={18} />
+                <span className="hidden sm:inline">Add New</span>
             </button>
             <AnimatePresence>
                 {isOpen && (

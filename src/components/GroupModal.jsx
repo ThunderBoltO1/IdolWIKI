@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon, GripVertical, Heart } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { ImageCropper } from './ImageCropper';
@@ -57,7 +57,7 @@ function DateSelect({ value, onChange, theme }) {
     return (
         <div className="space-y-2">
             <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                <Calendar size={12} /> Debut Date
+                <Calendar size={12} /> {label}
             </label>
             <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -118,7 +118,9 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         members: [], // Initialize empty members
         gallery: [],
         awards: [],
-        albums: []
+        albums: [],
+        status: 'Active',
+        disbandDate: ''
     });
     const { awards: awardData } = useAwards();
 
@@ -142,7 +144,9 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                 members: [],
                 gallery: [],
                 awards: [],
-                albums: []
+                albums: [],
+                status: 'Active',
+                disbandDate: ''
             });
             setNewAward({
                 year: new Date().getFullYear(),
@@ -181,12 +185,14 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         setLoading(true);
         try {
             // Check for duplicate group name
-            const q = query(collection(db, 'groups'), where('name', '==', formData.name));
-            const snapshot = await getDocs(q);
-            if (!snapshot.empty) {
-                alert('Group name already exists!');
-                setLoading(false);
-                return;
+            if (!formData.id) { // Only check for duplicates if creating a new group
+                const q = query(collection(db, 'groups'), where('name', '==', formData.name));
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    alert('Group name already exists!');
+                    setLoading(false);
+                    return;
+                }
             }
 
             await onSave({
@@ -324,12 +330,12 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     className={cn(
-                        "relative w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]",
+                        "relative w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] h-full",
                         theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white border border-slate-200"
                     )}
                 >
                     <div className="p-6 border-b border-slate-200 dark:border-white/5 flex justify-between items-center shrink-0">
-                        <h2 className={cn("text-xl md:text-2xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                        <h2 className={cn("text-xl md:text-2xl font-black break-words", theme === 'dark' ? "text-white" : "text-slate-900")}>
                             Add New Group
                         </h2>
                         <button onClick={onClose} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
@@ -377,6 +383,27 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                             <InputGroup label="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
                             <DateSelect value={formData.debutDate} onChange={val => setFormData({...formData, debutDate: val})} theme={theme} />
                             <InputGroup label="Fanclub Name" value={formData.fanclub} onChange={e => setFormData({...formData, fanclub: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLINK" />
+                            
+                            <div className="space-y-2">
+                                <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                    <Heart size={12} /> Status
+                                </label>
+                                <select
+                                    value={formData.status || 'Active'}
+                                    onChange={e => setFormData({...formData, status: e.target.value})}
+                                    className={cn(
+                                        "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold appearance-none cursor-pointer",
+                                        theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white [&>option]:bg-slate-900" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 [&>option]:bg-white"
+                                    )}
+                                >
+                                    <option value="Active">Active</option>
+                                    <option value="Inactive">Inactive</option>
+                                </select>
+                            </div>
+
+                            {formData.status === 'Inactive' && (
+                                <DateSelect value={formData.disbandDate} onChange={val => setFormData({...formData, disbandDate: val})} theme={theme} label="Disband Date" />
+                            )}
                             
                             <div className="md:col-span-2 space-y-2">
                                 <label className={cn("text-xs font-black uppercase tracking-widest ml-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Description</label>
@@ -543,32 +570,42 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                 </div>
 
                                 {selectedMembers.length > 0 && (
-                                    <div className="flex flex-wrap gap-2">
+                                    <Reorder.Group axis="y" values={selectedMembers} onReorder={setSelectedMembers} className="space-y-2">
                                         <AnimatePresence mode="popLayout">
                                         {selectedMembers.map(member => (
-                                            <motion.div
-                                                layout
+                                            <Reorder.Item
+                                                value={member}
                                                 initial={{ opacity: 0, scale: 0.8 }}
                                                 animate={{ opacity: 1, scale: 1 }}
                                                 exit={{ opacity: 0, scale: 0.8 }}
                                                 key={member.id}
                                                 className={cn(
-                                                "flex items-center gap-2 pl-1 pr-2 py-1 rounded-full border",
-                                                theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-white border-slate-200"
+                                                "flex items-center gap-3 p-2 rounded-2xl border cursor-grab active:cursor-grabbing",
+                                                theme === 'dark' ? "bg-slate-800/50 border-white/10" : "bg-white border-slate-200"
                                             )}>
-                                                <img src={convertDriveLink(member.image)} className="w-6 h-6 rounded-full object-cover" alt="" />
-                                                <span className={cn("text-xs font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.name}</span>
+                                                <GripVertical size={16} className="text-slate-400" />
+                                                <img src={convertDriveLink(member.image)} className="w-8 h-8 rounded-full object-cover" alt="" />
+                                                <div className="flex flex-col flex-1 min-w-0">
+                                                    <span className={cn("text-xs font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.fullEnglishName || member.name}</span>
+                                                    {member.positions && member.positions.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                                            {member.positions.map((pos, i) => (
+                                                                <span key={i} className="text-[8px] font-bold uppercase tracking-wider text-brand-purple bg-brand-purple/10 px-1.5 py-0.5 rounded-md">{pos}</span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                                 <button
                                                     type="button"
                                                     onClick={() => setSelectedMembers(selectedMembers.filter(m => m.id !== member.id))}
-                                                    className="p-1 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors"
+                                                    className="p-1.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors"
                                                 >
-                                                    <X size={12} />
+                                                    <X size={14} />
                                                 </button>
-                                            </motion.div>
+                                            </Reorder.Item>
                                         ))}
                                         </AnimatePresence>
-                                    </div>
+                                    </Reorder.Group>
                                 )}
                             </div>
 

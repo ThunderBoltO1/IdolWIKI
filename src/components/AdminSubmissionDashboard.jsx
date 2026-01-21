@@ -4,7 +4,7 @@ import { Check, X, Clock, User, FileText, AlertCircle, ChevronRight, Eye } from 
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
     approvePendingIdol,
@@ -14,6 +14,25 @@ import {
 } from '../lib/pendingSubmissions';
 import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
+import { diffChars } from 'diff';
+
+const DiffViewer = ({ oldStr, newStr }) => {
+    const differences = diffChars(oldStr, newStr);
+    return (
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs p-2 rounded-lg bg-black/20">
+            {differences.map((part, index) => {
+                const color = part.added ? 'bg-green-500/20 text-green-300' :
+                              part.removed ? 'bg-red-500/20 text-red-300 line-through' :
+                              'text-slate-400';
+                return (
+                    <span key={index} className={cn(color, 'transition-colors')}>
+                        {part.value}
+                    </span>
+                );
+            })}
+        </pre>
+    );
+};
 
 export function AdminSubmissionDashboard({ onClose }) {
     const { theme } = useTheme();
@@ -87,6 +106,22 @@ export function AdminSubmissionDashboard({ onClose }) {
 
         if (result.success) {
             setPendingItems(prev => prev.filter(i => i.id !== item.id));
+
+            // Create notification for approval
+            if (item.submitterId) {
+                try {
+                    await addDoc(collection(db, 'notifications'), {
+                        recipientId: item.submitterId,
+                        type: 'system',
+                        title: 'Edit Request Approved',
+                        message: `Your edit request for ${item.targetName || 'Group/Idol'} has been approved.`,
+                        read: false,
+                        createdAt: serverTimestamp()
+                    });
+                } catch (error) {
+                    console.error("Error creating notification:", error);
+                }
+            }
             alert('Approved successfully!');
         } else {
             alert('Error approving: ' + result.error);
@@ -113,6 +148,22 @@ export function AdminSubmissionDashboard({ onClose }) {
 
         if (result.success) {
             setPendingItems(prev => prev.filter(i => i.id !== selectedItem.id));
+            
+            // Create notification for rejection
+            if (selectedItem.submitterId) {
+                try {
+                    await addDoc(collection(db, 'notifications'), {
+                        recipientId: selectedItem.submitterId,
+                        type: 'system',
+                        title: 'Edit Request Rejected',
+                        message: `Your edit request for ${selectedItem.targetName || 'Group/Idol'} was rejected. Reason: ${rejectReason}`,
+                        read: false,
+                        createdAt: serverTimestamp()
+                    });
+                } catch (error) {
+                    console.error("Error creating notification:", error);
+                }
+            }
             setRejectModalOpen(false);
             setSelectedItem(null);
         } else {
@@ -129,7 +180,7 @@ export function AdminSubmissionDashboard({ onClose }) {
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className={cn(
-                    "w-full max-w-6xl h-[85vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl relative",
+                    "w-full max-w-6xl h-[90vh] md:h-[85vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl relative",
                     theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white"
                 )}
             >
@@ -256,14 +307,20 @@ export function AdminSubmissionDashboard({ onClose }) {
                                             <div className="bg-black/20 rounded-lg p-3 text-xs space-y-2">
                                                 <p className="text-slate-400 font-mono">Reason: <span className="text-white">{item.reason}</span></p>
                                                 <div className="border-t border-white/10 pt-2 mt-2">
-                                                    <p className="text-brand-pink font-bold mb-1">Changes:</p>
+                                                    <p className="text-brand-pink font-bold mb-2">Changes:</p>
                                                     {Object.entries(item.changes || {}).map(([key, val]) => (
                                                         <div key={key} className="flex flex-col gap-1 mb-2">
                                                             <span className="text-slate-500 uppercase text-[10px]">{key}</span>
-                                                            <div className="grid grid-cols-2 gap-2">
-                                                                <div className="bg-red-500/10 text-red-400 p-1 rounded line-through opacity-70 truncate">{val.old?.toString() || 'None'}</div>
-                                                                <div className="bg-green-500/10 text-green-400 p-1 rounded truncate">{val.new?.toString() || 'None'}</div>
-                                                            </div>
+                                                            {key === 'description' ? (
+                                                                <DiffViewer oldStr={val.old?.toString() || ''} newStr={val.new?.toString() || ''} />
+                                                            ) : (
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div className="bg-red-500/10 text-red-400 p-2 rounded line-through opacity-70 break-words text-xs">
+                                                                        {val.old?.toString() || 'None'}
+                                                                    </div>
+                                                                    <div className="bg-green-500/10 text-green-400 p-2 rounded break-words text-xs">{val.new?.toString() || 'None'}</div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>

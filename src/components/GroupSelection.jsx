@@ -7,27 +7,39 @@ import { useAuth } from '../context/AuthContext';
 import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
 import { BackgroundShapes } from './BackgroundShapes';
+import { BackToTopButton } from './BackToTopButton';
 
-export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm }) {
+export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm, onSearchPosition }) {
     const { theme } = useTheme();
     const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
     const [cardSize, setCardSize] = useState(300);
     const [visibleCount, setVisibleCount] = useState(48);
     const loadMoreRef = useRef(null);
+    const [debutYearFilter, setDebutYearFilter] = useState('');
     const [quickViewIdol, setQuickViewIdol] = useState(null);
+    const [sortBy, setSortBy] = useState('name_asc');
 
     useEffect(() => {
         setVisibleCount(48);
     }, [viewMode, searchTerm, selectedCompany]);
 
+    const debutYears = useMemo(() => {
+        const groupYears = (groups || []).map(g => g.debutDate ? new Date(g.debutDate).getFullYear() : null);
+        const idolYears = (idols || []).map(i => i.debutDate ? new Date(i.debutDate).getFullYear() : null);
+        const allYears = [...groupYears, ...idolYears].filter(Boolean);
+        const uniqueYears = [...new Set(allYears)];
+        return uniqueYears.sort((a, b) => b - a); // Sort descending
+    }, [groups, idols]);
+
     const filteredGroups = useMemo(() => (groups || []).filter(group => {
         const searchLower = (searchTerm || '').toLowerCase();
+        const matchesYear = !debutYearFilter || (group.debutDate && new Date(group.debutDate).getFullYear().toString() === debutYearFilter);
         return (
             (group.name || '').toLowerCase().includes(searchLower) ||
             (group.koreanName && group.koreanName.includes(searchTerm || '')) ||
             ((group.company || '').toLowerCase().includes(searchLower))
-        );
-    }), [groups, searchTerm]);
+        ) && matchesYear;
+    }), [groups, searchTerm, debutYearFilter]);
 
     // Filter idols that are not in any of the displayed groups (Soloists or Orphans)
     const displayIdols = useMemo(() => (idols || []).filter(idol => {
@@ -35,26 +47,49 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         const isGroupMember = idol.groupId && groups.some(g => g.id === idol.groupId);
         
         const searchLower = (searchTerm || '').toLowerCase();
+        const matchesYear = !debutYearFilter || (idol.debutDate && new Date(idol.debutDate).getFullYear().toString() === debutYearFilter);
         const zodiac = calculateZodiac(idol.birthDate);
         const matchesSearch = !searchTerm || (
             (idol.name || '').toLowerCase().includes(searchLower) ||
             (idol.koreanName && idol.koreanName.includes(searchTerm || '')) ||
             (idol.fullEnglishName && idol.fullEnglishName.toLowerCase().includes(searchLower)) ||
             (idol.company && idol.company.toLowerCase().includes(searchLower)) ||
-            (zodiac && zodiac.toLowerCase().includes(searchLower))
+            (zodiac && zodiac.toLowerCase().includes(searchLower)) ||
+            (idol.positions && idol.positions.some(p => p.toLowerCase().includes(searchLower)))
         );
 
-        return matchesCompany && !isGroupMember && matchesSearch;
+        return matchesCompany && !isGroupMember && matchesSearch && matchesYear;
     }).sort((a, b) => {
         if (a.isFavorite && !b.isFavorite) return -1;
         if (!a.isFavorite && b.isFavorite) return 1;
         return a.name.localeCompare(b.name);
     }), [idols, groups, selectedCompany, searchTerm]);
 
-    const allItems = useMemo(() => [
-        ...((viewMode === 'all' || viewMode === 'groups') ? filteredGroups.map(g => ({ ...g, _type: 'group' })) : []),
-        ...((viewMode === 'all' || viewMode === 'soloists') ? displayIdols.map(i => ({ ...i, _type: 'idol' })) : [])
-    ], [viewMode, filteredGroups, displayIdols]);
+    const allItems = useMemo(() => {
+        const items = [
+            ...((viewMode === 'all' || viewMode === 'groups') ? filteredGroups.map(g => ({ ...g, _type: 'group' })) : []),
+            ...((viewMode === 'all' || viewMode === 'soloists') ? displayIdols.map(i => ({ ...i, _type: 'idol' })) : [])
+        ];
+
+        return items.sort((a, b) => {
+            switch (sortBy) {
+                case 'name_asc':
+                    return a.name.localeCompare(b.name);
+                case 'name_desc':
+                    return b.name.localeCompare(a.name);
+                case 'debut_desc':
+                    return new Date(b.debutDate || '1900-01-01') - new Date(a.debutDate || '1900-01-01');
+                case 'debut_asc':
+                    return new Date(a.debutDate || '1900-01-01') - new Date(b.debutDate || '1900-01-01');
+                case 'members_desc':
+                    return (b.members?.length || (b._type === 'idol' ? 1 : 0)) - (a.members?.length || (a._type === 'idol' ? 1 : 0));
+                case 'members_asc':
+                    return (a.members?.length || (a._type === 'idol' ? 1 : 0)) - (b.members?.length || (b._type === 'idol' ? 1 : 0));
+                default:
+                    return 0;
+            }
+        });
+    }, [viewMode, filteredGroups, displayIdols, sortBy]);
 
     const visibleItems = allItems.slice(0, visibleCount);
 
@@ -183,24 +218,56 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                         ))}
                     </motion.div>
 
-                    {/* Card Size Slider */}
+                    {/* Right Controls: Filters & Slider */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.25 }}
-                        className="w-full md:w-auto flex items-center gap-4 bg-slate-100 dark:bg-slate-900/50 p-2 pl-4 pr-3 rounded-2xl border border-slate-200 dark:border-white/5"
+                        className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto"
                     >
-                        <span className={cn("text-[10px] font-black uppercase tracking-widest whitespace-nowrap", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                            Size
-                        </span>
-                        <div className="flex items-center gap-3 min-w-[100px]">
+                        <div className="flex gap-2 w-full sm:w-auto">
+                            <select
+                                value={debutYearFilter}
+                                onChange={(e) => setDebutYearFilter(e.target.value)}
+                                className={cn(
+                                    "flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
+                                    theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
+                                )}
+                            >
+                                <option value="">Year</option>
+                                {debutYears.map(year => (
+                                    <option key={year} value={year}>{year}</option>
+                                ))}
+                            </select>
+
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className={cn(
+                                    "flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
+                                    theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
+                                )}
+                            >
+                                <option value="name_asc">A-Z</option>
+                                <option value="name_desc">Z-A</option>
+                                <option value="debut_desc">Newest</option>
+                                <option value="debut_asc">Oldest</option>
+                                <option value="members_desc">Most Members</option>
+                                <option value="members_asc">Least Members</option>
+                            </select>
+                        </div>
+
+                        <div className={cn(
+                            "w-full sm:w-auto flex items-center gap-3 px-4 py-2 rounded-xl border",
+                            theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+                        )}>
                             <ZoomOut size={14} className="text-slate-400" />
                             <input
                                 type="range"
                                 min="200" max="500" step="5"
                                 value={cardSize}
                                 onChange={(e) => setCardSize(Number(e.target.value))}
-                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-pink"
+                                className="w-24 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-pink"
                             />
                             <ZoomIn size={14} className="text-slate-400" />
                         </div>
@@ -213,13 +280,13 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                 className="grid gap-6 md:gap-8 px-4"
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
             >
-                <AnimatePresence mode='popLayout'>
+                <AnimatePresence mode="wait">
                     {loading ? (
                         Array.from({ length: 12 }).map((_, i) => (
                             <SkeletonCard key={`skeleton-${i}`} theme={theme} />
                         ))
                     ) : (
-                        <motion.div layout style={{ display: 'contents' }}>
+                        <>
                             {/* Render Groups */}
                             {(viewMode === 'all' || viewMode === 'groups') &&
                                 visibleItems
@@ -255,7 +322,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                             onQuickView={setQuickViewIdol}
                                         />
                                     ))}
-                        </motion.div>
+                        </>
                     )}
                 </AnimatePresence>
             </motion.div>
@@ -313,32 +380,34 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                 </div>
 
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-5xl sm:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink")}>
+                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink")}>
                         {(groups || []).length}
                     </p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Hot Categories</p>
                 </div>
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-5xl sm:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-purple" : "text-slate-900 group-hover:text-brand-purple")}>
+                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-purple" : "text-slate-900 group-hover:text-brand-purple")}>
                         {(groups || []).reduce((acc, g) => acc + ((g.members || []).length), 0) + displayIdols.length}
                     </p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Top Idols</p>
                 </div>
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-5xl sm:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-blue" : "text-slate-900 group-hover:text-brand-blue")}>100%</p>
+                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-blue" : "text-slate-900 group-hover:text-brand-blue")}>100%</p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Verified</p>
                 </div>
             </motion.div>
             <AnimatePresence>
                 {quickViewIdol && (
-                    <QuickViewModal idol={quickViewIdol} onClose={() => setQuickViewIdol(null)} theme={theme} />
+                    <QuickViewModal idol={quickViewIdol} onClose={() => setQuickViewIdol(null)} theme={theme} onSearchPosition={onSearchPosition} />
                 )}
             </AnimatePresence>
+
+            <BackToTopButton />
         </div>
     );
 }
 
-function QuickViewModal({ idol, onClose, theme }) {
+function QuickViewModal({ idol, onClose, theme, onSearchPosition }) {
     const [copied, setCopied] = useState(false);
 
     const handleShare = () => {
@@ -347,6 +416,20 @@ function QuickViewModal({ idol, onClose, theme }) {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         });
+    };
+
+    const handlePositionClick = (pos) => {
+        // Close modal and set search term to filter by position
+        onClose();
+        if (onSearchPosition) onSearchPosition(pos);
+    };
+
+    const getPositionStyle = (position) => {
+        // Minimal style for all positions
+        // Using a subtle background and border for a clean look
+        return theme === 'dark'
+            ? "bg-slate-800/80 text-slate-500 border-white/5 group-hover:border-brand-pink/20"
+            : "bg-slate-50 text-slate-400 border-slate-100 group-hover:border-brand-pink/10";
     };
 
     return (
@@ -382,9 +465,9 @@ function QuickViewModal({ idol, onClose, theme }) {
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent" />
-                    <div className="absolute bottom-6 left-6 text-white">
-                        <p className="text-xs font-bold text-brand-pink uppercase tracking-[0.2em] mb-2">{idol.group}</p>
-                        <h3 className="text-4xl font-black tracking-tight">{idol.name}</h3>
+                    <div className="absolute bottom-6 left-6 right-6 text-white">
+                        <p className="text-xs font-bold text-brand-pink uppercase tracking-[0.2em] mb-2 truncate">{idol.group}</p>
+                        <h3 className="text-3xl md:text-4xl font-black tracking-tight break-words line-clamp-2">{idol.name}</h3>
                     </div>
                 </div>
 
@@ -415,10 +498,14 @@ function QuickViewModal({ idol, onClose, theme }) {
                         <h4 className="text-sm font-black uppercase tracking-widest text-brand-purple mb-2">Positions</h4>
                         <div className="flex flex-wrap gap-2">
                             {idol.positions?.map((pos, i) => (
-                                <span key={i} className={cn(
-                                    "px-3 py-1 rounded-full text-xs font-bold border",
-                                    theme === 'dark' ? "bg-white/5 border-white/10" : "bg-slate-100 border-slate-200"
-                                )}>
+                                <span 
+                                    key={i} 
+                                    onClick={() => handlePositionClick(pos)}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border cursor-pointer hover:opacity-80 transition-opacity",
+                                        getPositionStyle(pos)
+                                    )}
+                                >
                                     {pos}
                                 </span>
                             ))}

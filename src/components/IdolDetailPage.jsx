@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { BackToTopButton } from './BackToTopButton';
 
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -47,6 +48,12 @@ export function IdolDetailPage() {
   const [idol, setIdol] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileDraft, setProfileDraft] = useState({});
+  const [editReason, setEditReason] = useState('');
+  const [profileChanges, setProfileChanges] = useState(null);
+  const [showReasonModal, setShowReasonModal] = useState(false);
 
   const [isEditingWorks, setIsEditingWorks] = useState(false);
   const [albumsDraft, setAlbumsDraft] = useState([]);
@@ -96,10 +103,17 @@ export function IdolDetailPage() {
 
   useEffect(() => {
     setIsEditingWorks(false);
+    setIsEditingProfile(false);
     setAlbumsDraft(idol?.albums || []);
     setVideosDraft(idol?.videos || []);
     setGalleryDraft((idol?.gallery || []).map((url, idx) => ({ id: `gal-${idx}-${Date.now()}`, url })));
   }, [idol?.id]);
+
+  useEffect(() => {
+    if (idol) {
+        setProfileDraft(idol);
+    }
+  }, [idol]);
 
   const filteredVideos = useMemo(() => {
     const videos = idol?.videos || [];
@@ -173,6 +187,72 @@ export function IdolDetailPage() {
     setGalleryDraft((prev) => (prev || []).filter((_, i) => i !== index));
   };
 
+  const handleProfileChange = (field, value) => {
+    setProfileDraft(prev => ({ ...prev, [field]: value }));
+  };
+
+  const submitEditRequest = async () => {
+    if (!user) return;
+
+    // Calculate changes
+    const changes = {};
+    const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'birthDate', 'height', 'bloodType', 'birthPlace', 'instagram', 'twitter', 'description', 'status', 'retirementDate'];
+    
+    let hasChanges = false;
+    fieldsToCheck.forEach(field => {
+        const original = idol[field] || '';
+        const current = profileDraft[field] || '';
+        if (original !== current) {
+            changes[field] = { old: original, new: current };
+            hasChanges = true;
+        }
+    });
+
+    if (!hasChanges) {
+        alert("No changes detected.");
+        return;
+    }
+
+    if (isAdmin) {
+        try {
+            await updateDoc(doc(db, 'idols', idolId), profileDraft);
+            setIsEditingProfile(false);
+            alert("Profile updated successfully.");
+        } catch (e) {
+            console.error(e);
+            alert("Error updating profile.");
+        }
+    } else {
+        setShowReasonModal(true);
+        setProfileChanges(changes);
+    }
+  };
+
+  const confirmSubmitEdit = async () => {
+      try {
+          const docRef = await addDoc(collection(db, 'editRequests'), {
+              targetId: idol.id,
+              targetType: 'idol',
+              targetName: idol.name,
+              submitterId: user.uid || user.id,
+              submitterName: user.name || 'Anonymous',
+              submitterEmail: user.email || '',
+              submittedAt: serverTimestamp(),
+              status: 'pending',
+              changes: profileChanges,
+              reason: editReason
+          });
+          setShowReasonModal(false);
+          setIsEditingProfile(false);
+          setProfileChanges(null);
+          setEditReason('');
+          alert("Edit request submitted for approval.");
+      } catch (error) {
+          console.error("Error submitting edit request:", error);
+          alert("Failed to submit request.");
+    }
+  };
+
   const saveWorks = async () => {
     if (!isAdmin || !idolId) return;
 
@@ -182,6 +262,8 @@ export function IdolDetailPage() {
         albums: albumsDraft,
         videos: videosDraft,
         gallery: galleryDraft.map(item => item.url),
+        status: profileDraft.status || 'Active',
+        retirementDate: profileDraft.retirementDate || '',
         updatedAt: new Date().toISOString()
       });
       setIsEditingWorks(false);
@@ -364,7 +446,7 @@ export function IdolDetailPage() {
             type="button"
             onClick={() => navigate(-1)}
             className={cn(
-              'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+              'inline-flex items-center gap-2 px-3 py-2 md:px-4 rounded-2xl text-[10px] md:text-xs font-black uppercase tracking-widest border transition-colors',
               theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50'
             )}
           >
@@ -377,7 +459,7 @@ export function IdolDetailPage() {
                 setIsCopied(true);
                 setTimeout(() => setIsCopied(false), 2000);
             }}
-            className={cn("p-2 rounded-2xl border transition-colors", theme === 'dark' ? "border-white/10 text-white hover:bg-white/5" : "border-slate-200 text-slate-900 hover:bg-slate-50")}
+            className={cn("p-2 md:p-2.5 rounded-2xl border transition-colors", theme === 'dark' ? "border-white/10 text-white hover:bg-white/5" : "border-slate-200 text-slate-900 hover:bg-slate-50")}
             title="Copy Link"
           >
             {isCopied ? <Check size={14} /> : <Share2 size={14} />}
@@ -392,13 +474,15 @@ export function IdolDetailPage() {
                 if (isEditingWorks) {
                   setIsEditingWorks(false);
                   setAlbumsDraft(idol.albums || []);
+                  setProfileDraft(idol);
                   return;
                 }
                 setIsEditingWorks(true);
                 setAlbumsDraft(idol.albums || []);
+                setProfileDraft(idol);
               }}
               className={cn(
-                'px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                'px-3 py-2 md:px-4 rounded-2xl text-[10px] md:text-xs font-black uppercase tracking-widest border transition-colors',
                 isEditingWorks
                   ? (theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50')
                   : 'border-transparent bg-brand-purple text-white hover:bg-brand-purple/90'
@@ -413,7 +497,7 @@ export function IdolDetailPage() {
                 onClick={saveWorks}
                 disabled={isSaving}
                 className={cn(
-                  'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                  'inline-flex items-center gap-2 px-3 py-2 md:px-4 rounded-2xl text-[10px] md:text-xs font-black uppercase tracking-widest border transition-colors',
                   'border-transparent bg-brand-pink text-white hover:bg-brand-pink/90',
                   isSaving && 'opacity-60'
                 )}
@@ -451,7 +535,7 @@ export function IdolDetailPage() {
           <div className="md:col-span-7 p-8 md:p-10 space-y-6">
             <div>
               <p className={cn('text-xs font-black uppercase tracking-[0.25em]', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Artist</p>
-              <h1 className={cn('text-4xl md:text-6xl font-black tracking-tight mt-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
+              <h1 className={cn('text-3xl md:text-6xl font-black tracking-tight mt-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <div className={cn(
                   'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border',
@@ -521,6 +605,39 @@ export function IdolDetailPage() {
                     <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Birth date</span>
                     <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.birthDate || '-'}</div>
                   </div>
+                  <div>
+                    <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Status</span>
+                    {isEditingWorks ? (
+                        <select
+                            value={profileDraft.status || 'Active'}
+                            onChange={(e) => handleProfileChange('status', e.target.value)}
+                            className={cn(
+                                "w-full bg-transparent border-b focus:outline-none py-1 text-base font-bold appearance-none cursor-pointer",
+                                theme === 'dark' ? "border-white/20 text-white [&>option]:bg-slate-900" : "border-slate-300 text-slate-900 [&>option]:bg-white"
+                            )}
+                        >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select>
+                    ) : (
+                        <div className={cn("font-bold", idol.status === 'Inactive' ? "text-red-500" : "text-green-500")}>{idol.status || 'Active'}</div>
+                    )}
+                  </div>
+                  {(isEditingWorks ? profileDraft.status === 'Inactive' : idol.status === 'Inactive') && (
+                    <div>
+                        <span className={cn('text-xs font-black uppercase tracking-widest text-red-500')}>Retirement Date</span>
+                        {isEditingWorks ? (
+                            <input
+                                type="date"
+                                value={profileDraft.retirementDate || ''}
+                                onChange={(e) => handleProfileChange('retirementDate', e.target.value)}
+                                className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                            />
+                        ) : (
+                            <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.retirementDate || '-'}</div>
+                        )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1004,6 +1121,38 @@ export function IdolDetailPage() {
           </AnimatePresence>,
           document.body
       )}
+
+      {/* Reason Modal */}
+      <AnimatePresence>
+          {showReasonModal && (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                  <motion.div
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.9, opacity: 0 }}
+                      className={cn("w-full max-w-md p-6 rounded-3xl shadow-2xl border overflow-hidden", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200")}
+                  >
+                      <div className="flex items-center gap-3 mb-4 text-brand-pink">
+                          <AlertCircle size={24} />
+                          <h3 className="text-xl font-black">Reason for Edit</h3>
+                      </div>
+                      <p className={cn("text-sm mb-4 font-medium", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>Please provide a reason or source for your changes to help admins verify them.</p>
+                      <textarea
+                          value={editReason}
+                          onChange={e => setEditReason(e.target.value)}
+                          className={cn("w-full h-32 p-4 rounded-2xl resize-none focus:outline-none border-2 transition-all font-medium mb-6", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")}
+                          placeholder="e.g. Updated from official website..."
+                      />
+                      <div className="flex justify-end gap-3">
+                          <button onClick={() => setShowReasonModal(false)} className={cn("px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors", theme === 'dark' ? "hover:bg-white/10 text-slate-400" : "hover:bg-slate-100 text-slate-500")}>Cancel</button>
+                          <button onClick={confirmSubmitEdit} className="px-6 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-widest hover:bg-brand-pink/90 transition-colors shadow-lg shadow-brand-pink/20">Submit Request</button>
+                      </div>
+                  </motion.div>
+              </div>
+          )}
+      </AnimatePresence>
+
+      <BackToTopButton />
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, getDoc, writeBatch, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ImageCropper } from './ImageCropper';
 import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
@@ -17,6 +17,7 @@ import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
 import { deleteImage, uploadImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { BackToTopButton } from './BackToTopButton';
 
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -36,7 +37,7 @@ const SpotifyIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [] }) {
+export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
@@ -103,6 +104,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [isPreviewDescription, setIsPreviewDescription] = useState(false);
     const [isAwardAdded, setIsAwardAdded] = useState(false);
     const [selectedGalleryIndices, setSelectedGalleryIndices] = useState(new Set());
+    
+    const [showReasonModal, setShowReasonModal] = useState(false);
+    const [editReason, setEditReason] = useState('');
+    const [groupChanges, setGroupChanges] = useState(null);
     const { awards: awardData } = useAwards();
 
     const calculateAgeAtDate = (birthDate, targetDate) => {
@@ -113,6 +118,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         const m = target.getMonth() - birth.getMonth();
         if (m < 0 || (m === 0 && target.getDate() < birth.getDate())) age--;
         return age;
+    };
+
+    const handleTimelineDotClick = (memberId) => {
+        setActiveTab('members');
+        setTimeout(() => {
+            const element = document.getElementById(`member-${memberId}`);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 100);
     };
 
     const getYouTubeVideoId = (url) => {
@@ -713,6 +728,31 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     }, [lightboxImage, allImages]);
 
     const handleSaveGroup = async () => {
+        if (!isAdmin) {
+            // Calculate changes for User Suggestion
+            const changes = {};
+            const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'fanclub', 'description', 'instagram', 'twitter', 'youtube', 'tiktok', 'appleMusic', 'spotify', 'image', 'status', 'disbandDate'];
+            
+            let hasChanges = false;
+            fieldsToCheck.forEach(field => {
+                const original = displayGroup[field] || '';
+                const current = formData[field] || '';
+                if (original !== current) {
+                    changes[field] = { old: original, new: current };
+                    hasChanges = true;
+                }
+            });
+
+            if (!hasChanges) {
+                setModalConfig({ isOpen: true, title: 'No Changes', message: 'You haven\'t made any changes to submit.', type: 'info' });
+                return;
+            }
+            
+            setGroupChanges(changes);
+            setShowReasonModal(true);
+            return;
+        }
+
         let imageToSave = formData.image;
         // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
         if (heroCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
@@ -775,6 +815,42 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         setIsEditing(false);
         setIsReordering(false);
         setActiveImage(imageToSave);
+    };
+
+    const confirmSubmitEdit = async () => {
+        if (!user) return;
+        try {
+            await addDoc(collection(db, 'editRequests'), {
+                targetId: displayGroup.id,
+                targetType: 'group',
+                targetName: displayGroup.name,
+                submitterId: user.uid || user.id,
+                submitterName: user.name || 'Anonymous',
+                submitterEmail: user.email || '',
+                submittedAt: serverTimestamp(),
+                status: 'pending',
+                changes: groupChanges,
+                reason: editReason
+            });
+            setShowReasonModal(false);
+            setIsEditing(false);
+            setGroupChanges(null);
+            setEditReason('');
+            setModalConfig({
+                isOpen: true,
+                title: 'Request Submitted',
+                message: 'Your edit request has been submitted for approval.',
+                type: 'success'
+            });
+        } catch (error) {
+            console.error("Error submitting edit request:", error);
+            setModalConfig({
+                isOpen: true,
+                title: 'Error',
+                message: 'Failed to submit request.',
+                type: 'danger'
+            });
+        }
     };
 
     const handleAddAward = () => {
@@ -1103,7 +1179,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             </div>
                         </div>
                     )}
-                    {isEditing ? (
+                    {isEditing && isAdmin ? (
                         <div className="relative w-full h-full bg-slate-900">
                             <Cropper
                                 image={activeImage}
@@ -1155,13 +1231,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     )}
                 </motion.div>
 
-                <div className="absolute top-8 right-8 z-20 flex flex-col items-end gap-3">
+                <div className="absolute top-4 right-4 md:top-8 md:right-8 z-20 flex flex-col items-end gap-3">
                     <div className="flex gap-2">
                         <button
                             onClick={handleRefresh}
                             disabled={refreshing}
                             className={cn(
-                                "p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95",
+                                "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95",
                                 refreshing && "opacity-50 cursor-not-allowed"
                             )}
                             title="Refresh Data"
@@ -1174,42 +1250,55 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 setIsCopied(true);
                                 setTimeout(() => setIsCopied(false), 2000);
                             }}
-                            className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95"
+                            className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95"
                             title="Share Group"
                         >
                             {isCopied ? <Check size={20} /> : <Share2 size={20} />}
                         </button>
-                        {isAdmin && (
+                        {user && (
                             isEditing ? (
                                 <>
                                 <button
-                                    onClick={() => setIsEditing(false)}
-                                    className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40"
+                                    onClick={() => {
+                                        setIsEditing(false);
+                                        setFormData(displayGroup);
+                                        setActiveImage(displayGroup.image);
+                                    }}
+                                    className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40"
+                                    title="Cancel"
                                 >
                                     <X size={20} />
                                 </button>
                                 <button
                                     onClick={handleSaveGroup}
-                                    className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-green-500/20 border-green-500/50 text-white hover:bg-green-500/40"
+                                    className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-green-500/20 border-green-500/50 text-white hover:bg-green-500/40"
+                                    title={isAdmin ? "Save Changes" : "Submit Request"}
                                 >
                                     <Save size={20} />
                                 </button>
                                 </>
                             ) : (
                                 <>
+                                {isAdmin && (
                                 <button
                                     onClick={() => onDeleteGroup(displayGroup.id)}
-                                    className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40 active:scale-95"
+                                    className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40 active:scale-95"
                                     title="Delete Group"
                                 >
                                     <Trash2 size={20} />
                                 </button>
+                                )}
                                 <button
                                     onClick={() => setIsEditing(true)}
-                                    className="p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50 active:scale-95"
-                                    title="Edit Group Details"
+                                    className={cn(
+                                        "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center active:scale-95",
+                                        isAdmin 
+                                            ? "bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50"
+                                            : "bg-brand-purple/20 border-brand-purple/50 text-white hover:bg-brand-purple/40"
+                                    )}
+                                    title={isAdmin ? "Edit Group Details" : "Suggest Edit"}
                                 >
-                                    <Edit2 size={20} />
+                                    {isAdmin ? <Edit2 size={20} /> : <FileText size={20} />}
                                 </button>
                                 </>
                             )
@@ -1228,7 +1317,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     whileHover={{ scale: 1.05, x: 10 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => navigate('/')}
-                    className="absolute top-8 left-8 flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/10 backdrop-blur-2xl text-white hover:bg-white/20 transition-all z-20 font-black text-xs uppercase tracking-[0.2em] border border-white/20 shadow-2xl"
+                    className="absolute top-4 left-4 md:top-8 md:left-8 flex items-center gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-3 rounded-2xl bg-white/10 backdrop-blur-2xl text-white hover:bg-white/20 transition-all z-20 font-black text-[10px] md:text-xs uppercase tracking-[0.2em] border border-white/20 shadow-2xl"
                 >
                     <ArrowLeft size={16} />
                     <span>Back to Discovery</span>
@@ -1254,14 +1343,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     placeholder="Korean Name"
                                 />
                                 <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs text-white/50 uppercase font-black tracking-widest flex items-center gap-2"><Globe size={14} /> Hero Image URL</label>
-                                        <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
-                                        <button type="button" onClick={() => heroFileInputRef.current?.click()} disabled={isHeroUploading} className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
-                                            {isHeroUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                            {isHeroUploading ? 'Uploading...' : 'Upload'}
-                                        </button>
-                                    </div>
+                                    {isAdmin && (
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs text-white/50 uppercase font-black tracking-widest flex items-center gap-2"><Globe size={14} /> Hero Image URL</label>
+                                            <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
+                                            <button type="button" onClick={() => heroFileInputRef.current?.click()} disabled={isHeroUploading} className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                                {isHeroUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                                {isHeroUploading ? 'Uploading...' : 'Upload'}
+                                            </button>
+                                        </div>
+                                    )}
                                     <input
                                         value={formData.image || ''}
                                         onChange={(e) => {
@@ -1278,7 +1369,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             </div>
                         ) : (
                             <>
-                                <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
+                                <h1 className="text-3xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] break-words">
                                     {displayGroup.name}
                                 </h1>
                                 <p className="text-lg md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
@@ -1288,12 +1379,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         )}
                     </div>
 
-                    <div className="flex gap-3 md:gap-4">
-                        <div className="px-4 md:px-6 py-3 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[80px] md:min-w-[120px] group/stat hover:border-brand-pink/50 transition-colors">
+                    <div className="flex gap-2 md:gap-4">
+                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-pink/50 transition-colors">
                             <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-pink transition-colors">Members</p>
                             <p className="text-xl md:text-3xl font-black text-white">{members.length}</p>
                         </div>
-                        <div className="px-4 md:px-6 py-3 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[80px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
+                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
                             <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
                             {isEditing ? (
                                 <input
@@ -1314,276 +1405,138 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 {activeTab === 'members' && (
                     <div className="lg:col-span-4 space-y-6">
                         <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 30, delay: 0.2 } }}
-                        viewport={{ once: true }}
-                        className={cn(
-                            "p-6 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
-                            theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-slate-200"
-                        )}
-                    >
-                        <div className="absolute top-0 right-0 p-8 text-brand-purple opacity-5 rotate-12">
-                            <Music size={120} />
-                        </div>
-
-                        <h3 className={cn(
-                            "text-xl font-black flex items-center gap-3",
-                            theme === 'dark' ? "text-white" : "text-slate-900"
-                        )}>
-                            <div className="p-2.5 rounded-xl bg-brand-purple/10 text-brand-purple">
-                                <Info size={20} />
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 30, delay: 0.2 } }}
+                            viewport={{ once: true }}
+                            className={cn(
+                                "p-6 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
+                                theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-slate-200"
+                            )}
+                        >
+                            <div className="absolute top-0 right-0 p-8 text-brand-purple opacity-5 rotate-12">
+                                <Music size={120} />
                             </div>
-                            Information
-                        </h3>
 
-                        <div className="space-y-4">
-                            <InfoRow
-                                icon={Building2}
-                                label="Foundation"
-                                value={isEditing ? (
-                                    <input 
-                                        value={formData.company || ''} 
-                                        onChange={e => setFormData({...formData, company: e.target.value})}
-                                        className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                    />
-                                ) : (displayGroup.company || '-')}
-                                onClick={(!isEditing && onSearch && displayGroup.company) ? () => {
-                                    onSearch(displayGroup.company);
-                                    onBack();
-                                } : undefined}
-                                theme={theme}
-                            />
-                            <InfoRow
-                                icon={Calendar}
-                                label="Debut Era"
-                                value={isEditing ? (
-                                    <input 
-                                        type="date"
-                                        value={formData.debutDate || ''} 
-                                        onChange={e => setFormData({...formData, debutDate: e.target.value})}
-                                        className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                    />
-                                ) : (displayGroup.debutDate || '-')}
-                                theme={theme}
-                            />
-                            <InfoRow
-                                icon={Heart}
-                                label="Status"
-                                value="Active"
-                                theme={theme}
-                                valueClass="text-green-500 font-black tracking-[0.2em] uppercase text-xs"
-                            />
-
-                            {/* Social Media Links (Moved to Information) */}
-                            {!isEditing && socialLinksOrder.some(link => displayGroup?.[link.id]) && (
-                                <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
-                                    <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                        <Globe size={12} /> Social Media
-                                    </h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {socialLinksOrder.map(link => {
-                                            const url = displayGroup[link.id];
-                                            if (!url) return null;
-                                            
-                                            // Determine colors based on link type if not provided in state (fallback)
-                                            let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
-                                            if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
-                                            else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
-                                            else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
-                                            else if (link.id === 'tiktok') colorClass = theme === 'dark' ? "bg-slate-800 text-white hover:bg-black hover:text-white border-white/5" : "bg-slate-50 text-black hover:bg-black hover:text-white border-slate-100";
-                                            else if (link.id === 'appleMusic') colorClass = theme === 'dark' ? "bg-slate-800 text-rose-500 hover:bg-rose-500 hover:text-white border-white/5" : "bg-slate-50 text-rose-500 hover:bg-rose-500 hover:text-white border-slate-100";
-                                            else if (link.id === 'spotify') colorClass = theme === 'dark' ? "bg-slate-800 text-green-500 hover:bg-green-500 hover:text-white border-white/5" : "bg-slate-50 text-green-500 hover:bg-green-500 hover:text-white border-slate-100";
-
-                                            return (
-                                                <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
-                                                    <link.icon size={14} /> {link.label}
-                                                </a>
-                                            );
-                                        })}
-                                    </div>
+                            <h3 className={cn(
+                                "text-xl font-black flex items-center gap-3",
+                                theme === 'dark' ? "text-white" : "text-slate-900"
+                            )}>
+                                <div className="p-2.5 rounded-xl bg-brand-purple/10 text-brand-purple">
+                                    <Info size={20} />
                                 </div>
-                            )}
+                                Information
+                            </h3>
 
-                            {/* Social Media Inputs (Edit Mode) */}
-                            {isEditing && (
-                                <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
-                                    <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                        <Globe size={12} /> Social Media
-                                    </h4>
-                                    <Reorder.Group axis="y" values={socialLinksOrder} onReorder={setSocialLinksOrder} className="space-y-2">
-                                        {socialLinksOrder.map((link) => (
-                                            <Reorder.Item key={link.id} value={link} className="flex items-center gap-2 bg-black/5 dark:bg-white/5 p-2 rounded-xl">
-                                                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
-                                                    <GripVertical size={16} />
-                                                </div>
-                                                <div className="flex items-center gap-2 min-w-[100px]">
-                                                    <link.icon size={14} className="text-slate-500" />
-                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{link.label}</span>
-                                                </div>
-                                                <input 
-                                                    value={formData[link.id] || ''} 
-                                                    onChange={e => setFormData({...formData, [link.id]: e.target.value})}
-                                                    className={cn("flex-1 bg-transparent border-b p-1 text-sm focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                                    placeholder={`${link.label} URL`}
-                                                />
-                                            </Reorder.Item>
-                                        ))}
-                                    </Reorder.Group>
-                                </div>
-                            )}
-                            
-                            {/* Awards Section */}
-                            <div className={cn("pt-4 border-t", theme === 'dark' ? "border-white/10" : "border-slate-100")}>
-                                <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                    <Trophy size={12} /> Awards
-                                </h4>
-                                {isEditing ? (
-                                    <div className="space-y-4">
-                                        <div className={cn("p-4 rounded-2xl border-2 space-y-3", theme === 'dark' ? "bg-slate-800/30 border-white/5" : "bg-slate-50 border-slate-100")}>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <select
-                                                    value={newAward.category}
-                                                    onChange={e => setNewAward({ ...newAward, category: e.target.value, show: '', award: '' })}
-                                                    className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
-                                                >
-                                                    {Object.keys(awardData).map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                                </select>
-                                                <input
-                                                    type="number"
-                                                    value={newAward.year}
-                                                    onChange={e => setNewAward({ ...newAward, year: e.target.value })}
-                                                    className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
-                                                    placeholder="Year"
-                                                />
-                                            </div>
-                                            <div className="grid grid-cols-1 gap-3">
-                                                <select
-                                                    value={newAward.show}
-                                                    onChange={e => setNewAward({ ...newAward, show: e.target.value, award: '' })}
-                                                    className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
-                                                >
-                                                    <option value="">Select Award Show</option>
-                                                    {newAward.category && awardData[newAward.category] && Object.keys(awardData[newAward.category]).map(show => <option key={show} value={show}>{show}</option>)}
-                                                </select>
-                                                <select
-                                                    value={newAward.award}
-                                                    onChange={e => setNewAward({ ...newAward, award: e.target.value })}
-                                                    disabled={!newAward.show}
-                                                    className={cn("p-2 rounded-xl text-xs font-bold outline-none border", theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900")}
-                                                >
-                                                    <option value="">Select Award</option>
-                                                    {newAward.show && awardData[newAward.category] && awardData[newAward.category][newAward.show] && awardData[newAward.category][newAward.show].map(award => <option key={award} value={award}>{award}</option>)}
-                                                </select>
-                                            </div>
-                                            <motion.button
-                                                whileTap={{ scale: 0.95 }}
-                                                type="button"
-                                                onClick={handleAddAward}
-                                                disabled={!newAward.show || !newAward.award}
-                                                className={cn(
-                                                    "w-full py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50",
-                                                    isAwardAdded ? "bg-green-500 text-white" : "bg-brand-pink text-white hover:bg-brand-pink/90"
-                                                )}
-                                            >
-                                                {isAwardAdded ? <span className="flex items-center justify-center gap-2"><Check size={14} /> Added!</span> : "Add Award"}
-                                            </motion.button>
+                            <div className="space-y-4">
+                                <InfoRow
+                                    icon={Building2}
+                                    label="Foundation"
+                                    value={isEditing ? (
+                                        <input 
+                                            value={formData.company || ''} 
+                                            onChange={e => setFormData({...formData, company: e.target.value})}
+                                            className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                        />
+                                    ) : (displayGroup.company || '-')}
+                                    onClick={(!isEditing && onSearch && displayGroup.company) ? () => {
+                                        onSearch(displayGroup.company);
+                                        // onBack(); // Optional: go back if needed
+                                    } : undefined}
+                                    theme={theme}
+                                />
+                                <InfoRow
+                                    icon={Calendar}
+                                    label="Debut Era"
+                                    value={isEditing ? (
+                                        <input 
+                                            type="date"
+                                            value={formData.debutDate || ''} 
+                                            onChange={e => setFormData({...formData, debutDate: e.target.value})}
+                                            className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                        />
+                                    ) : (displayGroup.debutDate || '-')}
+                                    theme={theme}
+                                />
+                                <InfoRow
+                                    icon={Heart}
+                                    label="Status"
+                                    value={isEditing ? (
+                                        <select
+                                            value={formData.status || 'Active'}
+                                            onChange={e => setFormData({...formData, status: e.target.value})}
+                                            className={cn(
+                                                "w-full bg-transparent border-b focus:outline-none py-1 text-base font-bold appearance-none cursor-pointer",
+                                                theme === 'dark' ? "border-white/20 text-white [&>option]:bg-slate-900" : "border-slate-300 text-slate-900 [&>option]:bg-white"
+                                            )}
+                                        >
+                                            <option value="Active">Active</option>
+                                            <option value="Inactive">Inactive</option>
+                                        </select>
+                                    ) : (displayGroup.status || 'Active')}
+                                    theme={theme}
+                                    valueClass={cn(
+                                        "font-black tracking-[0.2em] uppercase text-xs",
+                                        !isEditing && ((displayGroup.status === 'Inactive') ? "text-red-500" : "text-green-500")
+                                    )}
+                                />
+                                {(isEditing ? formData.status === 'Inactive' : displayGroup.status === 'Inactive') && (
+                                    <InfoRow
+                                        icon={Calendar}
+                                        label="Disband Date"
+                                        value={isEditing ? (
+                                            <input 
+                                                type="date"
+                                                value={formData.disbandDate || ''} 
+                                                onChange={e => setFormData({...formData, disbandDate: e.target.value})}
+                                                className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                                            />
+                                        ) : (displayGroup.disbandDate || 'N/A')}
+                                        theme={theme}
+                                        valueClass="text-red-500"
+                                    />
+                                )}
+
+                                {/* Social Media Links */}
+                                {!isEditing && socialLinksOrder.some(link => displayGroup?.[link.id]) && (
+                                    <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
+                                        <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                            <Globe size={12} /> Social Media
+                                        </h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {socialLinksOrder.map(link => {
+                                                const url = displayGroup[link.id];
+                                                if (!url) return null;
+                                                
+                                                let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
+                                                if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
+                                                else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
+                                                else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
+
+                                                return (
+                                                    <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
+                                                        <link.icon size={14} /> {link.label}
+                                                    </a>
+                                                );
+                                            })}
                                         </div>
-                                        <div className="space-y-2">
-                                            <AnimatePresence mode="popLayout" initial={false}>
-                                            {(formData.awards || []).map((item, idx) => (
-                                                <motion.div
-                                                    layout
-                                                    key={`${typeof item === 'object' ? item.year + item.show + item.award : item}-${idx}`}
-                                                    initial={{ opacity: 0, x: -20, scale: 0.9 }}
-                                                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                                                    exit={{ opacity: 0, x: 20, scale: 0.9 }}
-                                                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                                                    className={cn("flex items-center justify-between p-3 rounded-xl border", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-white border-slate-100")}
-                                                >
-                                                    <div className="text-xs">
-                                                        {typeof item === 'object' ? (
-                                                            <>
-                                                                <span className="font-black text-brand-pink mr-2">{item.year}</span>
-                                                                <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item.show}</span>
-                                                                <div className="text-xs text-slate-500 font-medium">{item.award}</div>
-                                                            </>
-                                                        ) : (
-                                                            <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-700")}>{item}</span>
-                                                        )}
-                                                    </div>
-                                                    <button type="button" onClick={() => handleRemoveAward(idx)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg"><Trash2 size={14} /></button>
-                                                </motion.div>
-                                            ))}
-                                            </AnimatePresence>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2 pl-2">
-                                        {(displayGroup.awards || []).length > 0 ? (
-                                            <>
-                                                {groupedAwards.sortedYears.map(year => (
-                                                    <div key={year} className={cn("relative pl-8 pb-8 border-l-2 last:border-l-0 last:pb-0", theme === 'dark' ? "border-white/10" : "border-slate-200")}>
-                                                        <div className={cn(
-                                                            "absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4",
-                                                            theme === 'dark' ? "bg-brand-pink border-slate-900" : "bg-brand-pink border-white"
-                                                        )} />
-                                                        <h5 className={cn("text-2xl font-black mb-4 leading-none -mt-1.5", theme === 'dark' ? "text-white" : "text-slate-900")}>{year}</h5>
-                                                        <div className="grid grid-cols-1 gap-3">
-                                                            {groupedAwards.groups[year].map((award, i) => (
-                                                                <div key={i} className={cn(
-                                                                    "p-4 rounded-2xl border flex items-center gap-4 transition-all hover:scale-[1.01] hover:shadow-lg",
-                                                                    theme === 'dark' ? "bg-slate-800/40 border-white/5 hover:bg-slate-800/60" : "bg-white border-slate-100 hover:border-slate-200 shadow-sm"
-                                                                )}>
-                                                                    <div className={cn("p-3 rounded-xl shrink-0", theme === 'dark' ? "bg-yellow-500/10 text-yellow-500" : "bg-yellow-50 text-yellow-600")}>
-                                                                        <Trophy size={20} />
-                                                                    </div>
-                                                                    <div>
-                                                                        <p className={cn("font-bold text-base", theme === 'dark' ? "text-white" : "text-slate-900")}>{award.show}</p>
-                                                                        <p className={cn("text-xs font-medium mt-0.5", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>{award.award}</p>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {groupedAwards.legacy.length > 0 && (
-                                                    <div className="relative pl-8 pt-8">
-                                                        <h5 className={cn("text-xl font-black mb-4 leading-none", theme === 'dark' ? "text-white" : "text-slate-900")}>Others</h5>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            {groupedAwards.legacy.map((award, i) => (
-                                                                <span key={i} className={cn(
-                                                                    "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border flex items-center gap-2",
-                                                                    theme === 'dark' ? "bg-slate-800 border-white/5 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-600"
-                                                                )}>
-                                                                    <Trophy size={12} className="text-slate-400" />
-                                                                    {award}
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <span className="text-sm text-slate-500 italic">No awards yet.</span>
-                                        )}
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </motion.div>
 
+                        {/* Description / Biography */}
                         <div className={cn(
-                            "pt-6 border-t",
-                            theme === 'dark' ? "border-white/10" : "border-slate-100"
+                            "p-6 md:p-8 rounded-[32px] border",
+                            theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-xl"
                         )}>
+                            <h3 className={cn("text-xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                Biography
+                            </h3>
                             {isEditing ? (
                                 <div className="space-y-2">
                                     <div className="flex gap-2">
-                                        <button type="button" onClick={() => insertFormat('b')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Bold">
-                                            <Bold size={16} />
-                                        </button>
-                                        <button type="button" onClick={() => insertFormat('i')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Italic">
-                                            <Italic size={16} />
-                                        </button>
+                                        <button type="button" onClick={() => insertFormat('b')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Bold"><Bold size={16} /></button>
+                                        <button type="button" onClick={() => insertFormat('i')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Italic"><Italic size={16} /></button>
                                         <div className="flex-1" />
                                         <button type="button" onClick={() => setIsPreviewDescription(!isPreviewDescription)} className={cn("px-3 py-2 rounded-lg border transition-colors text-xs font-bold uppercase tracking-wider flex items-center gap-2", isPreviewDescription ? "bg-brand-pink text-white border-brand-pink" : (theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700"))}>
                                             {isPreviewDescription ? <Edit2 size={14} /> : <Eye size={14} />}
@@ -1595,345 +1548,75 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             id="group-description"
                                             value={formData.description || ''}
                                             onChange={e => setFormData({...formData, description: e.target.value})}
-                                            className={cn(
-                                                "w-full h-96 bg-transparent border-2 rounded-xl p-4 focus:outline-none resize-none text-sm leading-relaxed font-mono",
-                                                theme === 'dark' ? "border-white/10 text-slate-300 focus:border-brand-pink" : "border-slate-200 text-slate-600 focus:border-brand-pink"
-                                            )}
-                                            placeholder="Enter group history and description... Use <b>text</b> for bold and <i>text</i> for italic."
+                                            className={cn("w-full h-96 bg-transparent border-2 rounded-xl p-4 focus:outline-none resize-none text-sm leading-relaxed font-mono", theme === 'dark' ? "border-white/10 text-slate-300 focus:border-brand-pink" : "border-slate-200 text-slate-600 focus:border-brand-pink")}
+                                            placeholder="Enter group history..."
                                         />
                                     ) : (
-                                        <div className={cn(
-                                            "w-full h-96 overflow-y-auto border-2 rounded-xl p-4 text-sm leading-relaxed",
-                                            theme === 'dark' ? "border-white/10 bg-slate-900/50" : "border-slate-200 bg-slate-50"
-                                        )}>
+                                        <div className={cn("w-full h-96 overflow-y-auto border-2 rounded-xl p-4 text-sm leading-relaxed", theme === 'dark' ? "border-white/10 bg-slate-900/50" : "border-slate-200 bg-slate-50")}>
                                             {(formData.description || "No description.").split('\n').map((paragraph, idx) => {
                                                 if (!paragraph.trim()) return <div key={idx} className="h-4" />;
-                                                const __html = paragraph
-                                                    .replace(/</g, "&lt;")
-                                                    .replace(/>/g, "&gt;")
-                                                    .replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>")
-                                                    .replace(/&lt;\/b&gt;/g, "</strong>")
-                                                    .replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>")
-                                                    .replace(/&lt;\/i&gt;/g, "</em>");
+                                                const __html = paragraph.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>").replace(/&lt;\/b&gt;/g, "</strong>").replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>").replace(/&lt;\/i&gt;/g, "</em>");
                                                 return <p key={idx} dangerouslySetInnerHTML={{ __html }} className="mb-2" />;
                                             })}
                                         </div>
                                     )}
                                 </div>
                             ) : (
-                                <div className={cn(
-                                    "leading-loose text-lg font-medium relative z-10 text-justify space-y-4",
-                                    theme === 'dark' ? "text-slate-300" : "text-slate-600"
-                                )}>
+                                <div className={cn("leading-loose text-lg font-medium relative z-10 text-justify space-y-4", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>
                                     {(displayGroup.description || "No description available.").split('\n').map((paragraph, idx) => {
                                         if (!paragraph.trim()) return <div key={idx} className="h-4" />;
-                                        
-                                        // Simple parser for <b> and <i> tags
-                                        const __html = paragraph
-                                            .replace(/</g, "&lt;")
-                                            .replace(/>/g, "&gt;")
-                                            .replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>")
-                                            .replace(/&lt;\/b&gt;/g, "</strong>")
-                                            .replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>")
-                                            .replace(/&lt;\/i&gt;/g, "</em>");
-
-                                        return (
-                                            <p key={idx} dangerouslySetInnerHTML={{ __html }} />
-                                        );
+                                        const __html = paragraph.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>").replace(/&lt;\/b&gt;/g, "</strong>").replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>").replace(/&lt;\/i&gt;/g, "</em>");
+                                        return <p key={idx} dangerouslySetInnerHTML={{ __html }} />;
                                     })}
                                 </div>
                             )}
                         </div>
-</motion.div>
-                    {/* Gallery Thumbnails */}
-                    {(isEditing || allImages.length > 1) && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            whileInView={{ opacity: 1, scale: 1 }}
-                            viewport={{ once: true }}
-                            className={cn(
-                                "p-6 rounded-[32px] border",
-                                theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-xl shadow-slate-200/50"
-                            )}
-                        >
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className={cn("text-xl font-black tracking-tight uppercase tracking-[0.2em] text-xs", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Official Archives</h3>
-                                {isEditing && (
-                                    <>
-                                        <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
-                                        <button onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="text-xs font-black uppercase tracking-widest text-brand-pink flex items-center gap-1 hover:underline disabled:opacity-50">
-                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} Upload
-                                        </button>
-                                    </>
-                                )}
-                                {isEditing && galleryItems.length > 0 && (
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={selectAllGalleryImages} className="text-xs font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700 flex items-center gap-1">
-                                            {selectedGalleryIndices.size === galleryItems.length ? <CheckSquare size={14} /> : <Square size={14} />}
-                                            Select All
-                                        </button>
-                                        {selectedGalleryIndices.size > 0 && (
-                                            <button onClick={deleteSelectedGalleryImages} className="text-xs font-bold uppercase tracking-wider text-red-500 hover:text-red-600 flex items-center gap-1 ml-2">
-                                                <Trash2 size={14} />
-                                                Delete ({selectedGalleryIndices.size})
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                            
-                            {isEditing ? (
-                                <div 
-                                    className="relative min-h-[200px] rounded-2xl transition-all"
-                                    onDragOver={(e) => {
-                                        e.preventDefault();
-                                        setIsDragging(true);
-                                    }}
-                                    onDragLeave={(e) => {
-                                        e.preventDefault();
-                                        if (e.currentTarget.contains(e.relatedTarget)) return;
-                                        setIsDragging(false);
-                                    }}
-                                    onDrop={async (e) => {
-                                        e.preventDefault();
-                                        setIsDragging(false);
-                                        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
-                                        if (files.length === 0) return;
-
-                                        for (const file of files) {
-                                            try {
-                                                validateFile(file, 5);
-                                            } catch (error) {
-                                                alert(`File ${file.name} is too large. Max 5MB.`);
-                                                return;
-                                            }
-                                        }
-
-                                        setIsUploading(true);
-                                        try {
-                                            const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
-                                            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'groups/gallery'));
-                                            const urls = await Promise.all(uploadPromises);
-            const newItems = [...galleryItems, ...urls.map((url, index) => ({ id: `upload-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url }))];
-            setGalleryItems(newItems);
-            setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
-                                        } catch (error) {
-                                            console.error("Gallery upload error", error);
-                                            alert("Failed to upload dropped images");
-                                        } finally {
-                                            setIsUploading(false);
-                                        }
-                                    }}
-                                >
-                                    {isDragging && (
-                                        <div className="absolute inset-0 z-50 bg-brand-pink/10 border-2 border-dashed border-brand-pink rounded-2xl flex flex-col items-center justify-center backdrop-blur-sm animate-in fade-in">
-                                            <Upload size={48} className="text-brand-pink mb-2" />
-                                            <p className="text-brand-pink font-black uppercase tracking-widest">Drop images to upload</p>
-                                        </div>
-                                    )}
-                                    
-                                    {isUploading && (
-                                        <div className="absolute inset-0 z-50 bg-black/50 rounded-2xl flex flex-col items-center justify-center backdrop-blur-sm">
-                                            <Loader2 size={48} className="text-white animate-spin mb-2" />
-                                            <p className="text-white font-bold">Uploading...</p>
-                                        </div>
-                                    )}
-
-                                    <Reorder.Group axis="y" values={galleryItems} onReorder={(newOrder) => {
-                                        setGalleryItems(newOrder);
-                                        setFormData(prev => ({...prev, gallery: newOrder.map(i => i.url)}));
-                                    }} className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                    {galleryItems.map((item, idx) => (
-                                        <Reorder.Item 
-                                            key={item.id} 
-                                            value={item} 
-                                            className={cn(
-                                                "relative aspect-square rounded-2xl overflow-hidden border group transition-all cursor-grab active:cursor-grabbing",
-                                                selectedGalleryIndices.has(idx) ? "ring-4 ring-brand-pink ring-offset-2" : "",
-                                                theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-slate-100 border-slate-200"
-                                            )}
-                                        >
-                                            <img 
-                                                src={convertDriveLink(item.url)} 
-                                                alt="" 
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => {
-                                                    e.target.onerror = null;
-                                                    e.target.src = 'https://via.placeholder.com/300?text=No+Image';
-                                                }}
-                                            />
-                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-                                                <div className="flex justify-between items-start">
-                                                    <div 
-                                                        className="cursor-pointer text-white/70 hover:text-white p-1 bg-black/20 rounded-lg backdrop-blur-sm"
-                                                        onClick={() => toggleGallerySelection(idx)}
-                                                    >
-                                                        {selectedGalleryIndices.has(idx) ? <CheckSquare size={16} className="text-brand-pink" /> : <Square size={16} />}
-                                                    </div>
-                                                    <div className="flex gap-1">
-                                                        <button 
-                                                            onClick={() => handleGalleryChange(idx, item.url)}
-                                                            className="text-white/70 hover:text-brand-purple p-1.5 rounded-lg bg-black/20 backdrop-blur-sm transition-colors"
-                                                            title="Re-frame"
-                                                        >
-                                                            <CropIcon size={16} />
-                                                        </button>
-                                                        <button onClick={() => removeGalleryImage(idx)} className="text-white/70 hover:text-red-400 p-1.5 rounded-lg bg-black/20 backdrop-blur-sm transition-colors">
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                <input
-                                                    value={item.url}
-                                                    onChange={(e) => handleGalleryChange(idx, e.target.value)}
-                                                    className="w-full bg-black/40 border border-white/20 rounded-xl p-2 text-[10px] font-medium text-white placeholder:text-white/30 focus:outline-none focus:border-brand-pink backdrop-blur-sm"
-                                                    placeholder="Image URL..."
-                                                />
-                                            </div>
-                                        </Reorder.Item>
-                                    ))}
-                                    {galleryItems.length === 0 && (
-                                        <div className="col-span-full py-8 text-center border-2 border-dashed rounded-2xl border-slate-200 dark:border-white/10">
-                                            <p className="text-xs text-slate-500 italic">No gallery images added.</p>
-                                        </div>
-                                    )}
-                                </Reorder.Group>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-3 gap-5">
-                                    {allImages.map((img, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => setLightboxImage(img)}
-                                            className={cn(
-                                                "aspect-square rounded-2xl overflow-hidden border-2 transition-all duration-500 shadow-lg",
-                                                "border-transparent opacity-70 hover:opacity-100 hover:scale-105 hover:rotate-1"
-                                            )}
-                                        >
-                                            <img src={img} className="w-full h-full object-cover" alt="" loading="lazy" />
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </motion.div>
-                    )}
                     </div>
                 )}
 
-                {/* Right Column: Members List */}
+                {/* Right Column: Content */}
                 <div className={cn("space-y-8", activeTab === 'members' ? "lg:col-span-8" : "lg:col-span-12")}>
-                    <div className="flex items-center justify-between flex-wrap gap-y-3">
-                        <div className="flex items-center gap-3 sm:gap-6 flex-wrap">
-                            <button
-                                onClick={() => setActiveTab('members')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
-                                    activeTab === 'members'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'members' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
-                                        <Star size={24} fill="currentColor" />
-                                    </motion.div>
-                                )}
+                    {/* Tabs Navigation */}
+                    <div className="w-full">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 w-full">
+                            <button onClick={() => setActiveTab('members')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'members' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><Star size={20} fill="currentColor" /></motion.div>}
                                 Members
                             </button>
-                            <button
-                                onClick={() => setActiveTab('timeline')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
-                                    activeTab === 'timeline'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'timeline' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-pink/10 text-brand-pink shadow-inner">
-                                        <History size={24} />
-                                    </motion.div>
-                                )}
+                            <button onClick={() => setActiveTab('timeline')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'timeline' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><History size={20} /></motion.div>}
                                 Timeline
                             </button>
-                            <button
-                                onClick={() => setActiveTab('discography')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
-                                    activeTab === 'discography'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'discography' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-purple/10 text-brand-purple shadow-inner">
-                                        <Disc size={24} fill="currentColor" />
-                                    </motion.div>
-                                )}
+                            <button onClick={() => setActiveTab('discography')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'discography' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-purple/10 text-brand-purple shadow-inner"><Disc size={20} fill="currentColor" /></motion.div>}
                                 Discography
                             </button>
-                            <button
-                                onClick={() => setActiveTab('videos')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
-                                    activeTab === 'videos'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'videos' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-red-500/10 text-red-500 shadow-inner">
-                                        <Youtube size={24} fill="currentColor" />
-                                    </motion.div>
-                                )}
+                            <button onClick={() => setActiveTab('videos')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'videos' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-red-500/10 text-red-500 shadow-inner"><Youtube size={20} fill="currentColor" /></motion.div>}
                                 Video Gallery
                             </button>
-                            <div
-                                onClick={() => setActiveTab('news')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all cursor-pointer",
-                                    activeTab === 'news'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'news' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-green-500/10 text-green-500 shadow-inner">
-                                        <Newspaper size={24} fill="currentColor" />
-                                    </motion.div>
-                                )}
+                            <div onClick={() => setActiveTab('news')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'news' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-green-500/10 text-green-500 shadow-inner"><Newspaper size={20} fill="currentColor" /></motion.div>}
                                 <div className="flex items-center gap-3">
                                     News
                                     {activeTab === 'news' && (
-                                        <button onClick={(e) => { e.stopPropagation(); fetchNews(); }} disabled={loadingNews} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
-                                            <RefreshCw size={20} className={cn(loadingNews && "animate-spin")} />
+                                        <button onClick={(e) => { e.stopPropagation(); fetchNews(); }} disabled={loadingNews} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                                            <RefreshCw size={16} className={cn(loadingNews && "animate-spin")} />
                                         </button>
                                     )}
                                 </div>
                             </div>
-                            <button
-                                onClick={() => setActiveTab('comments')}
-                                className={cn(
-                                    "text-xl sm:text-2xl md:text-4xl font-black flex items-center gap-3 transition-all",
-                                    activeTab === 'comments'
-                                        ? (theme === 'dark' ? "text-white" : "text-slate-900")
-                                        : "text-slate-400 hover:text-slate-500 scale-90 origin-left"
-                                )}
-                            >
-                                {activeTab === 'comments' && (
-                                    <motion.div layoutId="tab-icon" className="p-2.5 md:p-3 rounded-2xl bg-brand-blue/10 text-brand-blue shadow-inner">
-                                        <MessageSquare size={24} fill="currentColor" />
-                                    </motion.div>
-                                )}
+                            <button onClick={() => setActiveTab('comments')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'comments' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><MessageSquare size={20} fill="currentColor" /></motion.div>}
                                 Fan Talk
-                                <span className="text-xl md:text-2xl opacity-30 ml-2">({comments.length})</span>
+                                <span className="text-base md:text-xl opacity-30 ml-2">({comments.length})</span>
                             </button>
                         </div>
                     </div>
 
                     {activeTab === 'members' ? (
                         <>
-                            {isEditing && (
+                            {isEditing && isAdmin && (
                                 <div className="flex justify-end mb-4">
                                     <button
                                         onClick={() => setIsReordering(!isReordering)}
@@ -1950,7 +1633,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
                             )}
 
-                            {isReordering ? (
+                            {isReordering && isAdmin ? (
                                 <Reorder.Group 
                                     axis="y" 
                                     values={sortedMembers} 
@@ -1977,7 +1660,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </Reorder.Group>
                             ) : (
                                 <motion.div
-                                    key="members"
+                                    key="members-content"
                                     variants={{
                                         hidden: { opacity: 0 },
                                         show: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } }
@@ -1989,10 +1672,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     {sortedMembers.map((member, idx) => (
                                         <MemberCard
                                             key={member.id || idx}
+                                            id={`member-${member.id}`}
                                             member={member}
                                             theme={theme}
                                             onClick={() => onMemberClick(member)}
                                             onImageClick={(img) => setLightboxImage(img)}
+                                            onSearchPosition={onSearchPosition}
                                         />
                                     ))}
                                 </motion.div>
@@ -2005,21 +1690,31 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1, y: 0 }}
                             className="max-w-4xl mx-auto py-8 relative"
                         >
-                            {/* Vertical Line */}
+                            {/* Vertical Line Background */}
+                            <div className={cn(
+                                "absolute left-4 md:left-1/2 top-0 bottom-0 w-0.5 -ml-px",
+                                theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
+                            )} />
+
+                            {/* Animated Vertical Line */}
                             <motion.div 
                                 initial={{ height: 0 }}
-                                animate={{ height: "100%" }}
+                                whileInView={{ height: "100%" }}
+                                viewport={{ once: true }}
                                 transition={{ duration: 1.5, ease: "easeInOut" }}
-                                className={cn(
-                                    "absolute left-8 md:left-1/2 top-0 w-0.5 -ml-px",
-                                    theme === 'dark' ? "bg-slate-800" : "bg-slate-200"
-                                )} 
+                                className="absolute left-4 md:left-1/2 top-0 w-0.5 -ml-px bg-gradient-to-b from-brand-pink via-brand-purple to-transparent shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                             />
 
                             {timelineMembers.map((member, index) => {
                                 const isSelected = selectedTimelineMember?.id === member.id;
                                 return (
-                                <div key={member.id} className={cn(
+                                <motion.div 
+                                    key={member.id}
+                                    initial={{ opacity: 0, y: 50 }}
+                                    whileInView={{ opacity: 1, y: 0 }}
+                                    viewport={{ once: true, margin: "-100px" }}
+                                    transition={{ duration: 0.5, delay: index * 0.1 }}
+                                    className={cn(
                                     "relative flex items-center mb-12 last:mb-0",
                                     index % 2 === 0 ? "md:flex-row-reverse" : ""
                                 )}>
@@ -2027,20 +1722,31 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     <div className="hidden md:block flex-1" />
                                     
                                     {/* Dot */}
-                                    <div className={cn(
-                                        "absolute left-8 md:left-1/2 w-4 h-4 rounded-full border-4 -ml-2 z-10 transition-colors duration-300",
+                                    <motion.div 
+                                        initial={{ scale: 0 }}
+                                        whileInView={{ scale: 1 }}
+                                        whileHover={{ scale: 1.5 }}
+                                        viewport={{ once: true }}
+                                        transition={{ type: "spring", stiffness: 300, damping: 20, delay: (index * 0.1) + 0.2 }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleTimelineDotClick(member.id);
+                                        }}
+                                        className={cn(
+                                        "absolute left-4 md:left-1/2 w-4 h-4 rounded-full border-4 -ml-2 z-10 cursor-pointer",
                                         isSelected ? "bg-brand-pink border-brand-pink" : (theme === 'dark' ? "bg-slate-900 border-brand-pink" : "bg-white border-brand-pink")
-                                    )} />
+                                    )} title="Click to view member card" />
 
                                     {/* Content */}
                                     <div className={cn(
-                                        "flex-1 ml-16 md:ml-0 pl-0",
+                                        "flex-1 ml-10 md:ml-0 pl-0",
                                         index % 2 === 0 ? "md:pr-12 md:text-right" : "md:pl-12"
                                     )}>
                                         <motion.div 
                                             layout
+                                            whileHover={{ y: -5, scale: 1.02 }}
                                             className={cn(
-                                            "rounded-3xl border transition-all cursor-pointer group overflow-hidden",
+                                            "rounded-3xl border transition-colors cursor-pointer group overflow-hidden",
                                             theme === 'dark' ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 hover:border-brand-pink/30 shadow-lg",
                                             isSelected && "ring-2 ring-brand-pink border-brand-pink/50"
                                         )} onClick={() => setSelectedTimelineMember(isSelected ? null : member)}>
@@ -2136,7 +1842,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             </AnimatePresence>
                                         </motion.div>
                                     </div>
-                                </div>
+                                </motion.div>
                             )})}
                         </motion.div>
                     ) : activeTab === 'news' ? (
@@ -2221,7 +1927,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1, y: 0 }}
                             className="space-y-8"
                         >
-                            {isEditing ? (
+                            {isEditing && isAdmin ? (
                                 <div className="space-y-6"> 
                                     <Reorder.Group axis="y" values={videoList} onReorder={(newOrder) => {
                                         setVideoList(newOrder);
@@ -2259,26 +1965,26 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </div>
                             ) : (
                                 <>
-                                <div className="relative">
+                                <div className="relative max-w-lg mx-auto mb-8">
                                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                                     <input
                                         type="text"
                                         placeholder="Search videos..."
                                         value={videoSearch}
                                         onChange={(e) => { setVideoSearch(e.target.value); setVideoPage(1); }}
-                                        className={cn("w-full pl-12 pr-4 py-3 rounded-2xl border-2 focus:outline-none transition-all font-medium", theme === 'dark' ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600" : "bg-white border-slate-200 focus:border-brand-pink text-slate-900")}
+                                        className={cn("w-full pl-12 pr-4 py-3 rounded-2xl border focus:outline-none transition-all font-medium shadow-sm", theme === 'dark' ? "bg-slate-900/50 border-white/10 focus:border-brand-pink/50 text-white placeholder:text-slate-600" : "bg-white border-slate-200 focus:border-brand-pink/50 text-slate-900")}
                                     />
                                 </div>
-                                <div className="columns-1 md:columns-2 gap-6 space-y-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                     {currentVideos.length > 0 ? (
                                         currentVideos.map((video, idx) => {
                                             const videoId = getYouTubeVideoId(video.url);
                                             const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
                                             
                                             return (
-                                            <div key={`${videoPage}-${idx}`} className="break-inside-avoid mb-6 space-y-3">
+                                            <div key={`${videoPage}-${idx}`} className="group cursor-pointer space-y-3">
                                                 <div 
-                                                    className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative group cursor-pointer"
+                                                    className="rounded-2xl overflow-hidden aspect-video bg-black relative shadow-md transition-all duration-300 group-hover:shadow-xl group-hover:-translate-y-1"
                                                     onClick={() => setSelectedVideo(video)}
                                                 >
                                                     {thumbnailUrl ? (
@@ -2289,15 +1995,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                         </div>
                                                     )}
                                                     <div className="absolute inset-0 flex items-center justify-center">
-                                                        <div className="p-4 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl group-hover:scale-110 transition-transform duration-300">
-                                                            <PlayCircle size={32} fill="currentColor" />
+                                                        <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-lg group-hover:scale-110 transition-transform duration-300">
+                                                            <PlayCircle size={28} fill="currentColor" />
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <h4 className={cn("font-bold text-lg truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled Video'}</h4>
+                                                    <h4 className={cn("font-bold text-base truncate group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-white" : "text-slate-900")}>{video.title || 'Untitled Video'}</h4>
                                                     {video.date && (
-                                                        <p className={cn("text-xs font-bold uppercase tracking-widest", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>{video.date}</p>
+                                                        <p className={cn("text-[10px] font-bold uppercase tracking-widest mt-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>{video.date}</p>
                                                     )}
                                                 </div>
                                             </div>
@@ -2310,7 +2016,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     )}
                                     
                                     {totalVideoPages > 1 && (
-                                        <div className="col-span-full flex justify-center items-center gap-4 mt-4 pt-4 border-t border-dashed border-slate-200 dark:border-white/10">
+                                        <div className="col-span-full flex justify-center items-center gap-4 mt-8 pt-6 border-t border-dashed border-slate-200 dark:border-white/10">
                                             <button
                                                 onClick={() => setVideoPage(prev => Math.max(prev - 1, 1))}
                                                 disabled={videoPage === 1}
@@ -2610,7 +2316,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </button>
                             )}
                         </motion.div>
-                    ) : (
+                    ) : activeTab === 'discography' ? (
                         /* Discography Tab */
                         <motion.div
                             key="discography"
@@ -2618,7 +2324,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1, y: 0 }}
                             className="space-y-8"
                         >
-                            {isEditing ? (
+                            {isEditing && isAdmin ? (
                                 <div className="space-y-6">
                                     <Reorder.Group axis="y" values={albumList} onReorder={(newOrder) => {
                                         setAlbumList(newOrder);
@@ -2729,7 +2435,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 </motion.div>
                             )}
                         </motion.div>
-                    )}
+                    ) : null}
                 </div>
             </div>
 
@@ -2886,14 +2592,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             className={cn("w-full max-w-4xl rounded-[40px] overflow-hidden flex flex-col md:flex-row shadow-2xl max-h-[80vh]", theme === 'dark' ? "bg-slate-900" : "bg-white")}
                         >
                             <div className="w-full md:w-1/2 aspect-square md:aspect-auto relative">
-                                <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title} loading="lazy" />
+                                <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title || 'Album Cover'} loading="lazy" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent md:hidden" />
                                 <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
                             </div>
                             <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-start mb-6">
                                     <div>
-                                        <h3 className={cn("text-3xl font-black leading-tight mb-2", theme === 'dark' ? "text-white" : "text-slate-900")}>{selectedAlbum.title}</h3>
+                                        <h3 className={cn("text-2xl md:text-3xl font-black leading-tight mb-2", theme === 'dark' ? "text-white" : "text-slate-900")}>{selectedAlbum.title}</h3>
                                         <p className="text-sm font-bold text-brand-pink uppercase tracking-widest">{selectedAlbum.date}</p>
                                     </div>
                                     <button onClick={() => setSelectedAlbum(null)} className="hidden md:block p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"><X size={24} className={theme === 'dark' ? "text-white" : "text-slate-900"} /></button>
@@ -2940,6 +2646,38 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
+
+            {/* Reason Modal */}
+            <AnimatePresence>
+                {showReasonModal && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className={cn("w-full max-w-md p-6 rounded-3xl shadow-2xl border overflow-hidden", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200")}
+                        >
+                            <div className="flex items-center gap-3 mb-4 text-brand-pink">
+                                <AlertCircle size={24} />
+                                <h3 className="text-xl font-black">Reason for Edit</h3>
+                            </div>
+                            <p className={cn("text-sm mb-4 font-medium", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>Please provide a reason or source for your changes to help admins verify them.</p>
+                            <textarea
+                                value={editReason}
+                                onChange={e => setEditReason(e.target.value)}
+                                className={cn("w-full h-32 p-4 rounded-2xl resize-none focus:outline-none border-2 transition-all font-medium mb-6", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")}
+                                placeholder="e.g. Updated from official website..."
+                            />
+                            <div className="flex justify-end gap-3">
+                                <button onClick={() => setShowReasonModal(false)} className={cn("px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors", theme === 'dark' ? "hover:bg-white/10 text-slate-400" : "hover:bg-slate-100 text-slate-500")}>Cancel</button>
+                                <button onClick={confirmSubmitEdit} className="px-6 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-widest hover:bg-brand-pink/90 transition-colors shadow-lg shadow-brand-pink/20">Submit Request</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <BackToTopButton />
         </motion.div>
     );
 }
@@ -2976,7 +2714,7 @@ function getRelativeTime(timestamp) {
     return 'Just now';
 }
 
-function MemberCard({ member, theme, onClick, onImageClick }) {
+function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
     
     const x = useMotionValue(0);
@@ -3005,8 +2743,24 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
         y.set(0);
     };
 
+    const handlePositionClick = (e, pos) => {
+        e.stopPropagation();
+        if (onSearchPosition) onSearchPosition(pos);
+    };
+
+    const getPositionStyle = (position) => {
+        // Minimal style for all positions
+        // Using a subtle background and border for a clean look
+        // Dark mode: slightly transparent white bg with subtle border
+        // Light mode: very light slate bg with subtle border
+        return theme === 'dark'
+            ? "bg-slate-800/80 text-slate-500 border-white/5 group-hover:border-brand-pink/20"
+            : "bg-slate-50 text-slate-400 border-slate-100 group-hover:border-brand-pink/10";
+    };
+
     return (
         <motion.div
+            id={id}
             variants={{
                 hidden: { opacity: 0, y: 30, scale: 0.95 },
                 show: { 
@@ -3014,16 +2768,22 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
                     transition: { type: "spring", stiffness: 300, damping: 30 }
                 }
             }}
+            whileInView={{
+                scale: [1, 1.03, 1],
+                filter: ["brightness(1)", "brightness(1.1)", "brightness(1)"],
+                transition: { duration: 0.6, ease: "easeOut" }
+            }}
+            viewport={{ once: true, margin: "-10%" }}
             whileHover={{ scale: 1.02, y: -5 }}
             whileTap={{ scale: 0.98 }}
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
             onClick={onClick}
             className={cn(
-                "group p-5 md:p-8 rounded-[24px] md:rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
+                "group p-6 rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
                 theme === 'dark'
-                    ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30 hover:bg-slate-900 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)]"
-                    : "bg-white border-slate-100 shadow-2xl shadow-slate-200/50 hover:border-brand-pink/30 hover:shadow-brand-pink/10"
+                    ? "bg-slate-900/40 border-white/5 hover:bg-slate-900 hover:border-white/10"
+                    : "bg-white border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:border-slate-200"
             )}
         >
             <div
@@ -3038,7 +2798,7 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
             <div className="flex flex-col sm:flex-row items-center gap-6 md:gap-10 relative z-10">
                 <motion.div 
                     style={{ rotateX, rotateY, perspective: 1000 }}
-                    className="relative shrink-0 cursor-zoom-in"
+                    className="relative shrink-0 cursor-zoom-in min-w-0"
                     onClick={(e) => {
                         e.stopPropagation();
                         onImageClick && onImageClick(member.image);
@@ -3049,7 +2809,7 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
                         src={convertDriveLink(member.image)}
                         alt={member.name}
                         loading="lazy"
-                        className="w-24 h-24 md:w-32 md:h-32 rounded-[24px] md:rounded-[32px] object-cover border-4 border-white/5 shadow-2xl transition-all duration-700 group-hover:scale-110"
+                        className="w-24 h-24 md:w-32 md:h-32 rounded-full object-cover border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
                     />
                     {member.isFavorite && (
                         <div className="absolute -top-3 -right-3 p-3 bg-brand-pink rounded-full text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-4 border-slate-950">
@@ -3058,8 +2818,8 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
                     )}
                 </motion.div>
 
-                <div className="flex-1 space-y-3">
-                    <p className="text-xs text-brand-pink font-black uppercase tracking-[0.4em]">
+                <div className="flex-1 space-y-3 min-w-0">
+                    <p className="text-xs text-brand-pink font-black uppercase tracking-[0.4em] truncate" title={(member.positions && member.positions[0]) || 'Member'}>
                         {(member.positions && member.positions[0]) || 'Member'}
                     </p>
                     <h4 className={cn(
@@ -3069,13 +2829,15 @@ function MemberCard({ member, theme, onClick, onImageClick }) {
                         {member.name}
                     </h4>
                     <div className="flex flex-wrap gap-2 pt-3">
-                        {(member.positions || []).slice(1, 3).map((pos, i) => (
-                            <span key={i} className={cn(
-                                "text-xs px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border transition-colors",
-                                theme === 'dark'
-                                    ? "bg-slate-800/80 text-slate-500 border-white/5 group-hover:border-brand-pink/20"
-                                    : "bg-slate-50 text-slate-400 border-slate-100 group-hover:border-brand-pink/10"
-                            )}>
+                        {(member.positions || []).map((pos, i) => (
+                            <span 
+                                key={i} 
+                                onClick={(e) => handlePositionClick(e, pos)}
+                                className={cn(
+                                    "text-xs px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border transition-colors cursor-pointer hover:opacity-80",
+                                    getPositionStyle(pos)
+                                )}
+                            >
                                 {pos}
                             </span>
                         ))}
@@ -3122,7 +2884,7 @@ function InfoRow({ icon: Icon, label, value, theme, isHighlight, valueClass, onC
                     </button>
                 ) : (
                     <p className={cn(
-                        "font-black text-xl tracking-tight",
+                        "font-black text-lg md:text-xl tracking-tight",
                         valueClass,
                         !valueClass && (theme === 'dark' ? "text-white" : "text-slate-900"),
                         isHighlight && "text-brand-purple"

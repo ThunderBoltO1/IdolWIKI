@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Music, Users, Star, ChevronRight } from 'lucide-react';
+import { Music, Users, Star, ChevronRight, Edit2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { convertDriveLink } from '../lib/storage';
 import { Highlight } from './Highlight';
 
-export function IdolCard({ idol, onLike, onClick, searchTerm }) {
+export function IdolCard({ idol, onLike, onClick, searchTerm, onEdit }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [imageLoaded, setImageLoaded] = useState(false);
@@ -46,16 +46,30 @@ export function IdolCard({ idol, onLike, onClick, searchTerm }) {
             </div>
 
             {user && (
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onLike(idol.id);
-                    }}
-                    className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 transition-colors active:scale-90"
-                    title={idol.isFavorite ? "Unfavorite Idol" : "Favorite Idol"}
-                >
-                    <Star size={18} className={cn("transition-all", idol.isFavorite && "fill-yellow-400 text-yellow-400")} />
-                </button>
+                <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onLike(idol.id);
+                        }}
+                        className="p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 transition-colors active:scale-90"
+                        title={idol.isFavorite ? "Unfavorite Idol" : "Favorite Idol"}
+                    >
+                        <Star size={18} className={cn("transition-all", idol.isFavorite && "fill-yellow-400 text-yellow-400")} />
+                    </button>
+                    {onEdit && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onEdit(idol);
+                            }}
+                            className="p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-brand-pink transition-colors active:scale-90"
+                            title="Edit Idol"
+                        >
+                            <Edit2 size={18} />
+                        </button>
+                    )}
+                </div>
             )}
 
             <motion.img

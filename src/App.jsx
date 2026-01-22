@@ -1,23 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
-import { IdolModal } from './components/IdolModal';
 import { Loader2 } from 'lucide-react';
-import { GroupPage } from './components/GroupPage';
-import { GroupSelection } from './components/GroupSelection';
-import { LoginPage } from './components/LoginPage';
-import { GroupModal } from './components/GroupModal';
 import { ConfirmationModal } from './components/ConfirmationModal';
-import { RegisterPage } from './components/RegisterPage';
-import { ForgotPasswordPage } from './components/ForgotPasswordPage';
-import { ProfilePage } from './components/ProfilePage';
-import { FavoritesPage } from './components/FavoritesPage';
-import { IdolDetailPage } from './components/IdolDetailPage';
-import { PublicProfilePage } from './components/PublicProfilePage';
-import { AdminUserManagement } from './components/AdminUserManagement';
-import { AdminDashboard } from './components/AdminDashboard';
-import { AdminAwardManagement } from './components/AdminAwardManagement';
-import { AdminAuditLogs } from './components/AdminAuditLogs';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -26,8 +11,31 @@ import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, 
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
-import { AdminSubmissionDashboard } from './components/AdminSubmissionDashboard';
 import { logAudit } from './lib/audit';
+
+// Lazy load components for better performance (Code Splitting)
+const GroupPage = React.lazy(() => import('./components/GroupPage').then(module => ({ default: module.GroupPage })));
+const GroupSelection = React.lazy(() => import('./components/GroupSelection').then(module => ({ default: module.GroupSelection })));
+const LoginPage = React.lazy(() => import('./components/LoginPage').then(module => ({ default: module.LoginPage })));
+const GroupModal = React.lazy(() => import('./components/GroupModal').then(module => ({ default: module.GroupModal })));
+const RegisterPage = React.lazy(() => import('./components/RegisterPage').then(module => ({ default: module.RegisterPage })));
+const ForgotPasswordPage = React.lazy(() => import('./components/ForgotPasswordPage').then(module => ({ default: module.ForgotPasswordPage })));
+const ProfilePage = React.lazy(() => import('./components/ProfilePage').then(module => ({ default: module.ProfilePage })));
+const FavoritesPage = React.lazy(() => import('./components/FavoritesPage').then(module => ({ default: module.FavoritesPage })));
+const IdolDetailPage = React.lazy(() => import('./components/IdolDetailPage').then(module => ({ default: module.IdolDetailPage })));
+const PublicProfilePage = React.lazy(() => import('./components/PublicProfilePage').then(module => ({ default: module.PublicProfilePage })));
+const AdminUserManagement = React.lazy(() => import('./components/AdminUserManagement').then(module => ({ default: module.AdminUserManagement })));
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
+const AdminAwardManagement = React.lazy(() => import('./components/AdminAwardManagement').then(module => ({ default: module.AdminAwardManagement })));
+const AdminAuditLogs = React.lazy(() => import('./components/AdminAuditLogs').then(module => ({ default: module.AdminAuditLogs })));
+const AdminSubmissionDashboard = React.lazy(() => import('./components/AdminSubmissionDashboard').then(module => ({ default: module.AdminSubmissionDashboard })));
+const IdolModal = React.lazy(() => import('./components/IdolModal').then(module => ({ default: module.IdolModal })));
+
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-[50vh]">
+    <Loader2 className="animate-spin text-brand-pink" size={40} />
+  </div>
+);
 
 function RequireAdmin({ children }) {
   const location = useLocation();
@@ -263,6 +271,12 @@ function AppContent() {
   const handleCardClick = (idol) => {
     setSelectedIdol(idol);
     setModalMode('view');
+    setModalOpen(true);
+  };
+
+  const handleEditIdol = (idol) => {
+    setSelectedIdol(idol);
+    setModalMode('edit');
     setModalOpen(true);
   };
 
@@ -678,6 +692,7 @@ function AppContent() {
 
 
       <main className="container mx-auto px-4 py-8 relative z-10">
+        <Suspense fallback={<PageLoader />}>
         <AnimatePresence mode='wait'>
           <Routes location={location} key={location.pathname}>
             <Route path="/" element={
@@ -772,6 +787,7 @@ function AppContent() {
                   onSelectGroup={handleGroupClick}
                   onFavoriteIdol={handleFavoriteIdol}
                   onFavoriteGroup={handleFavoriteGroup}
+                  onEditIdol={handleEditIdol}
                 />
               </motion.div>
             } />
@@ -868,11 +884,13 @@ function AppContent() {
               }
             />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} onFavoriteIdol={handleFavoriteIdol} />} />
+            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} onFavoriteIdol={handleFavoriteIdol} onEditIdol={handleEditIdol} />} />
           </Routes>
         </AnimatePresence>
+        </Suspense>
       </main>
 
+      <Suspense fallback={null}>
       <IdolModal
         isOpen={modalOpen}
         mode={modalMode}
@@ -884,7 +902,9 @@ function AppContent() {
         onGroupClick={handleGroupClick}
         onIdolClick={handleCardClick}
       />
+      </Suspense>
 
+      <Suspense fallback={null}>
       <GroupModal
         isOpen={groupModalOpen}
         onClose={() => setGroupModalOpen(false)}
@@ -892,6 +912,7 @@ function AppContent() {
         idols={idols}
         onAddIdol={handleAddClick}
       />
+      </Suspense>
 
       <ConfirmationModal
         isOpen={confirmModal.isOpen}
@@ -906,17 +927,19 @@ function AppContent() {
       />
       <AnimatePresence>
         {isAdminDashboardOpen && isAdmin && (
+          <Suspense fallback={<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"><Loader2 className="animate-spin text-white" /></div>}>
           <AdminSubmissionDashboard 
             onClose={() => setIsAdminDashboardOpen(false)} 
             initialTab={adminDashboardInitialTab}
           />
+          </Suspense>
         )}
       </AnimatePresence>
     </div>
   );
 }
 
-function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate, onSearch, allIdols, onGroupClick, onFavoriteIdol }) {
+function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate, onSearch, allIdols, onGroupClick, onFavoriteIdol, onEditIdol }) {
   const { groupId } = useParams();
   const group = groups.find(g => g.id === groupId);
   const members = idols.filter(i => i.groupId === groupId);
@@ -939,6 +962,7 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, on
         allIdols={allIdols}
         onGroupClick={onGroupClick}
         onFavoriteMember={onFavoriteIdol}
+        onEditMember={onEditIdol}
       />
     </motion.div>
   );

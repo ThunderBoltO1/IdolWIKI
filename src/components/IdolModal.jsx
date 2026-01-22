@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -320,9 +320,27 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     };
 
     const handleGalleryChange = (index, value) => {
-        startCropping(value, (newUrl) => {
+        startCropping(value, async (newUrl) => {
+            let finalUrl = newUrl;
+            if (newUrl && newUrl.startsWith('data:')) {
+                setIsUploading(true);
+                setUploadProgress(0);
+                try {
+                    const file = dataURLtoFile(newUrl, `gallery_cropped_${Date.now()}.jpg`);
+                    const compressedFile = await compressImage(file);
+                    finalUrl = await uploadImage(compressedFile, 'idols/gallery', (progress) => setUploadProgress(progress));
+                } catch (error) {
+                    console.error("Failed to upload cropped gallery image", error);
+                } finally {
+                    setIsUploading(false);
+                    setUploadProgress(0);
+                }
+            } else if (newUrl) {
+                finalUrl = convertDriveLink(newUrl);
+            }
+
             const newGallery = [...(formData.gallery || [])];
-            newGallery[index] = newUrl ? convertDriveLink(newUrl) : newUrl;
+            newGallery[index] = finalUrl;
             setFormData(prev => ({ ...prev, gallery: newGallery }));
         }, 1 / 1);
     };
@@ -582,13 +600,14 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 const croppedImage = await getCroppedImgDataUrl(activeImage, imageCroppedArea);
                 // Convert Base64 to File and Upload
                 const file = dataURLtoFile(croppedImage, `cropped_${Date.now()}.jpg`);
+                const compressedFile = await compressImage(file);
                 
                 // Delete old image if it exists and is different
                 if (formData.image && formData.image.includes('firebasestorage') && formData.image !== activeImage) {
                     await deleteImage(formData.image);
                 }
 
-                const uploadedUrl = await uploadImage(file, 'idols');
+                const uploadedUrl = await uploadImage(compressedFile, 'idols');
                 imageToSave = uploadedUrl;
             } catch (e) {
                 console.error("Failed to crop image", e);
@@ -1139,27 +1158,31 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 )}
                             </div>
 
-                            {!editMode && isAdmin && (
+                            {!editMode && (isAdmin || user) && (
                                 <div className="flex gap-3 mt-2">
-                                    <button
-                                        onClick={handleFetchHistory}
-                                        className={cn(
-                                            "p-3 rounded-2xl transition-all duration-300 shadow-sm active:scale-90",
-                                            theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                                        )}
-                                        title="View Edit History"
-                                    >
-                                        <History size={20} />
-                                    </button>
+                                    {isAdmin && (
+                                        <button
+                                            onClick={handleFetchHistory}
+                                            className={cn(
+                                                "p-3 rounded-2xl transition-all duration-300 shadow-sm active:scale-90",
+                                                theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                            )}
+                                            title="View Edit History"
+                                        >
+                                            <History size={20} />
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setEditMode(true)}
                                         className={cn(
                                             "p-3 rounded-2xl transition-all duration-300 shadow-sm active:scale-90",
                                             theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                                         )}
+                                        title={isAdmin ? "Edit Idol" : "Suggest Edit"}
                                     >
-                                        <Edit2 size={20} />
+                                        {isAdmin ? <Edit2 size={20} /> : <FileText size={20} />}
                                     </button>
+                                    {isAdmin && (
                                     <button
                                         onClick={() => { onDelete(idol.id); onClose(); }}
                                         className={cn(
@@ -1169,6 +1192,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     >
                                         <Trash2 size={20} />
                                     </button>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -38,7 +38,7 @@ const SpotifyIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition, onFavoriteMember }) {
+export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition, onFavoriteMember, onEditMember }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
@@ -1714,6 +1714,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             onSearchPosition={onSearchPosition}
                                             user={user}
                                             onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
+                                            onEdit={() => onEditMember && onEditMember(member)}
                                         />
                                     ))}
                                 </motion.div>
@@ -2852,7 +2853,7 @@ function usePrevious(value) {
   return ref.current;
 }
 
-function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite }) {
+function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite, onEdit }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
     
     const x = useMotionValue(0);
@@ -2904,6 +2905,11 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
     const handleFavoriteClick = e => {
         e.stopPropagation();
         onFavorite();
+    };
+
+    const handleEditClick = e => {
+        e.stopPropagation();
+        onEdit();
     };
 
     const getPositionStyle = (position) => {
@@ -2972,30 +2978,43 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                         />
                     </motion.div>
                     {user && (
-                        <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={handleFavoriteClick}
-                            className={cn(
-                                "absolute -top-2 -right-2 p-3 rounded-full border-4 transition-all duration-300 z-20",
-                                member.isFavorite
-                                    ? "bg-brand-pink text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-slate-950"
-                                    : "bg-black/20 backdrop-blur-sm border-transparent text-white/70 hover:bg-brand-pink/50 hover:text-white"
+                        <div className="absolute -top-2 -right-2 z-20 flex flex-col gap-2">
+                            <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={handleFavoriteClick}
+                                className={cn(
+                                    "p-3 rounded-full border-4 transition-all duration-300",
+                                    member.isFavorite
+                                        ? "bg-brand-pink text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-slate-950"
+                                        : "bg-black/20 backdrop-blur-sm border-transparent text-white/70 hover:bg-brand-pink/50 hover:text-white"
+                                )}
+                                title={member.isFavorite ? "Unfavorite" : "Favorite"}
+                            >
+                                <motion.div animate={controls}>
+                                    <Star 
+                                        size={16} 
+                                        className={cn(
+                                            "transition-all duration-200", 
+                                            member.isFavorite 
+                                                ? "fill-white stroke-white" 
+                                                : "fill-transparent stroke-white"
+                                        )} 
+                                    />
+                                </motion.div>
+                            </motion.button>
+                            {onEdit && (
+                                <motion.button
+                                    whileHover={{ scale: 1.1 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={handleEditClick}
+                                    className="p-3 rounded-full bg-black/20 backdrop-blur-sm border-4 border-transparent text-white/70 hover:bg-brand-purple/50 hover:text-white transition-all duration-300"
+                                    title="Edit Member"
+                                >
+                                    <Edit2 size={16} />
+                                </motion.button>
                             )}
-                            title={member.isFavorite ? "Unfavorite" : "Favorite"}
-                        >
-                            <motion.div animate={controls}>
-                                <Star 
-                                    size={16} 
-                                    className={cn(
-                                        "transition-all duration-200", 
-                                        member.isFavorite 
-                                            ? "fill-white stroke-white" 
-                                            : "fill-transparent stroke-white"
-                                    )} 
-                                />
-                            </motion.div>
-                        </motion.button>
+                        </div>
                     )}
                 </motion.div>
 

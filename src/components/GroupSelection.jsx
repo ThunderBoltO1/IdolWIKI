@@ -9,7 +9,7 @@ import { GroupCard } from './GroupCard';
 import { BackgroundShapes } from './BackgroundShapes';
 import { BackToTopButton } from './BackToTopButton';
 
-export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm, onSearchPosition }) {
+export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm, onSearchPosition, onEditIdol }) {
     const { theme } = useTheme();
     const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
     const [cardSize, setCardSize] = useState(300);
@@ -327,6 +327,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                             onLike={onLikeIdol}
                                             onClick={onSelectIdol}
                                             onQuickView={setQuickViewIdol}
+                                            onEdit={onEditIdol}
                                         />
                                     ))}
                         </>

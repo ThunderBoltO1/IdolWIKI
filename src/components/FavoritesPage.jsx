@@ -7,7 +7,7 @@ import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
 import { BackgroundShapes } from './BackgroundShapes';
 
-export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGroup, onFavoriteIdol, onFavoriteGroup }) => {
+export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGroup, onFavoriteIdol, onFavoriteGroup, onEditIdol }) => {
     const { theme } = useTheme();
 
     const favoriteIdols = idols.filter(i => i.isFavorite);
@@ -69,6 +69,7 @@ export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGro
                                         idol={idol}
                                         onClick={onSelectIdol}
                                         onLike={onFavoriteIdol} // onLike is the prop for favoriting
+                                        onEdit={onEditIdol}
                                     />
                                 ))}
                             </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp } from 'lucide-react';
+import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder, useAnimation } from 'framer-motion';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp, ImageIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -38,7 +38,7 @@ const SpotifyIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition }) {
+export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition, onFavoriteMember }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
@@ -93,6 +93,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [isUploading, setIsUploading] = useState(false);
     const [isHeroUploading, setIsHeroUploading] = useState(false);
     const [heroUploadProgress, setHeroUploadProgress] = useState(0);
+    const [galleryUploadProgress, setGalleryUploadProgress] = useState(0);
     const heroFileInputRef = useRef(null);
     const galleryInputRef = useRef(null);
     const [galleryItems, setGalleryItems] = useState((group?.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
@@ -695,16 +696,31 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         }
 
         setIsUploading(true);
+        setGalleryUploadProgress(0);
         try {
             const compressedFiles = await Promise.all(files.map(file => compressImage(file)));
-            const uploadPromises = compressedFiles.map(file => uploadImage(file, 'groups/gallery'));
+            
+            // Track progress for each file to calculate total progress
+            const fileProgress = new Array(compressedFiles.length).fill(0);
+            
+            const uploadPromises = compressedFiles.map((file, index) => uploadImage(file, 'groups/gallery', (progress) => {
+                fileProgress[index] = progress;
+                const totalProgress = fileProgress.reduce((a, b) => a + b, 0) / fileProgress.length;
+                setGalleryUploadProgress(totalProgress);
+            }));
+            
             const urls = await Promise.all(uploadPromises);
             setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ...urls] }));
+            
+            // Update galleryItems to show new images immediately
+            const newItems = urls.map(url => ({ id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url }));
+            setGalleryItems(prev => [...prev, ...newItems]);
         } catch (error) {
             console.error("Gallery upload error", error);
             alert("Failed to upload images");
         } finally {
             setIsUploading(false);
+            setGalleryUploadProgress(0);
             if (galleryInputRef.current) galleryInputRef.current.value = '';
         }
     };
@@ -758,24 +774,27 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
         if (heroCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
             setIsHeroUploading(true);
+            setHeroUploadProgress(0);
             try {
                 const croppedImage = await getCroppedImgDataUrl(activeImage, heroCroppedArea);
                 
                 // Upload cropped image
                 const file = dataURLtoFile(croppedImage, `hero_${Date.now()}.jpg`);
+                const compressedFile = await compressImage(file);
 
                 // Delete old image if exists
                 if (displayGroup.image && displayGroup.image.includes('firebasestorage')) {
                     await deleteImage(displayGroup.image);
                 }
 
-                const uploadedUrl = await uploadImage(file, 'groups');
+                const uploadedUrl = await uploadImage(compressedFile, 'groups', (progress) => setHeroUploadProgress(progress));
                 imageToSave = uploadedUrl;
                 
             } catch (e) {
                 console.error("Failed to crop hero image", e);
             } finally {
                 setIsHeroUploading(false);
+                setHeroUploadProgress(0);
             }
         }
 
@@ -878,13 +897,16 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             let finalUrl = newUrl;
             if (newUrl && newUrl.startsWith('data:')) {
                 setIsUploading(true);
+                setGalleryUploadProgress(0);
                 try {
                     const file = dataURLtoFile(newUrl, `gallery_cropped_${Date.now()}.jpg`);
-                    finalUrl = await uploadImage(file, 'groups/gallery');
+                    const compressedFile = await compressImage(file);
+                    finalUrl = await uploadImage(compressedFile, 'groups/gallery', (progress) => setGalleryUploadProgress(progress));
                 } catch (error) {
                     console.error("Failed to upload cropped gallery image", error);
                 } finally {
                     setIsUploading(false);
+                    setGalleryUploadProgress(0);
                 }
             }
             
@@ -1591,6 +1613,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 {activeTab === 'members' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><Star size={20} fill="currentColor" /></motion.div>}
                                 Members
                             </button>
+                            <button onClick={() => setActiveTab('gallery')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                                {activeTab === 'gallery' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><ImageIcon size={20} fill="currentColor" /></motion.div>}
+                                Gallery
+                            </button>
                             <button onClick={() => setActiveTab('timeline')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'timeline' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><History size={20} /></motion.div>}
                                 Timeline
@@ -1686,11 +1712,107 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             onClick={() => onMemberClick(member)}
                                             onImageClick={(img) => setLightboxImage(img)}
                                             onSearchPosition={onSearchPosition}
+                                            user={user}
+                                            onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
                                         />
                                     ))}
                                 </motion.div>
                             )}
                         </>
+                    ) : activeTab === 'gallery' ? (
+                        <motion.div
+                            key="gallery"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="space-y-6"
+                        >
+                            {isEditing && isAdmin ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className={cn("text-xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>Edit Gallery</h3>
+                                        <div className="flex gap-2">
+                                            {selectedGalleryIndices.size > 0 && (
+                                                <button onClick={deleteSelectedGalleryImages} className="px-3 py-1.5 rounded-xl bg-red-500/10 text-red-500 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                                    <Trash2 size={14} /> Delete ({selectedGalleryIndices.size})
+                                                </button>
+                                            )}
+                                            <button onClick={selectAllGalleryImages} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                                {selectedGalleryIndices.size === galleryItems.length ? <CheckSquare size={14} /> : <Square size={14} />}
+                                                Select All
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <Reorder.Group axis="y" values={galleryItems} onReorder={(newOrder) => {
+                                        setGalleryItems(newOrder);
+                                        setFormData(prev => ({ ...prev, gallery: newOrder.map(i => i.url) }));
+                                    }} className="space-y-3">
+                                        {galleryItems.map((item, idx) => (
+                                            <Reorder.Item key={item.id} value={item} className={cn("p-3 rounded-2xl border flex items-center gap-3", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                    <GripVertical size={20} />
+                                                </div>
+                                                <button type="button" onClick={() => toggleGallerySelection(idx)} className="p-1">
+                                                    {selectedGalleryIndices.has(idx) ? <CheckSquare size={20} className="text-brand-pink" /> : <Square size={20} className="text-slate-400" />}
+                                                </button>
+                                                <img src={convertDriveLink(item.url)} className="w-16 h-16 rounded-lg object-cover" alt="" />
+                                                <input
+                                                    value={item.url}
+                                                    onChange={e => handleGalleryChange(idx, e.target.value)}
+                                                    className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                                                    placeholder="Image URL"
+                                                />
+                                                <button type="button" onClick={() => removeGalleryImage(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl"><Trash2 size={16} /></button>
+                                            </Reorder.Item>
+                                        ))}
+                                    </Reorder.Group>
+                                    <div className="flex gap-2">
+                                        <button onClick={addGalleryImage} className="flex-1 py-3 rounded-xl border-2 border-dashed border-brand-blue/30 text-brand-blue font-black uppercase tracking-widest hover:bg-brand-blue/5 transition-colors flex items-center justify-center gap-2">
+                                            <Plus size={16} /> Add Image Field
+                                        </button>
+                                        <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
+                                        <button onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="flex-1 py-3 rounded-xl border-2 border-dashed border-brand-pink/30 text-brand-pink font-black uppercase tracking-widest hover:bg-brand-pink/5 transition-colors flex items-center justify-center gap-2 relative overflow-hidden">
+                                            {isUploading && (
+                                                <div className="absolute inset-0 bg-brand-pink/10">
+                                                    <motion.div 
+                                                        className="h-full bg-brand-pink/20" 
+                                                        initial={{ width: 0 }} 
+                                                        animate={{ width: `${galleryUploadProgress}%` }} 
+                                                    />
+                                                </div>
+                                            )}
+                                            <div className="relative z-10 flex items-center gap-2">
+                                                {isUploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                                                {isUploading ? `Uploading ${Math.round(galleryUploadProgress)}%` : 'Upload Files'}
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                                    {allImages.slice(1).map((img, idx) => (
+                                        <motion.div
+                                            key={idx}
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            whileHover={{ scale: 1.05 }}
+                                            onClick={() => setLightboxImage(img)}
+                                            className="aspect-square rounded-2xl overflow-hidden shadow-md cursor-pointer group relative"
+                                        >
+                                            <img src={convertDriveLink(img)} alt={`Gallery image ${idx + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <ZoomIn className="text-white" size={32} />
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </div>
+                            )}
+                            {(allImages.length <= 1 && !isEditing) && (
+                                <div className="text-center py-20">
+                                    <ImageIcon size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
+                                    <p className="text-slate-500 font-medium">No gallery images yet.</p>
+                                </div>
+                            )}
+                        </motion.div>
                     ) : activeTab === 'timeline' ? (
                         <motion.div
                             key="timeline"
@@ -2722,7 +2844,15 @@ function getRelativeTime(timestamp) {
     return 'Just now';
 }
 
-function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition }) {
+function usePrevious(value) {
+  const ref = useRef();
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref.current;
+}
+
+function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
     
     const x = useMotionValue(0);
@@ -2731,6 +2861,21 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
     const mouseY = useSpring(y, { stiffness: 500, damping: 50 });
     const rotateX = useTransform(mouseY, [-0.5, 0.5], [25, -25]);
     const rotateY = useTransform(mouseX, [-0.5, 0.5], [-25, 25]);
+    const imgX = useTransform(mouseX, [-0.5, 0.5], [-15, 15]);
+    const imgY = useTransform(mouseY, [-0.5, 0.5], [-15, 15]);
+
+    const controls = useAnimation();
+    const prevIsFavorite = usePrevious(member.isFavorite);
+
+    useEffect(() => {
+        if (member.isFavorite && !prevIsFavorite) {
+            controls.start({
+                scale: [1, 1.5, 1.2, 1.5, 1.2],
+                rotate: [0, -10, 10, -10, 0],
+                transition: { duration: 0.5, ease: "easeInOut" }
+            });
+        }
+    }, [member.isFavorite, prevIsFavorite, controls]);
 
     const handleMouseMove = (e) => {
         const rect = e.currentTarget.getBoundingClientRect();
@@ -2754,6 +2899,11 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
     const handlePositionClick = (e, pos) => {
         e.stopPropagation();
         if (onSearchPosition) onSearchPosition(pos);
+    };
+
+    const handleFavoriteClick = e => {
+        e.stopPropagation();
+        onFavorite();
     };
 
     const getPositionStyle = (position) => {
@@ -2788,7 +2938,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
             onMouseLeave={handleMouseLeave}
             onClick={onClick}
             className={cn(
-                "group p-6 rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
+                "group p-4 md:p-6 rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
                 theme === 'dark'
                     ? "bg-slate-900/40 border-white/5 hover:bg-slate-900 hover:border-white/10"
                     : "bg-white border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:border-slate-200"
@@ -2812,26 +2962,49 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                         onImageClick && onImageClick(member.image);
                     }}
                 >
-                    <div className="absolute inset-0 bg-brand-pink blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500 rounded-full" />
-                    <img
-                        src={convertDriveLink(member.image)}
-                        alt={member.name}
-                        loading="lazy"
-                        className="w-24 h-24 md:w-32 md:h-32 rounded-full object-cover border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
-                    />
-                    {member.isFavorite && (
-                        <div className="absolute -top-3 -right-3 p-3 bg-brand-pink rounded-full text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-4 border-slate-950">
-                            <Star size={16} fill="currentColor" />
-                        </div>
+                    <div className="absolute inset-0 bg-brand-pink blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500 rounded-2xl" />
+                    <motion.div style={{ x: imgX, y: imgY }} className="relative z-10">
+                        <img
+                            src={convertDriveLink(member.image)}
+                            alt={member.name}
+                            loading="lazy"
+                            className="w-36 h-36 md:w-48 md:h-48 rounded-2xl object-cover border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
+                        />
+                    </motion.div>
+                    {user && (
+                        <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={handleFavoriteClick}
+                            className={cn(
+                                "absolute -top-2 -right-2 p-3 rounded-full border-4 transition-all duration-300 z-20",
+                                member.isFavorite
+                                    ? "bg-brand-pink text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-slate-950"
+                                    : "bg-black/20 backdrop-blur-sm border-transparent text-white/70 hover:bg-brand-pink/50 hover:text-white"
+                            )}
+                            title={member.isFavorite ? "Unfavorite" : "Favorite"}
+                        >
+                            <motion.div animate={controls}>
+                                <Star 
+                                    size={16} 
+                                    className={cn(
+                                        "transition-all duration-200", 
+                                        member.isFavorite 
+                                            ? "fill-white stroke-white" 
+                                            : "fill-transparent stroke-white"
+                                    )} 
+                                />
+                            </motion.div>
+                        </motion.button>
                     )}
                 </motion.div>
 
                 <div className="flex-1 space-y-3 min-w-0">
-                    <p className="text-xs text-brand-pink font-black uppercase tracking-[0.4em] truncate" title={(member.positions && member.positions[0]) || 'Member'}>
+                    <p className="text-sm text-brand-pink font-black uppercase tracking-[0.4em] truncate" title={(member.positions && member.positions[0]) || 'Member'}>
                         {(member.positions && member.positions[0]) || 'Member'}
                     </p>
                     <h4 className={cn(
-                        "text-xl md:text-2xl lg:text-3xl font-black transition-colors leading-tight tracking-tight",
+                        "text-2xl md:text-3xl lg:text-4xl font-black transition-colors leading-tight tracking-tight",
                         theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink"
                     )}>
                         {member.name}
@@ -2842,7 +3015,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                                 key={i} 
                                 onClick={(e) => handlePositionClick(e, pos)}
                                 className={cn(
-                                    "text-xs px-4 py-1.5 rounded-xl font-black uppercase tracking-widest border transition-colors cursor-pointer hover:opacity-80",
+                                    "text-xs md:text-sm px-4 py-2 rounded-xl font-black uppercase tracking-widest border transition-colors cursor-pointer hover:opacity-80",
                                     getPositionStyle(pos)
                                 )}
                             >

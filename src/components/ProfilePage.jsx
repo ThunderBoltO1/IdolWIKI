@@ -76,10 +76,10 @@ export const ProfilePage = ({ onBack }) => {
         startCropping(objectUrl, async (croppedUrl) => {
              setIsUploading(true);
              try {
-                 // Convert cropped base64 to File and upload
-                 const croppedFile = dataURLtoFile(croppedUrl, `avatar_${Date.now()}.jpg`);
+                 const croppedFile = dataURLtoFile(croppedUrl, file.name);
+                 const compressedFile = await compressImage(croppedFile);
                  
-                 const url = await uploadImage(croppedFile, 'avatars', (progress) => setUploadProgress(progress));
+                 const url = await uploadImage(compressedFile, 'avatars', (progress) => setUploadProgress(progress));
                  setFormData(prev => ({ ...prev, avatar: url }));
              } catch (error) {
                  console.error("Upload failed", error);

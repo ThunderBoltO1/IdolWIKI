@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { motion, AnimatePresence, useMotionValue, useTransform, useMotionTemplate } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, TrendingUp, Users, Star, LayoutGrid, Music, ZoomIn, ZoomOut, Sparkles, Loader2, X, Calendar, Globe, Building2, Share2, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
@@ -101,10 +101,13 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         const observer = new IntersectionObserver(
             (entries) => {
                 if (entries[0].isIntersecting && !loading && visibleCount < allItems.length) {
-                    setVisibleCount(prev => prev + 24);
+                    // Debounce/Throttle to prevent freezing
+                    setTimeout(() => {
+                        setVisibleCount(prev => prev + 24);
+                    }, 100);
                 }
             },
-            { threshold: 0, rootMargin: '800px' }
+            { threshold: 0, rootMargin: '200px' }
         );
 
         if (loadMoreRef.current) observer.observe(loadMoreRef.current);

@@ -20,10 +20,13 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const menuItems = [
+    const userMenuItems = [
         { label: 'Profile', icon: User, action: onProfileClick, admin: false },
         { label: 'Edit Profile', icon: Settings, action: onEditProfileClick, admin: false },
         { label: 'Favorites', icon: Star, action: onFavoritesClick, admin: false },
+    ];
+
+    const adminMenuItems = [
         { label: 'Dashboard', icon: LayoutDashboard, action: onDashboardClick, admin: true },
         { label: 'Manage Users', icon: UsersIcon, action: onManageUsersClick, admin: true },
         { label: 'Manage Reports', icon: Flag, action: onManageReportsClick, admin: true },
@@ -61,8 +64,7 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
                             <p className="text-xs text-brand-pink uppercase font-black tracking-widest">{user.role}</p>
                         </div>
                         <div className="p-2">
-                            {menuItems.map(item => {
-                                if (item.admin && !isAdmin) return null;
+                            {userMenuItems.map(item => {
                                 if (!item.action) return null;
                                 return (
                                     <button key={item.label} onClick={() => { item.action(); setIsOpen(false); }} className={cn("w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors", theme === 'dark' ? "hover:bg-white/5 text-slate-300" : "hover:bg-slate-100 text-slate-700")}>
@@ -71,6 +73,17 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
                                     </button>
                                 );
                             })}
+                            {isAdmin && (
+                                <>
+                                    <div className={cn("my-1 h-px", theme === 'dark' ? "bg-white/5" : "bg-slate-100")} />
+                                    {adminMenuItems.map(item => (
+                                        <button key={item.label} onClick={() => { item.action(); setIsOpen(false); }} className={cn("w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors", theme === 'dark' ? "hover:bg-white/5 text-slate-300" : "hover:bg-slate-100 text-slate-700")}>
+                                            <item.icon size={16} />
+                                            <span>{item.label}</span>
+                                        </button>
+                                    ))}
+                                </>
+                            )}
                         </div>
                         <div className={cn("p-2 border-t", theme === 'dark' ? "border-white/5" : "border-slate-100")}>
                             <button onClick={() => { onLogoutRequest(); setIsOpen(false); }} className={cn("w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors", theme === 'dark' ? "hover:bg-red-900/20 text-red-400" : "hover:bg-red-50 text-red-500")}>

@@ -59,21 +59,14 @@ export function IdolCard({ idol, onLike, onClick, searchTerm }) {
             )}
 
             <motion.img
-                initial={{ opacity: 1 }}
-                animate={{ opacity: imageLoaded ? 0 : 1 }}
-                transition={{ duration: 0.5 }}
-                src={convertDriveLink(idol.image)}
-                alt={idol.name}
-                className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
-            />
-            
-            <motion.img
                 initial={{ opacity: 0 }}
                 animate={{ opacity: imageLoaded ? 1 : 0 }}
+                transition={{ duration: 0.5 }}
                 src={convertDriveLink(idol.image)}
                 alt={idol.name}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"
+                decoding="async"
                 onLoad={() => setImageLoaded(true)}
             />
 

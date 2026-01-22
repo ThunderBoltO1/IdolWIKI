@@ -58,25 +58,16 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
                 </button>
             )}
 
-            {/* Background Image */}
-            {/* Low Quality Placeholder (Blur) */}
-            <motion.img
-                initial={{ opacity: 1 }}
-                animate={{ opacity: imageLoaded ? 0 : 1 }}
-                transition={{ duration: 0.5 }}
-                src={convertDriveLink(group.image)}
-                alt={group.name}
-                className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
-            />
-            
             {/* Main Image */}
             <motion.img
                 initial={{ opacity: 0 }}
                 animate={{ opacity: imageLoaded ? 1 : 0 }}
+                transition={{ duration: 0.5 }}
                 src={convertDriveLink(group.image)}
                 alt={group.name}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"
+                decoding="async"
                 onLoad={() => setImageLoaded(true)}
             />
 

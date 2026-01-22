@@ -229,7 +229,8 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                 setIsUploading(true);
                 try {
                     const file = dataURLtoFile(newUrl, `group_cropped_${Date.now()}.jpg`);
-                    const uploadedUrl = await uploadImage(file, 'groups');
+                    const compressedFile = await compressImage(file);
+                    const uploadedUrl = await uploadImage(compressedFile, 'groups');
                     setFormData(prev => ({ ...prev, image: uploadedUrl }));
                 } catch (error) {
                     console.error("Failed to upload cropped image", error);

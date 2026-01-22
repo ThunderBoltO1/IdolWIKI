@@ -868,7 +868,7 @@ function AppContent() {
               }
             />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} />} />
+            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} onFavoriteIdol={handleFavoriteIdol} />} />
           </Routes>
         </AnimatePresence>
       </main>
@@ -916,7 +916,7 @@ function AppContent() {
   );
 }
 
-function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate, onSearch, allIdols, onGroupClick }) {
+function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, onDeleteGroup, navigate, onSearch, allIdols, onGroupClick, onFavoriteIdol }) {
   const { groupId } = useParams();
   const group = groups.find(g => g.id === groupId);
   const members = idols.filter(i => i.groupId === groupId);
@@ -938,6 +938,7 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, on
         onSearch={onSearch}
         allIdols={allIdols}
         onGroupClick={onGroupClick}
+        onFavoriteMember={onFavoriteIdol}
       />
     </motion.div>
   );

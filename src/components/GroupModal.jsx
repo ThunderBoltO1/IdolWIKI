@@ -345,7 +345,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     className={cn(
-                        "relative w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] h-full",
+                        "relative w-full max-w-2xl rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] h-auto",
                         theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white border border-slate-200"
                     )}
                 >

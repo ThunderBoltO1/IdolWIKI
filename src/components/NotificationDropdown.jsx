@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Check } from 'lucide-react';
+import { Bell, Check, AlertCircle, Heart, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export function NotificationDropdown({ onNotificationClick }) {
@@ -60,6 +60,39 @@ export function NotificationDropdown({ onNotificationClick }) {
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
+    const groupedNotifications = useMemo(() => {
+        const groups = {};
+        const result = [];
+
+        notifications.forEach(n => {
+            if (['like', 'like_comment'].includes(n.type)) {
+                const key = `${n.type}_${n.targetId || n.commentId}`;
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(n);
+            } else {
+                result.push(n);
+            }
+        });
+
+        Object.values(groups).forEach(group => {
+            if (group.length === 1) {
+                result.push(group[0]);
+            } else {
+                const latest = group[0];
+                result.push({
+                    ...latest,
+                    isGrouped: true,
+                    count: group.length,
+                    id: `grouped_${latest.id}_${group.length}`,
+                    originalIds: group.map(n => n.id),
+                    read: group.every(n => n.read)
+                });
+            }
+        });
+
+        return result.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+    }, [notifications]);
+
     const handleMarkAsRead = async (notificationId) => {
         try {
             await updateDoc(doc(db, 'notifications', notificationId), { read: true });
@@ -83,8 +116,39 @@ export function NotificationDropdown({ onNotificationClick }) {
         }
     };
 
+    const handleDeleteNotification = async (e, notification) => {
+        e.stopPropagation();
+        try {
+            if (notification.isGrouped) {
+                const batch = writeBatch(db);
+                notification.originalIds.forEach(id => {
+                    const ref = doc(db, 'notifications', id);
+                    batch.delete(ref);
+                });
+                await batch.commit();
+            } else {
+                await deleteDoc(doc(db, 'notifications', notification.id));
+            }
+        } catch (error) {
+            console.error("Error deleting notification:", error);
+        }
+    };
+
     const handleClick = async (notification) => {
-        if (!notification.read) {
+        if (notification.isGrouped) {
+            if (!notification.read) {
+                const batch = writeBatch(db);
+                notification.originalIds.forEach(id => {
+                    const ref = doc(db, 'notifications', id);
+                    batch.update(ref, { read: true });
+                });
+                try {
+                    await batch.commit();
+                } catch (error) {
+                    console.error("Error marking grouped notifications as read:", error);
+                }
+            }
+        } else if (!notification.read) {
             handleMarkAsRead(notification.id);
         }
         setIsOpen(false);
@@ -143,13 +207,104 @@ export function NotificationDropdown({ onNotificationClick }) {
                         </div>
 
                         <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
-                            {notifications.length === 0 ? (
+                            {groupedNotifications.length === 0 ? (
                                 <div className="p-8 text-center"> 
                                     <Bell size={32} className="mx-auto mb-3 text-slate-300 opacity-50" />
                                     <p className="text-xs font-bold text-slate-400">No notifications yet</p>
                                 </div>
                             ) : (
-                                notifications.map(notification => (
+                                groupedNotifications.map(notification => (
+                                    notification.isGrouped ? (
+                                        <div
+                                            key={notification.id}
+                                            onClick={() => handleClick(notification)}
+                                            className={cn(
+                                                "p-4 border-b last:border-0 cursor-pointer transition-colors flex gap-3 items-start group",
+                                                theme === 'dark'
+                                                    ? "border-white/5 hover:bg-white/5"
+                                                    : "border-slate-100 hover:bg-slate-50",
+                                                !notification.read && (theme === 'dark' ? "bg-brand-pink/5" : "bg-brand-pink/5")
+                                            )}
+                                        >
+                                            <div className="relative shrink-0">
+                                                <div className={cn(
+                                                    "w-10 h-10 rounded-full flex items-center justify-center border",
+                                                    theme === 'dark' ? "bg-brand-pink/10 border-brand-pink/20 text-brand-pink" : "bg-brand-pink/10 border-brand-pink/20 text-brand-pink"
+                                                )}>
+                                                    <Heart size={20} fill="currentColor" />
+                                                </div>
+                                                {!notification.read && (
+                                                    <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-pink rounded-full border-2 border-slate-900" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={cn("text-xs leading-relaxed", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>
+                                                    <span className={cn("font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                        {notification.count} users
+                                                    </span>
+                                                    {" liked your comment"}
+                                                </p>
+                                                <p className="text-xs text-slate-500 font-bold mt-2 uppercase tracking-wider">
+                                                    {getRelativeTime(notification.createdAt?.toMillis())}
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => handleDeleteNotification(e, notification)}
+                                                className={cn(
+                                                    "p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all shrink-0",
+                                                    theme === 'dark' ? "text-slate-500 hover:text-red-400 hover:bg-white/10" : "text-slate-400 hover:text-red-500 hover:bg-slate-100"
+                                                )}
+                                                title="Delete"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ) : ['admin_alert', 'system', 'friend_accepted', 'admin_message'].includes(notification.type) ? (
+                                    <div
+                                        key={notification.id}
+                                        onClick={() => handleClick(notification)}
+                                        className={cn(
+                                            "p-4 border-b last:border-0 cursor-pointer transition-colors flex gap-3 items-start group",
+                                            theme === 'dark'
+                                                ? "border-white/5 hover:bg-white/5"
+                                                : "border-slate-100 hover:bg-slate-50",
+                                            !notification.read && (theme === 'dark' ? "bg-brand-pink/5" : "bg-brand-pink/5")
+                                        )}
+                                    >
+                                        <div className="relative shrink-0">
+                                            <div className={cn(
+                                                "w-10 h-10 rounded-full flex items-center justify-center border",
+                                                theme === 'dark' ? "bg-brand-purple/10 border-brand-purple/20 text-brand-purple" : "bg-brand-purple/10 border-brand-purple/20 text-brand-purple"
+                                            )}>
+                                                <AlertCircle size={20} />
+                                            </div>
+                                            {!notification.read && (
+                                                <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-pink rounded-full border-2 border-slate-900" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={cn("text-xs font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                {notification.title || notification.senderName || 'Notification'}
+                                            </p>
+                                            <p className={cn("text-xs mt-1 font-medium opacity-70 leading-relaxed", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                                {notification.message || notification.text}
+                                            </p>
+                                            <p className="text-xs text-slate-500 font-bold mt-2 uppercase tracking-wider">
+                                                {getRelativeTime(notification.createdAt?.toMillis())}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={(e) => handleDeleteNotification(e, notification)}
+                                            className={cn(
+                                                "p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all shrink-0",
+                                                theme === 'dark' ? "text-slate-500 hover:text-red-400 hover:bg-white/10" : "text-slate-400 hover:text-red-500 hover:bg-slate-100"
+                                            )}
+                                            title="Delete"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                    ) : (
                                     <div
                                         key={notification.id}
                                         onClick={() => handleClick(notification)}
@@ -188,7 +343,18 @@ export function NotificationDropdown({ onNotificationClick }) {
                                                 {getRelativeTime(notification.createdAt?.toMillis())}
                                             </p>
                                         </div>
+                                        <button
+                                            onClick={(e) => handleDeleteNotification(e, notification)}
+                                            className={cn(
+                                                "p-2 rounded-full opacity-0 group-hover:opacity-100 transition-all shrink-0",
+                                                theme === 'dark' ? "text-slate-500 hover:text-red-400 hover:bg-white/10" : "text-slate-400 hover:text-red-500 hover:bg-slate-100"
+                                            )}
+                                            title="Delete"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
                                     </div>
+                                    )
                                 ))
                             )}
                         </div>

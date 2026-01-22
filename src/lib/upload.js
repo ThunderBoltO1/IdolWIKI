@@ -78,12 +78,12 @@ export const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
         if (!file.type.startsWith('image/')) {
             return resolve(file); // ถ้าไม่ใช่รูป ให้คืนค่าเดิม
         }
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        img.src = objectUrl;
+
+        img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
@@ -110,10 +110,11 @@ export const compressImage = (file, maxWidth = 1600, quality = 0.8) => {
                     });
                     resolve(newFile);
                 }, 'image/jpeg', quality);
-            };
-            img.onerror = (error) => reject(error);
         };
-        reader.onerror = (error) => reject(error);
+        img.onerror = (error) => {
+            URL.revokeObjectURL(objectUrl);
+            reject(error);
+        };
     });
 };
 

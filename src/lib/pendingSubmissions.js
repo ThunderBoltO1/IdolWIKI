@@ -1,5 +1,33 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, writeBatch, query, where, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
+import { logAudit } from './audit';
+
+async function notifyAdmins(title, message, type, targetId) {
+    try {
+        const q = query(collection(db, 'users'), where('role', '==', 'admin'));
+        const snapshot = await getDocs(q);
+        
+        if (snapshot.empty) return;
+
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(adminDoc => {
+            const ref = doc(collection(db, 'notifications'));
+            batch.set(ref, {
+                recipientId: adminDoc.id,
+                type: 'admin_alert',
+                title,
+                message,
+                targetId: targetId || null,
+                targetType: type,
+                read: false,
+                createdAt: serverTimestamp()
+            });
+        });
+        await batch.commit();
+    } catch (error) {
+        console.error("Error notifying admins:", error);
+    }
+}
 
 /**
  * Submit a new idol for approval (for non-admin users)
@@ -11,11 +39,20 @@ export async function submitPendingIdol(idolData, submittedBy) {
             submittedBy: submittedBy.uid || submittedBy.id,
             submitterName: submittedBy.name || submittedBy.email,
             submitterEmail: submittedBy.email,
+            submitterAvatar: submittedBy.avatar || '',
             status: 'pending', // pending, approved, rejected
             submittedAt: serverTimestamp(),
             reviewedAt: null,
             reviewedBy: null,
             reviewNotes: ''
+        });
+        notifyAdmins('New Idol Submission', `New idol "${idolData.name}" submitted for review.`, 'idol', docRef.id);
+        await logAudit({
+            action: 'submit_create',
+            targetType: 'idol',
+            targetId: docRef.id,
+            user: submittedBy,
+            details: { name: idolData.name }
         });
         return { success: true, id: docRef.id };
     } catch (error) {
@@ -34,11 +71,20 @@ export async function submitPendingGroup(groupData, submittedBy) {
             submittedBy: submittedBy.uid || submittedBy.id,
             submitterName: submittedBy.name || submittedBy.email,
             submitterEmail: submittedBy.email,
+            submitterAvatar: submittedBy.avatar || '',
             status: 'pending',
             submittedAt: serverTimestamp(),
             reviewedAt: null,
             reviewedBy: null,
             reviewNotes: ''
+        });
+        notifyAdmins('New Group Submission', `New group "${groupData.name}" submitted for review.`, 'group', docRef.id);
+        await logAudit({
+            action: 'submit_create',
+            targetType: 'group',
+            targetId: docRef.id,
+            user: submittedBy,
+            details: { name: groupData.name }
         });
         return { success: true, id: docRef.id };
     } catch (error) {
@@ -61,11 +107,20 @@ export async function submitEditRequest(targetType, targetId, targetName, change
             submittedBy: submittedBy.uid || submittedBy.id,
             submitterName: submittedBy.name || submittedBy.email,
             submitterEmail: submittedBy.email,
+            submitterAvatar: submittedBy.avatar || '',
             status: 'pending', // pending, approved, rejected
             submittedAt: serverTimestamp(),
             reviewedAt: null,
             reviewedBy: null,
             reviewNotes: ''
+        });
+        notifyAdmins('New Edit Request', `Edit request for ${targetType} "${targetName}" submitted.`, 'edit_request', docRef.id);
+        await logAudit({
+            action: 'submit_update',
+            targetType: targetType,
+            targetId: targetId,
+            user: submittedBy,
+            details: { changes, reason, requestId: docRef.id }
         });
         return { success: true, id: docRef.id };
     } catch (error) {
@@ -113,15 +168,13 @@ export async function approvePendingIdol(pendingId, adminUser, reviewNotes = '')
         });
 
         // Create audit log
-        await addDoc(collection(db, 'auditLogs'), {
+        logAudit({
             action: 'approve_pending_idol',
-            targetId: idolId,
             targetType: 'idol',
-            userId: adminUser.uid || adminUser.id,
-            userName: adminUser.name || adminUser.email,
-            pendingId,
-            originalSubmitter: submittedBy,
-            createdAt: serverTimestamp()
+            targetId: idolId,
+            user: adminUser,
+            details: { pendingId },
+            originalSubmitter: submittedBy
         });
 
         return { success: true, idolId };
@@ -169,15 +222,13 @@ export async function approvePendingGroup(pendingId, adminUser, reviewNotes = ''
         });
 
         // Create audit log
-        await addDoc(collection(db, 'auditLogs'), {
+        logAudit({
             action: 'approve_pending_group',
-            targetId: groupId,
             targetType: 'group',
-            userId: adminUser.uid || adminUser.id,
-            userName: adminUser.name || adminUser.email,
-            pendingId,
-            originalSubmitter: submittedBy,
-            createdAt: serverTimestamp()
+            targetId: groupId,
+            user: adminUser,
+            details: { pendingId },
+            originalSubmitter: submittedBy
         });
 
         return { success: true, groupId };
@@ -194,12 +245,31 @@ export async function rejectPendingSubmission(collectionName, pendingId, adminUs
     try {
         const pendingRef = doc(db, collectionName, pendingId);
 
+        const pendingSnap = await getDoc(pendingRef);
+        let originalSubmitter = null;
+        let targetName = '';
+        if (pendingSnap.exists()) {
+            const data = pendingSnap.data();
+            originalSubmitter = data.submittedBy;
+            targetName = data.name || data.targetName || 'Unknown';
+        }
+
         await updateDoc(pendingRef, {
             status: 'rejected',
             reviewedAt: serverTimestamp(),
             reviewedBy: adminUser.uid || adminUser.id,
             reviewerName: adminUser.name || adminUser.email,
             reviewNotes
+        });
+
+        // Create audit log
+        logAudit({
+            action: 'reject_submission',
+            targetType: collectionName === 'pendingIdols' ? 'idol' : collectionName === 'pendingGroups' ? 'group' : 'edit_request',
+            targetId: pendingId,
+            user: adminUser,
+            details: { collectionName, reviewNotes, targetName },
+            originalSubmitter
         });
 
         return { success: true };
@@ -222,7 +292,7 @@ export async function approveEditRequest(requestId, adminUser, reviewNotes = '')
         }
 
         const requestData = requestSnap.data();
-        const { targetType, targetId, changes } = requestData;
+        const { targetType, targetId, changes, submittedBy } = requestData;
 
         // Apply changes to target document
         const targetRef = doc(db, targetType === 'idol' ? 'idols' : 'groups', targetId);
@@ -246,15 +316,13 @@ export async function approveEditRequest(requestId, adminUser, reviewNotes = '')
         });
 
         // Create audit log
-        await addDoc(collection(db, 'auditLogs'), {
+        logAudit({
             action: 'approve_edit_request',
-            targetId,
             targetType,
-            userId: adminUser.uid || adminUser.id,
-            userName: adminUser.name || adminUser.email,
-            requestId,
-            changes,
-            createdAt: serverTimestamp()
+            targetId,
+            user: adminUser,
+            details: { requestId, changes },
+            originalSubmitter: submittedBy
         });
 
         return { success: true };

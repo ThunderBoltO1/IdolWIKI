@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sparkles, Sun, Moon, Clock, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -13,6 +14,7 @@ import { UserDropdown } from './UserDropdown';
 export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileClick, onEditProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onManageReportsClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
     const { user, isAdmin } = useAuth();
     const { theme, themeMode, toggleTheme } = useTheme();
+    const navigate = useNavigate();
 
     return (
         <nav className={cn(
@@ -100,8 +102,8 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                                     onDashboardClick={onDashboardClick}
                                     onManageUsersClick={onManageUsersClick}
                                     onManageReportsClick={onManageReportsClick}
-                                    onManageAwardsClick={() => window.location.href = '/admin/awards'}
-                                    onAuditLogsClick={() => window.location.href = '/admin/audit-logs'}
+                                    onManageAwardsClick={() => navigate('/admin/awards')}
+                                    onAuditLogsClick={() => navigate('/admin/audit-logs')}
                                     onLogoutRequest={onLogoutRequest}
                                 />
                             </div>

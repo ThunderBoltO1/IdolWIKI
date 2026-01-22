@@ -17,6 +17,7 @@ import { PublicProfilePage } from './components/PublicProfilePage';
 import { AdminUserManagement } from './components/AdminUserManagement';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminAwardManagement } from './components/AdminAwardManagement';
+import { AdminAuditLogs } from './components/AdminAuditLogs';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -26,6 +27,7 @@ import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
 import { AdminSubmissionDashboard } from './components/AdminSubmissionDashboard';
+import { logAudit } from './lib/audit';
 
 function RequireAdmin({ children }) {
   const location = useLocation();
@@ -56,8 +58,8 @@ function AppContent() {
   const { user, isAdmin, logout } = useAuth();
 
   const [_error, setError] = useState(null);
-  const [idols, setIdols] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [rawIdols, setRawIdols] = useState([]);
+  const [rawGroups, setRawGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -72,6 +74,7 @@ function AppContent() {
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } });
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+  const [adminDashboardInitialTab, setAdminDashboardInitialTab] = useState('idols');
 
   // Error Handler
   useEffect(() => {
@@ -99,14 +102,8 @@ function AppContent() {
 
     const unsubGroups = onSnapshot(collection(db, 'groups'),
       (snap) => {
-        const data = snap.docs.map(doc => {
-          const groupData = doc.data();
-          return {
-            ...groupData, id: doc.id,
-            isFavorite: user ? (groupData.favoritedBy || []).includes(user.uid) : false
-          };
-        });
-        setGroups(data);
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setRawGroups(data);
         groupsLoaded = true;
         checkLoading();
         setDbError(null);
@@ -121,14 +118,8 @@ function AppContent() {
 
     const unsubIdols = onSnapshot(collection(db, 'idols'),
       (snap) => {
-        const data = snap.docs.map(doc => {
-          const idolData = doc.data();
-          return {
-            ...idolData, id: doc.id,
-            isFavorite: user ? (idolData.favoritedBy || []).includes(user.uid) : false
-          };
-        });
-        setIdols(data);
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setRawIdols(data);
         idolsLoaded = true;
         checkLoading();
         setDbError(null);
@@ -145,8 +136,21 @@ function AppContent() {
       unsubGroups();
       unsubIdols();
     };
-  }, [user]);
+  }, []);
 
+  const groups = useMemo(() => {
+    return rawGroups.map(group => ({
+      ...group,
+      isFavorite: user ? (group.favoritedBy || []).includes(user.uid) : false
+    }));
+  }, [rawGroups, user]);
+
+  const idols = useMemo(() => {
+    return rawIdols.map(idol => ({
+      ...idol,
+      isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false
+    }));
+  }, [rawIdols, user]);
 
   const filteredGroups = useMemo(() => {
     return groups
@@ -186,10 +190,24 @@ function AppContent() {
       if (!isAdmin) {
         const result = await submitPendingGroup(groupData, user);
         if (result.success) {
-          alert('Your group has been submitted for admin approval.');
+          setConfirmModal({
+            isOpen: true,
+            title: 'Submission Received',
+            message: 'Your group has been submitted for admin approval. We will notify you once it is reviewed.',
+            type: 'success',
+            singleButton: true,
+            confirmText: 'OK'
+          });
           setGroupModalOpen(false);
         } else {
-          alert('Submission failed: ' + result.error);
+          setConfirmModal({
+            isOpen: true,
+            title: 'Submission Failed',
+            message: 'Failed to submit group: ' + result.error,
+            type: 'danger',
+            singleButton: true,
+            confirmText: 'Close'
+          });
         }
         return;
       }
@@ -206,6 +224,16 @@ function AppContent() {
         members: memberIds || []
       });
 
+      if (user) {
+        await logAudit({
+          action: 'create',
+          targetType: 'group',
+          targetId: groupId,
+          user: user,
+          details: { name: restGroupData.name }
+        });
+      }
+
       if (memberIds && memberIds.length > 0) {
         const batch = writeBatch(db);
         memberIds.forEach(idolId => {
@@ -221,7 +249,14 @@ function AppContent() {
       setGroupModalOpen(false);
     } catch (err) {
       console.error("Error adding group: ", err);
-      alert("Failed to add group");
+      setConfirmModal({
+        isOpen: true,
+        title: 'Error',
+        message: "Failed to add group",
+        type: 'danger',
+        singleButton: true,
+        confirmText: 'Close'
+      });
     }
   };
 
@@ -250,10 +285,24 @@ function AppContent() {
         if (!isAdmin) {
           const result = await submitPendingIdol(newIdol, user);
           if (result.success) {
-            alert('Your idol has been submitted for admin approval.');
+            setConfirmModal({
+              isOpen: true,
+              title: 'Submission Received',
+              message: 'Your idol has been submitted for admin approval. We will notify you once it is reviewed.',
+              type: 'success',
+              singleButton: true,
+              confirmText: 'OK'
+            });
             setModalOpen(false);
           } else {
-            alert('Submission failed: ' + result.error);
+            setConfirmModal({
+              isOpen: true,
+              title: 'Submission Failed',
+              message: 'Failed to submit idol: ' + result.error,
+              type: 'danger',
+              singleButton: true,
+              confirmText: 'Close'
+            });
           }
           return;
         }
@@ -264,14 +313,12 @@ function AppContent() {
         await setDoc(idolRef, newIdol);
 
         if (user) {
-          await addDoc(collection(db, 'auditLogs'), {
-            targetId: idolId,
-            targetType: 'idol',
+          await logAudit({
             action: 'create',
-            userId: user.uid,
-            userName: user.name || user.email || 'Unknown',
-            changes: newIdol,
-            createdAt: serverTimestamp()
+            targetType: 'idol',
+            targetId: idolId,
+            user: user,
+            details: { name: newIdol.name }
           });
         }
 
@@ -290,16 +337,37 @@ function AppContent() {
           });
 
           if (Object.keys(changes).length === 0) {
-            alert('No changes detected.');
+            setConfirmModal({
+              isOpen: true,
+              title: 'No Changes',
+              message: 'No changes detected.',
+              type: 'info',
+              singleButton: true,
+              confirmText: 'OK'
+            });
             return;
           }
 
           const result = await submitEditRequest('idol', selectedIdol.id, selectedIdol.name, changes, reason, user);
           if (result.success) {
-            alert('Your edit request has been submitted for approval.');
+            setConfirmModal({
+              isOpen: true,
+              title: 'Request Submitted',
+              message: 'Your edit request has been submitted for approval.',
+              type: 'success',
+              singleButton: true,
+              confirmText: 'OK'
+            });
             setModalOpen(false);
           } else {
-            alert('Request failed: ' + result.error);
+            setConfirmModal({
+              isOpen: true,
+              title: 'Request Failed',
+              message: 'Failed to submit request: ' + result.error,
+              type: 'danger',
+              singleButton: true,
+              confirmText: 'Close'
+            });
           }
           return;
         }
@@ -322,14 +390,12 @@ function AppContent() {
 
         try {
           if (hasChanges && user) {
-            await addDoc(collection(db, 'auditLogs'), {
-              targetId: selectedIdol.id,
-              targetType: 'idol',
+            await logAudit({
               action: 'update',
-              userId: user.uid,
-              userName: user.name || user.email || 'Unknown',
-              changes: changes,
-              createdAt: serverTimestamp()
+              targetType: 'idol',
+              targetId: selectedIdol.id,
+              user: user,
+              details: { changes }
             });
           }
         } catch (auditErr) {
@@ -339,9 +405,23 @@ function AppContent() {
     } catch (err) {
       console.error("Save error:", err);
       if (err.code === 'permission-denied') {
-        alert("Permission denied. You do not have access to modify this data.");
+        setConfirmModal({
+          isOpen: true,
+          title: 'Permission Denied',
+          message: "You do not have access to modify this data.",
+          type: 'danger',
+          singleButton: true,
+          confirmText: 'Close'
+        });
       } else {
-        alert("Failed to save data: " + err.message);
+        setConfirmModal({
+          isOpen: true,
+          title: 'Error',
+          message: "Failed to save data: " + err.message,
+          type: 'danger',
+          singleButton: true,
+          confirmText: 'Close'
+        });
       }
     }
   };
@@ -354,6 +434,16 @@ function AppContent() {
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, 'idols', id));
+          
+          if (user) {
+            await logAudit({
+              action: 'delete',
+              targetType: 'idol',
+              targetId: id,
+              user: user
+            });
+          }
+
           setModalOpen(false);
         } catch (err) {
           console.error("Delete error:", err);
@@ -364,7 +454,14 @@ function AppContent() {
 
   const handleFavoriteIdol = async (id) => {
     if (!user) {
-      alert('Please log in to favorite idols.');
+      setConfirmModal({
+        isOpen: true,
+        title: 'Login Required',
+        message: 'Please log in to favorite idols.',
+        type: 'info',
+        singleButton: true,
+        confirmText: 'OK'
+      });
       return;
     }
     const idol = idols.find(i => i.id === id);
@@ -381,7 +478,17 @@ function AppContent() {
   };
 
   const handleFavoriteGroup = async (groupId) => {
-    if (!user) return alert('Please log in to favorite groups.');
+    if (!user) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Login Required',
+        message: 'Please log in to favorite groups.',
+        type: 'info',
+        singleButton: true,
+        confirmText: 'OK'
+      });
+      return;
+    }
     const group = groups.find(g => g.id === groupId);
     if (!group) return;
     try {
@@ -404,9 +511,37 @@ function AppContent() {
     try {
       const groupRef = doc(db, 'groups', groupId);
       await updateDoc(groupRef, data);
+
+      if (user) {
+         // Calculate changes if possible, or just log the update
+         const group = groups.find(g => g.id === groupId);
+         const changes = {};
+         if (group) {
+             Object.keys(data).forEach(key => {
+                 if (JSON.stringify(data[key]) !== JSON.stringify(group[key])) {
+                     changes[key] = { from: group[key] || null, to: data[key] };
+                 }
+             });
+         }
+
+         await logAudit({
+             action: 'update',
+             targetType: 'group',
+             targetId: groupId,
+             user: user,
+             details: { changes: Object.keys(changes).length > 0 ? changes : data }
+         });
+      }
     } catch (err) {
       console.error("Group update error:", err);
-      alert("Failed to update group: " + err.message);
+      setConfirmModal({
+        isOpen: true,
+        title: 'Update Failed',
+        message: "Failed to update group: " + err.message,
+        type: 'danger',
+        singleButton: true,
+        confirmText: 'Close'
+      });
     }
   };
 
@@ -419,10 +554,27 @@ function AppContent() {
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, 'groups', groupId));
+
+          if (user) {
+            await logAudit({
+              action: 'delete',
+              targetType: 'group',
+              targetId: groupId,
+              user: user
+            });
+          }
+
           navigate('/');
         } catch (err) {
           console.error("Error deleting group:", err);
-          alert("Failed to delete group");
+          setConfirmModal({
+            isOpen: true,
+            title: 'Error',
+            message: "Failed to delete group",
+            type: 'danger',
+            singleButton: true,
+            confirmText: 'Close'
+          });
         }
       }
     });
@@ -435,15 +587,22 @@ function AppContent() {
   };
 
   const handleNotificationClick = (notification) => {
+    if (notification.type === 'admin_alert') {
+      if (isAdmin) {
+        let tab = 'idols';
+        if (notification.targetType === 'group') tab = 'groups';
+        else if (notification.targetType === 'edit_request') tab = 'edits';
+        
+        setAdminDashboardInitialTab(tab);
+        setIsAdminDashboardOpen(true);
+      }
+      return;
+    }
+
     if (notification.targetType === 'group') {
       navigate(`/group/${notification.targetId}`);
     } else if (notification.targetType === 'idol') {
-      const idol = idols.find(i => i.id === notification.targetId);
-      if (idol) {
-        setSelectedIdol(idol);
-        setModalMode('view');
-        setModalOpen(true);
-      }
+      navigate(`/idol/${notification.targetId}`);
     }
   };
 
@@ -693,6 +852,22 @@ function AppContent() {
               }
             />
 
+            <Route
+              path="/admin/audit-logs"
+              element={
+                <RequireAdmin>
+                  <motion.div
+                    key="admin-audit-logs"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                  >
+                    <AdminAuditLogs onBack={() => navigate('/')} />
+                  </motion.div>
+                </RequireAdmin>
+              }
+            />
+
             <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} />} />
           </Routes>
         </AnimatePresence>
@@ -726,10 +901,15 @@ function AppContent() {
         message={confirmModal.message}
         confirmText={confirmModal.confirmText}
         confirmButtonClass={confirmModal.confirmButtonClass}
+        singleButton={confirmModal.singleButton}
+        type={confirmModal.type}
       />
       <AnimatePresence>
         {isAdminDashboardOpen && isAdmin && (
-          <AdminSubmissionDashboard onClose={() => setIsAdminDashboardOpen(false)} />
+          <AdminSubmissionDashboard 
+            onClose={() => setIsAdminDashboardOpen(false)} 
+            initialTab={adminDashboardInitialTab}
+          />
         )}
       </AnimatePresence>
     </div>

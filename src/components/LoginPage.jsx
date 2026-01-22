@@ -48,13 +48,13 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                 )}
             >
                 <div className="text-center mb-10 relative z-10">
-                    <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-brand-pink to-brand-purple shadow-lg shadow-brand-pink/20 mb-6 transition-transform hover:scale-110">
+                    <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-brand-pink to-brand-purple shadow-xl shadow-brand-pink/30 mb-6 transition-all hover:scale-110 hover:rotate-6">
                         <Sparkles className="text-white" size={24} />
                     </div>
                     <h2 className={cn(
                         "text-3xl font-black mb-2 tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"
-                    )}>Welcome Back</h2>
+                    )}>Welcome To My KpopIDOL-WIKI</h2>
                     <p className={cn(
                         "font-medium text-sm",
                         theme === 'dark' ? "text-slate-400" : "text-slate-500"
@@ -134,10 +134,10 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                             onChange={(e) => setRememberMe(e.target.checked)}
                             className="w-4 h-4 rounded border-gray-300 text-brand-pink focus:ring-brand-pink accent-brand-pink cursor-pointer"
                         />
-                        <label 
-                            htmlFor="remember-me" 
+                        <label
+                            htmlFor="remember-me"
                             className={cn(
-                                "text-xs font-bold cursor-pointer select-none", 
+                                "text-xs font-bold cursor-pointer select-none",
                                 theme === 'dark' ? "text-slate-400" : "text-slate-500"
                             )}
                         >
@@ -149,13 +149,13 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                         type="submit"
                         disabled={loading}
                         className={cn(
-                            "w-full py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-2xl transition-all mt-6 relative overflow-hidden group active:scale-95",
+                            "w-full py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-xl shadow-brand-pink/25 transition-all mt-6 relative overflow-hidden group active:scale-95",
                             "bg-gradient-to-r from-brand-purple via-brand-pink to-brand-blue",
                             loading && "opacity-70 cursor-not-allowed"
                         )}
                     >
-                        <div className="absolute inset-0 bg-white/10 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                        {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Unlock Database"}
+                        <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 pointer-events-none" />
+                        {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Login"}
                     </button>
                 </form>
 
@@ -164,7 +164,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                         "text-xs font-bold transition-colors",
                         theme === 'dark' ? "text-slate-500" : "text-slate-400"
                     )}>
-                        New to the universe?{' '}
+                        New to the K-Pop Universe?{' '}
                         <button
                             onClick={() => onNavigate('register')}
                             className="text-brand-pink hover:text-brand-pink/80 font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 ml-1"

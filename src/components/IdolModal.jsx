@@ -50,7 +50,7 @@ const defaultIdolData = {
     albums: []
 };
 
-export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick }) {
+export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const navigate = useNavigate();
@@ -146,7 +146,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         const q = query(
             collection(db, 'comments'),
             where('targetId', '==', idol.id),
-            where('targetType', '==', 'idol')
+            where('targetType', '==', 'idol'),
+            limit(50)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -844,7 +845,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 40 }}
                     className={cn(
-                        "relative w-full max-w-5xl rounded-[40px] shadow-2xl overflow-hidden h-[90vh] flex flex-col md:flex-row border transition-colors duration-500",
+                        "relative w-full max-w-5xl rounded-[40px] shadow-2xl overflow-hidden h-[85dvh] md:h-[90vh] flex flex-col md:flex-row border transition-colors duration-500",
                         theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
                     )}
                 >
@@ -883,7 +884,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     >
                     {/* Left Column: Image & Gallery */}
                     <div className={cn(
-                        "w-full md:w-5/12 h-[350px] md:h-auto relative flex flex-col overflow-hidden",
+                        "w-full md:w-5/12 h-[20vh] min-h-[180px] md:h-auto relative flex flex-col overflow-hidden",
                         theme === 'dark' ? "bg-slate-800" : "bg-slate-100"
                     )}>
                         <div className="relative flex-1 overflow-hidden">
@@ -1048,7 +1049,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             value={formData.name || ''}
                                             onChange={handleChange}
                                             className={cn(
-                                                "bg-transparent text-5xl font-black border-b-2 focus:outline-none w-full transition-colors",
+                                                "bg-transparent text-3xl md:text-5xl font-black border-b-2 focus:outline-none w-full transition-colors",
                                                 theme === 'dark' ? "text-white border-white/10 focus:border-brand-pink" : "text-slate-900 border-slate-200 focus:border-brand-pink"
                                             )}
                                             placeholder="Stage Name"
@@ -1069,7 +1070,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 ) : (
                                     <div className="space-y-2">
                                         <div className="flex items-center gap-3">
-                                            <h2 className={cn("text-4xl md:text-5xl font-black tracking-tight drop-shadow-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                            <h2 className={cn("text-3xl md:text-5xl font-black tracking-tight drop-shadow-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                                 {formData.name}
                                             </h2>
                                             <button
@@ -1107,7 +1108,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 }
                                             }}
                                             className={cn(
-                                                "text-xl font-black tracking-[0.2em] uppercase transition-all flex items-center gap-2 group",
+                                                "text-lg md:text-xl font-black tracking-[0.2em] uppercase transition-all flex items-center gap-2 group",
                                                 formData.groupId ? "text-brand-pink hover:text-brand-pink/80 cursor-pointer" : "text-slate-400"
                                             )}
                                         >
@@ -1205,15 +1206,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                         <form onSubmit={handleSubmit} className="space-y-10 flex-1">
                             {/* Info Tab Content */}
-                            <div className={cn(!editMode && activeTab !== 'info' && "hidden", editMode && "block")}>
+                            {(editMode || activeTab === 'info') && (
+                            <div className="space-y-8">
                                 {editMode ? (
                                     <div className="space-y-8">
                                         {/* Section 1: Basic Info */}
                                         <div className="space-y-4">
                                             <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Basic Information</h3>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                                <DetailItem icon={User} label="Stage Name" value={formData.name} editMode={editMode} name="name" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={User} label="Stage Name" value={formData.name} editMode={editMode} name="name" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.name} />
+                                                <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.fullEnglishName} />
                                                 <DetailItem
                                                     icon={Globe}
                                                     label="Korean Name"
@@ -1223,6 +1225,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     onChange={handleChange}
                                                     theme={theme}
                                                     onAction={() => handleSpeak(formData.koreanName, 'ko-KR')}
+                                                    highlighted={highlightedChanges?.koreanName}
                                                 />
                                                 <DetailItem
                                                     icon={Globe}
@@ -1233,8 +1236,9 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     onChange={handleChange}
                                                     theme={theme}
                                                     onAction={() => handleSpeak(formData.thaiName, 'th-TH')}
+                                                    highlighted={highlightedChanges?.thaiName}
                                                 />
-                                                <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.otherNames} />
                                                 {!editMode && (
                                                     <DetailItem 
                                                         icon={Users} 
@@ -1245,11 +1249,12 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                             onGroupClick(formData.groupId);
                                                             onClose();
                                                         } : undefined}
+                                                        highlighted={highlightedChanges?.group}
                                                     />
                                                 )}
-                                                <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} />
+                                                <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} />
+                                                <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthDate} />
                                             </div>
                                         </div>
 
@@ -1257,8 +1262,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         <div className="space-y-4">
                                             <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Physical Stats</h3>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                                <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
-                                                <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} />
+                                                <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} />
                                             </div>
                                         </div>
 
@@ -1278,8 +1283,9 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         onSearch(formData.company);
                                                         onClose();
                                                     } : undefined}
+                                                    highlighted={highlightedChanges?.company}
                                                 />
-                                                <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
+                                                <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.debutDate} />
                                                 <div className="sm:col-span-2 space-y-2">
                                                     <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
                                                     <input
@@ -1289,7 +1295,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                             "w-full rounded-2xl p-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold",
                                                             theme === 'dark'
                                                                 ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
-                                                                : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink"
+                                                                : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink",
+                                                            highlightedChanges?.positions && "border-brand-pink/50 bg-brand-pink/5"
                                                         )}
                                                         placeholder="Lead Vocalist, Main Dancer..."
                                                     />
@@ -1301,8 +1308,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         <div className="space-y-4">
                                             <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Media & Links</h3>
                                             <div className="space-y-4">
-                                            <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} />
-                                            <DetailItem icon={XIcon} label="X URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} />
+                                            <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.instagram} />
+                                            <DetailItem icon={XIcon} label="X URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.twitter} />
                                                 
                                                 {/* Videos Section */}
                                                 <div className="space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
@@ -1353,7 +1360,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                 "w-full rounded-2xl py-4 pl-12 pr-6 border-2 focus:outline-none transition-all text-sm font-bold",
                                                                 theme === 'dark'
                                                                     ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
-                                                                    : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
+                                                                     : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner",
+                                                                highlightedChanges?.image && "border-brand-pink/50 bg-brand-pink/5"
                                                             )}
                                                             placeholder="Paste image URL..."
                                                         />
@@ -1495,8 +1503,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                                        <DetailItem icon={User} label="Stage Name" value={formData.name} theme={theme} />
-                                        <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={User} label="Stage Name" value={formData.name} theme={theme} highlighted={highlightedChanges?.name} />
+                                        <DetailItem icon={User} label="Full Name" value={formData.fullEnglishName} editMode={editMode} name="fullEnglishName" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.fullEnglishName} />
                                         <DetailItem
                                             icon={Globe}
                                             label="Korean Name"
@@ -1506,8 +1514,9 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             onChange={handleChange}
                                             theme={theme}
                                             onAction={() => handleSpeak(formData.koreanName)}
+                                            highlighted={highlightedChanges?.koreanName}
                                         />
-                                        <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.otherNames} />
                                         <DetailItem 
                                             icon={Building2} 
                                             label="Company" 
@@ -1520,11 +1529,12 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 onSearch(formData.company);
                                                 onClose();
                                             } : undefined}
+                                            highlighted={highlightedChanges?.company}
                                         />
-                                        <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} />
-                                        <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} />
-                                        <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} />
-                                        <DetailItem icon={User} label="Age" value={formData.birthDate ? `${calculateAge(formData.birthDate)} years old` : ''} theme={theme} />
+                                        <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} />
+                                        <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} />
+                                        <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthDate} />
+                                        <DetailItem icon={User} label="Age" value={formData.birthDate ? `${calculateAge(formData.birthDate)} years old` : ''} theme={theme} highlighted={highlightedChanges?.birthDate} />
                                         <DetailItem 
                                             icon={Star} 
                                             label="Zodiac" 
@@ -1534,10 +1544,11 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                 onSearch(calculateZodiac(formData.birthDate).split(' ')[0]);
                                                 onClose();
                                             } : undefined}
+                                            highlighted={highlightedChanges?.birthDate}
                                         />
-                                        <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} />
-                                        <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} />
-                                        <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} />
+                                        <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.debutDate} />
+                                        <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} />
+                                        <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} />
 
                                         <div className="sm:col-span-2 space-y-3">
                                             <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
@@ -1555,7 +1566,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         theme === 'dark'
                                                             ? "bg-slate-800 border-white/5 text-slate-300"
                                                             : "bg-white border-slate-200 text-slate-600",
-                                                        onSearch && "cursor-pointer hover:text-brand-pink hover:border-brand-pink/30 hover:bg-brand-pink/5"
+                                                        onSearch && "cursor-pointer hover:text-brand-pink hover:border-brand-pink/30 hover:bg-brand-pink/5",
+                                                        highlightedChanges?.positions && "border-brand-pink/50 bg-brand-pink/5"
                                                     )}>
                                                         {p}
                                                     </button>
@@ -1663,7 +1675,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         href={formData.instagram}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
+                                                        className={cn(
+                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                            highlightedChanges?.instagram && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
+                                                        )}
                                                     >
                                                         <Instagram size={20} /> Instagram
                                                     </a>
@@ -1673,7 +1688,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         href={formData.twitter}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95"
+                                                        className={cn(
+                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                            highlightedChanges?.twitter && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
+                                                        )}
                                                     >
                                                         <XIcon size={20} /> X
                                                     </a>
@@ -1715,6 +1733,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     </div>
                                 )}
                             </div>
+                            )}
 
                             {/* Discography Tab Content */}
                             {!editMode && activeTab === 'discography' && (
@@ -2314,7 +2333,7 @@ function calculateZodiac(dateString) {
     return null;
 }
 
-function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick }) {
+function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick, highlighted }) {
     if (editMode) {
         return (
             <div className="space-y-2"> 
@@ -2327,14 +2346,14 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                     name={name}
                     value={value || ''}
                     onChange={onChange}
-                    className={cn("w-full rounded-2xl py-3 px-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink" : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink")}
+                    className={cn("w-full rounded-2xl py-3 px-4 transition-all duration-300 focus:outline-none border-2 text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink" : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink", highlighted && "border-brand-pink/50 bg-brand-pink/5")}
                 />
             </div>
         );
     }
 
     return (
-        <div className="group/detail">
+        <div className={cn("group/detail p-2 rounded-xl transition-colors", highlighted && "bg-brand-pink/10 border border-brand-pink/20")}>
             <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
                 <Icon size={12} className="group-hover/detail:text-brand-pink transition-colors" />
                 {label}
@@ -2345,7 +2364,7 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                         type="button"
                         onClick={onClick}
                         className={cn(
-                            "font-black text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 group/link",
+                            "font-black text-base md:text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 group/link",
                             theme === 'dark' ? "text-slate-100" : "text-slate-900"
                         )}
                         title="Click to search"
@@ -2355,7 +2374,7 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                     </button>
                 ) : (
                     <p className={cn(
-                        "font-black text-lg transition-colors group-hover/detail:text-brand-pink",
+                        "font-black text-base md:text-lg transition-colors group-hover/detail:text-brand-pink",
                         theme === 'dark' ? "text-slate-100" : "text-slate-900"
                     )}>
                         {value || '-'}

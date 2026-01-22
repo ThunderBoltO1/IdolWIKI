@@ -17,6 +17,7 @@ import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
 import { deleteImage, uploadImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { logAudit } from '../lib/audit';
 import { BackToTopButton } from './BackToTopButton';
 
 const XIcon = ({ size = 24, className }) => (
@@ -831,6 +832,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 status: 'pending',
                 changes: groupChanges,
                 reason: editReason
+            });
+            await logAudit({
+                action: 'submit_update',
+                targetType: 'group',
+                targetId: displayGroup.id,
+                user: user,
+                details: { changes: groupChanges, reason: editReason, requestId: docRef.id }
             });
             setShowReasonModal(false);
             setIsEditing(false);

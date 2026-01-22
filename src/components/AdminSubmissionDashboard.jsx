@@ -4,7 +4,7 @@ import { Check, X, Clock, User, FileText, AlertCircle, ChevronRight, Eye } from 
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, addDoc, serverTimestamp, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
     approvePendingIdol,
@@ -13,8 +13,10 @@ import {
     rejectPendingSubmission
 } from '../lib/pendingSubmissions';
 import { IdolCard } from './IdolCard';
+import { IdolModal } from './IdolModal';
 import { GroupCard } from './GroupCard';
 import { diffChars } from 'diff';
+import { convertDriveLink } from '../lib/storage';
 
 const DiffViewer = ({ oldStr, newStr }) => {
     const differences = diffChars(oldStr, newStr);
@@ -34,29 +36,42 @@ const DiffViewer = ({ oldStr, newStr }) => {
     );
 };
 
-export function AdminSubmissionDashboard({ onClose }) {
+export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
     const { theme } = useTheme();
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState('idols'); // idols, groups, edits
+    const [activeTab, setActiveTab] = useState(initialTab); // idols, groups, edits
     const [pendingItems, setPendingItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [processingId, setProcessingId] = useState(null);
     const [rejectModalOpen, setRejectModalOpen] = useState(false);
     const [selectedItem, setSelectedItem] = useState(null);
     const [rejectReason, setRejectReason] = useState('');
+    const [error, setError] = useState(null);
+    const [indexWarning, setIndexWarning] = useState(null);
+    const [previewItem, setPreviewItem] = useState(null);
+    const [previewChanges, setPreviewChanges] = useState(null);
 
     useEffect(() => {
-        fetchPendingItems();
-    }, [activeTab]);
+        setActiveTab(initialTab);
+    }, [initialTab]);
+
+    useEffect(() => {
+        if (user) {
+            fetchPendingItems();
+        }
+    }, [activeTab, user]);
 
     const fetchPendingItems = async () => {
         setLoading(true);
-        try {
-            let collectionName = '';
-            if (activeTab === 'idols') collectionName = 'pendingIdols';
-            else if (activeTab === 'groups') collectionName = 'pendingGroups';
-            else if (activeTab === 'edits') collectionName = 'editRequests';
+        setError(null);
+        setIndexWarning(null);
+        
+        let collectionName = '';
+        if (activeTab === 'idols') collectionName = 'pendingIdols';
+        else if (activeTab === 'groups') collectionName = 'pendingGroups';
+        else if (activeTab === 'edits') collectionName = 'editRequests';
 
+        try {
             const q = query(
                 collection(db, collectionName),
                 where('status', '==', 'pending'),
@@ -70,20 +85,31 @@ export function AdminSubmissionDashboard({ onClose }) {
             }));
             setPendingItems(items);
         } catch (error) {
-            console.error("Error fetching pending items:", error);
-            // Fallback for older data or index issues
-            try {
-                const q = query(
-                    collection(db, activeTab === 'idols' ? 'pendingIdols' : activeTab === 'groups' ? 'pendingGroups' : 'editRequests'),
-                    where('status', '==', 'pending')
-                );
-                const snapshot = await getDocs(q);
-                const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // Sort client-side
-                items.sort((a, b) => b.submittedAt?.seconds - a.submittedAt?.seconds);
-                setPendingItems(items);
-            } catch (err) {
-                console.error("Fallback fetch failed", err);
+            if (error.code === 'failed-precondition' && error.message.includes('requires an index')) {
+                console.warn("Firestore index missing. Using fallback query.");
+                const match = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+                if (match) {
+                    setIndexWarning(match[0]);
+                }
+
+                // Fallback for older data or index issues
+                try {
+                    const q = query(
+                        collection(db, collectionName),
+                        where('status', '==', 'pending')
+                    );
+                    const snapshot = await getDocs(q);
+                    const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // Sort client-side
+                    items.sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0));
+                    setPendingItems(items);
+                } catch (err) {
+                    console.error("Fallback fetch failed", err);
+                    setError("Access denied. Missing permissions to view submissions.");
+                }
+            } else {
+                console.error("Error fetching pending items:", error);
+                setError(error.message);
             }
         } finally {
             setLoading(false);
@@ -108,13 +134,38 @@ export function AdminSubmissionDashboard({ onClose }) {
             setPendingItems(prev => prev.filter(i => i.id !== item.id));
 
             // Create notification for approval
-            if (item.submitterId) {
+            const recipientId = item.submittedBy || item.submitterId;
+            if (recipientId) {
                 try {
+                    let targetId = item.id;
+                    let targetType = 'idol';
+                    let title = 'Submission Approved';
+                    let message = 'Your submission has been approved.';
+
+                    if (activeTab === 'idols') {
+                        targetId = result.idolId;
+                        targetType = 'idol';
+                        title = 'Idol Approved';
+                        message = `Your submission for ${item.name} has been approved!`;
+                    } else if (activeTab === 'groups') {
+                        targetId = result.groupId;
+                        targetType = 'group';
+                        title = 'Group Approved';
+                        message = `Your submission for ${item.name} has been approved!`;
+                    } else if (activeTab === 'edits') {
+                        targetId = item.targetId;
+                        targetType = item.targetType;
+                        title = 'Edit Request Approved';
+                        message = `Your edit request for ${item.targetName || 'Group/Idol'} has been approved.`;
+                    }
+
                     await addDoc(collection(db, 'notifications'), {
-                        recipientId: item.submitterId,
+                        recipientId: recipientId,
                         type: 'system',
-                        title: 'Edit Request Approved',
-                        message: `Your edit request for ${item.targetName || 'Group/Idol'} has been approved.`,
+                        title: title,
+                        message: message,
+                        targetId: targetId,
+                        targetType: targetType,
                         read: false,
                         createdAt: serverTimestamp()
                     });
@@ -150,10 +201,11 @@ export function AdminSubmissionDashboard({ onClose }) {
             setPendingItems(prev => prev.filter(i => i.id !== selectedItem.id));
             
             // Create notification for rejection
-            if (selectedItem.submitterId) {
+            const recipientId = selectedItem.submittedBy || selectedItem.submitterId;
+            if (recipientId) {
                 try {
                     await addDoc(collection(db, 'notifications'), {
-                        recipientId: selectedItem.submitterId,
+                        recipientId: recipientId,
                         type: 'system',
                         title: 'Edit Request Rejected',
                         message: `Your edit request for ${selectedItem.targetName || 'Group/Idol'} was rejected. Reason: ${rejectReason}`,
@@ -170,6 +222,57 @@ export function AdminSubmissionDashboard({ onClose }) {
             alert('Error rejecting: ' + result.error);
         }
         setProcessingId(null);
+    };
+
+    const handlePreviewSave = async (updatedData) => {
+        try {
+            if (activeTab === 'idols' && previewItem) {
+                await updateDoc(doc(db, 'pendingIdols', previewItem.id), updatedData);
+                setPendingItems(prev => prev.map(item => item.id === previewItem.id ? { ...item, ...updatedData } : item));
+                setPreviewItem(null);
+                setPreviewChanges(null);
+                alert('Pending submission updated.');
+            }
+        } catch (error) {
+            console.error("Error updating pending submission:", error);
+            alert("Failed to update.");
+        }
+    };
+
+    const handleViewDetails = async (item) => {
+        if (activeTab === 'idols') {
+            setPreviewItem(item);
+            setPreviewChanges(null);
+        } else if (activeTab === 'edits' && item.targetType === 'idol') {
+            setLoading(true);
+            try {
+                const docRef = doc(db, 'idols', item.targetId);
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const originalData = { id: docSnap.id, ...docSnap.data() };
+                    const mergedData = { ...originalData };
+                    
+                    // Apply changes for preview
+                    if (item.changes) {
+                        Object.keys(item.changes).forEach(key => {
+                            if (item.changes[key] && item.changes[key].new !== undefined) {
+                                mergedData[key] = item.changes[key].new;
+                            }
+                        });
+                    }
+                    
+                    setPreviewItem(mergedData);
+                    setPreviewChanges(item.changes);
+                } else {
+                    alert("Original idol not found");
+                }
+            } catch (error) {
+                console.error("Error fetching original idol:", error);
+                alert("Failed to load details");
+            } finally {
+                setLoading(false);
+            }
+        }
     };
 
     return (
@@ -238,123 +341,166 @@ export function AdminSubmissionDashboard({ onClose }) {
                                 className="w-8 h-8 border-2 border-brand-pink border-t-transparent rounded-full"
                             />
                         </div>
-                    ) : pendingItems.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
-                            <Check size={48} className="opacity-20" />
-                            <p className="font-medium">All caught up! No pending submissions.</p>
+                    ) : error ? (
+                        <div className="flex flex-col items-center justify-center h-full text-red-500 gap-4">
+                            <AlertCircle size={48} className="opacity-50" />
+                            <p className="font-bold">{error}</p>
+                            <p className="text-sm text-slate-500">Check your Firestore Security Rules.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {pendingItems.map(item => (
-                                <motion.div
-                                    key={item.id}
-                                    layout
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className={cn(
-                                        "rounded-2xl overflow-hidden border relative flex flex-col",
-                                        theme === 'dark' ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-200"
-                                    )}
-                                >
-                                    {/* Item Preview */}
-                                    {activeTab === 'edits' ? (
-                                        <div className="p-4 border-b border-white/5 bg-brand-purple/5">
-                                            <div className="flex items-center gap-2 mb-2">
-                                                <AlertCircle size={16} className="text-brand-pink" />
-                                                <span className="text-xs font-bold uppercase tracking-widest text-brand-pink">Edit Request</span>
-                                            </div>
-                                            <h3 className={cn("font-bold text-lg", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                                                {item.targetName || 'Unknown Target'}
-                                            </h3>
-                                            <p className="text-xs text-slate-500 mt-1 uppercase">Target: {item.targetType}</p>
-                                        </div>
-                                    ) : (
-                                        <div className="aspect-video relative overflow-hidden bg-slate-800">
-                                            {item.image || item.coverImage ? (
-                                                <img
-                                                    src={item.image || item.coverImage}
-                                                    alt={item.name}
-                                                    className="w-full h-full object-cover"
-                                                />
+                        <>
+                            {indexWarning && (
+                                <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-start gap-3 text-yellow-600 dark:text-yellow-400">
+                                    <AlertCircle size={20} className="shrink-0 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="font-bold text-sm">Missing Index</p>
+                                        <p className="text-xs mt-1 opacity-80">
+                                            A Firestore index is required for sorting. 
+                                            <a href={indexWarning} target="_blank" rel="noopener noreferrer" className="underline ml-1 hover:text-yellow-500">
+                                                Click here to create it
+                                            </a>.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {pendingItems.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-4">
+                                    <Check size={48} className="opacity-20" />
+                                    <p className="font-medium">All caught up! No pending submissions.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {pendingItems.map(item => (
+                                        <motion.div
+                                            key={item.id}
+                                            layout
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className={cn(
+                                                "rounded-2xl overflow-hidden border relative flex flex-col",
+                                                theme === 'dark' ? "bg-white/5 border-white/5" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        >
+                                            {/* Item Preview */}
+                                            {activeTab === 'edits' ? (
+                                                <div className="p-4 border-b border-white/5 bg-brand-purple/5">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <AlertCircle size={16} className="text-brand-pink" />
+                                                        <span className="text-xs font-bold uppercase tracking-widest text-brand-pink">Edit Request</span>
+                                                    </div>
+                                                    <h3 className={cn("font-bold text-lg", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                        {item.targetName || 'Unknown Target'}
+                                                    </h3>
+                                                    <p className="text-xs text-slate-500 mt-1 uppercase">Target: {item.targetType}</p>
+                                                </div>
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-slate-600">
-                                                    No Image
+                                                <div className="aspect-video relative overflow-hidden bg-slate-800">
+                                                    {item.image || item.coverImage ? (
+                                                        <img
+                                                            src={convertDriveLink(item.image || item.coverImage)}
+                                                            alt={item.name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-slate-600">
+                                                            No Image
+                                                        </div>
+                                                    )}
+                                                    <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/80 to-transparent">
+                                                        <h3 className="text-white font-bold text-lg truncate">{item.name}</h3>
+                                                    </div>
                                                 </div>
                                             )}
-                                            <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/80 to-transparent">
-                                                <h3 className="text-white font-bold text-lg truncate">{item.name}</h3>
-                                            </div>
-                                        </div>
-                                    )}
 
-                                    {/* Details */}
-                                    <div className="p-4 flex-1 space-y-4">
-                                        {/* Submitter Info */}
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center text-brand-pink">
-                                                <User size={14} />
-                                            </div>
-                                            <div>
-                                                <p className={cn("text-xs font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                                                    {item.submitterName || 'Unknown User'}
-                                                </p>
-                                                <p className="text-[10px] text-slate-500">{item.submitterEmail}</p>
-                                            </div>
-                                        </div>
+                                            {/* Details */}
+                                            <div className="p-4 flex-1 space-y-4">
+                                                {/* Submitter Info */}
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center text-brand-pink overflow-hidden">
+                                                        {item.submitterAvatar ? (
+                                                            <img 
+                                                                src={convertDriveLink(item.submitterAvatar)} 
+                                                                alt={item.submitterName} 
+                                                                className="w-full h-full object-cover"
+                                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                                            />
+                                                        ) : (
+                                                            <User size={14} />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className={cn("text-xs font-bold", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                                            {item.submitterName || 'Unknown User'}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-500">{item.submitterEmail}</p>
+                                                    </div>
+                                                </div>
 
-                                        {/* Edit Details (Diff) */}
-                                        {activeTab === 'edits' && (
-                                            <div className="bg-black/20 rounded-lg p-3 text-xs space-y-2">
-                                                <p className="text-slate-400 font-mono">Reason: <span className="text-white">{item.reason}</span></p>
-                                                <div className="border-t border-white/10 pt-2 mt-2">
-                                                    <p className="text-brand-pink font-bold mb-2">Changes:</p>
-                                                    {Object.entries(item.changes || {}).map(([key, val]) => (
-                                                        <div key={key} className="flex flex-col gap-1 mb-2">
-                                                            <span className="text-slate-500 uppercase text-[10px]">{key}</span>
-                                                            {key === 'description' ? (
-                                                                <DiffViewer oldStr={val.old?.toString() || ''} newStr={val.new?.toString() || ''} />
-                                                            ) : (
-                                                                <div className="grid grid-cols-2 gap-2">
-                                                                    <div className="bg-red-500/10 text-red-400 p-2 rounded line-through opacity-70 break-words text-xs">
-                                                                        {val.old?.toString() || 'None'}
-                                                                    </div>
-                                                                    <div className="bg-green-500/10 text-green-400 p-2 rounded break-words text-xs">{val.new?.toString() || 'None'}</div>
+                                                {/* Edit Details (Diff) */}
+                                                {activeTab === 'edits' && (
+                                                    <div className="bg-black/20 rounded-lg p-3 text-xs space-y-2">
+                                                        <p className="text-slate-400 font-mono">Reason: <span className="text-white">{item.reason}</span></p>
+                                                        <div className="border-t border-white/10 pt-2 mt-2">
+                                                            <p className="text-brand-pink font-bold mb-2">Changes:</p>
+                                                            {Object.entries(item.changes || {}).map(([key, val]) => (
+                                                                <div key={key} className="flex flex-col gap-1 mb-2">
+                                                                    <span className="text-slate-500 uppercase text-[10px]">{key}</span>
+                                                                    {key === 'description' ? (
+                                                                        <DiffViewer oldStr={val.old?.toString() || ''} newStr={val.new?.toString() || ''} />
+                                                                    ) : (
+                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                            <div className="bg-red-500/10 text-red-400 p-2 rounded line-through opacity-70 break-words text-xs">
+                                                                                {val.old?.toString() || 'None'}
+                                                                            </div>
+                                                                            <div className="bg-green-500/10 text-green-400 p-2 rounded break-words text-xs">{val.new?.toString() || 'None'}</div>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            )}
+                                                            ))}
                                                         </div>
-                                                    ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Timestamp */}
+                                                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                                                    <Clock size={12} />
+                                                    <span>Submitted {item.submittedAt?.toDate().toLocaleString()}</span>
                                                 </div>
                                             </div>
-                                        )}
 
-                                        {/* Timestamp */}
-                                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                                            <Clock size={12} />
-                                            <span>Submitted {item.submittedAt?.toDate().toLocaleString()}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="p-4 border-t border-white/5 grid grid-cols-2 gap-3">
-                                        <button
-                                            onClick={() => handleRejectClick(item)}
-                                            disabled={processingId === item.id}
-                                            className="py-2.5 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 font-bold text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                        >
-                                            <X size={14} /> Reject
-                                        </button>
-                                        <button
-                                            onClick={() => handleApprove(item)}
-                                            disabled={processingId === item.id}
-                                            className="py-2.5 rounded-xl bg-green-500 text-white hover:bg-green-600 font-bold text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-lg shadow-green-500/20"
-                                        >
-                                            {processingId === item.id ? <Clock size={14} className="animate-spin" /> : <Check size={14} />}
-                                            Approve
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
+                                            {/* Actions */}
+                                            <div className="p-4 border-t border-white/5 grid grid-cols-2 gap-3">
+                                                {(activeTab === 'idols' || (activeTab === 'edits' && item.targetType === 'idol')) && (
+                                                    <button
+                                                        onClick={() => handleViewDetails(item)}
+                                                        className="col-span-2 py-2.5 rounded-xl border border-slate-500/30 text-slate-500 hover:bg-slate-500/10 font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                                                    >
+                                                        <Eye size={14} /> View Full Details
+                                                    </button>
+                                                )}
+                                                
+                                                <button
+                                                    onClick={() => handleRejectClick(item)}
+                                                    disabled={processingId === item.id}
+                                                    className="py-2.5 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 font-bold text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                                >
+                                                    <X size={14} /> Reject
+                                                </button>
+                                                <button
+                                                    onClick={() => handleApprove(item)}
+                                                    disabled={processingId === item.id}
+                                                    className="py-2.5 rounded-xl bg-green-500 text-white hover:bg-green-600 font-bold text-xs flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-lg shadow-green-500/20"
+                                                >
+                                                    {processingId === item.id ? <Clock size={14} className="animate-spin" /> : <Check size={14} />}
+                                                    Approve
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             </motion.div>
@@ -402,6 +548,21 @@ export function AdminSubmissionDashboard({ onClose }) {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Preview Modal for Idols */}
+            {previewItem && (
+                <IdolModal
+                    isOpen={true}
+                    mode="view"
+                    idol={previewItem}
+                    highlightedChanges={previewChanges}
+                    onClose={() => { setPreviewItem(null); setPreviewChanges(null); }}
+                    onSave={handlePreviewSave}
+                    onDelete={() => {}}
+                    onLike={() => {}}
+                    onGroupClick={() => {}}
+                />
+            )}
         </div>
     );
 }

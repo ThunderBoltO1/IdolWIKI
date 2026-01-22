@@ -79,7 +79,7 @@ export function ImageCropper({ imageSrc, onCropComplete, onCancel, aspect = 1 })
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.9, y: 20 }}
                     className={cn(
-                        "relative w-full max-w-2xl h-[70vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col",
+                        "relative w-full max-w-2xl h-[60dvh] md:h-[70vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col",
                         theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white"
                     )}
                 >

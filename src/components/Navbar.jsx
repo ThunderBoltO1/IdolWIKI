@@ -28,7 +28,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     onClick={onHomeClick}
                     aria-label="Go to home"
                 >
-                    <img src="/IDOLWIKIPIC/Idolwiki-2.png" alt="Logo" className="w-8 h-8 md:w-10 md:h-10 transition-transform group-hover:scale-140" />
+                    <img src="https://firebasestorage.googleapis.com/v0/b/idolwiki-490f9.firebasestorage.app/o/Idolwiki-2.png?alt=media" alt="IdolWiki Logo" className="w-8 h-8 object-contain" />
                     <span className={cn(
                         "text-lg md:text-xl font-bold tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"

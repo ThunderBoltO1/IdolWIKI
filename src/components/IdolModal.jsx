@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
 import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -168,6 +169,20 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         });
         return () => unsubscribe();
     }, [idol?.id, user]);
+
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        };
+    }, [isOpen]);
 
     useEffect(() => {
         if (isOpen) {
@@ -789,16 +804,16 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const rootComments = comments.filter(c => !c.parentId);
     const getReplies = (parentId) => comments.filter(c => c.parentId === parentId).sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
 
-    return (
+    return createPortal(
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-hidden">
+            <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 overflow-hidden">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={onClose}
                     className={cn(
-                        "absolute inset-0 backdrop-blur-md",
+                        "absolute inset-0 backdrop-blur-md touch-none",
                         theme === 'dark' ? "bg-slate-950/80" : "bg-slate-900/40"
                     )}
                 />
@@ -809,7 +824,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                             initial={{ opacity: 0, x: 100, scale: 0.9 }}
                             animate={{ opacity: 1, x: 0, scale: 1 }}
                             exit={{ opacity: 0, x: 100, scale: 0.9 }}
-                            className="fixed top-8 right-8 z-[60] bg-emerald-500 text-white pl-6 pr-3 py-3 rounded-2xl shadow-[0_20px_50px_-12px_rgba(16,185,129,0.5)] flex items-center justify-between gap-4 font-black uppercase text-xs tracking-widest border border-white/20 backdrop-blur-xl"
+                            className="fixed top-8 right-8 z-[110] bg-emerald-500 text-white pl-6 pr-3 py-3 rounded-2xl shadow-[0_20px_50px_-12px_rgba(16,185,129,0.5)] flex items-center justify-between gap-4 font-black uppercase text-xs tracking-widest border border-white/20 backdrop-blur-xl"
                         >
                             <div className="flex items-center gap-3">
                                 <div className="p-1.5 bg-white/20 rounded-full">
@@ -1023,7 +1038,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     </div>
 
                     {/* Right Column: Details or Form */}
-                    <div ref={scrollContainerRef} className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col">
+                    <div ref={scrollContainerRef} className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col overscroll-contain">
                         <div className="flex justify-between items-start mb-10">
                             <div className="flex-1 mr-4">
                                 {editMode ? (
@@ -1048,16 +1063,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     theme === 'dark' ? "text-brand-pink border-white/5" : "text-brand-pink border-slate-100"
                                                 )}
                                                 placeholder="Group Name"
-                                            />
-                                            <input
-                                                name="groupId"
-                                                value={formData.groupId || ''}
-                                                onChange={handleChange}
-                                                className={cn(
-                                                    "bg-transparent text-xs font-mono border-b w-full focus:outline-none",
-                                                    theme === 'dark' ? "text-slate-600 border-white/5" : "text-slate-400 border-slate-100"
-                                                )}
-                                                placeholder="group-id-slug"
                                             />
                                         </div>
                                     </div>
@@ -2248,7 +2253,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }
 

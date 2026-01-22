@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -28,7 +29,21 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
         }
     }, [isOpen]);
 
-    return (
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        };
+    }, [isOpen]);
+
+    return createPortal(
         <AnimatePresence>
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                 <motion.div
@@ -36,7 +51,7 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={onClose}
-                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm touch-none"
                 />
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -84,6 +99,7 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
                     </div>
                 </motion.div>
             </div>
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }

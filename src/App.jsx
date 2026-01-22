@@ -258,11 +258,14 @@ function AppContent() {
           return;
         }
 
-        const docRef = await addDoc(collection(db, 'idols'), newIdol);
+        // Create ID from Stage Name (slugify)
+        const idolId = newIdol.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const idolRef = doc(db, 'idols', idolId);
+        await setDoc(idolRef, newIdol);
 
         if (user) {
           await addDoc(collection(db, 'auditLogs'), {
-            targetId: docRef.id,
+            targetId: idolId,
             targetType: 'idol',
             action: 'create',
             userId: user.uid,

@@ -90,8 +90,11 @@ export async function approvePendingIdol(pendingId, adminUser, reviewNotes = '')
         const pendingData = pendingSnap.data();
         const { submittedBy, submitterName, submitterEmail, status, submittedAt, reviewedAt, reviewedBy, reviewNotes: oldNotes, ...idolData } = pendingData;
 
+        // Create idol ID from Stage Name (slugify)
+        const idolId = idolData.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
         // Add to main idols collection
-        const idolRef = await addDoc(collection(db, 'idols'), {
+        await setDoc(doc(db, 'idols', idolId), {
             ...idolData,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -106,13 +109,13 @@ export async function approvePendingIdol(pendingId, adminUser, reviewNotes = '')
             reviewedBy: adminUser.uid || adminUser.id,
             reviewerName: adminUser.name || adminUser.email,
             reviewNotes,
-            approvedIdolId: idolRef.id
+            approvedIdolId: idolId
         });
 
         // Create audit log
         await addDoc(collection(db, 'auditLogs'), {
             action: 'approve_pending_idol',
-            targetId: idolRef.id,
+            targetId: idolId,
             targetType: 'idol',
             userId: adminUser.uid || adminUser.id,
             userName: adminUser.name || adminUser.email,
@@ -121,7 +124,7 @@ export async function approvePendingIdol(pendingId, adminUser, reviewNotes = '')
             createdAt: serverTimestamp()
         });
 
-        return { success: true, idolId: idolRef.id };
+        return { success: true, idolId };
     } catch (error) {
         console.error('Error approving pending idol:', error);
         return { success: false, error: error.message };

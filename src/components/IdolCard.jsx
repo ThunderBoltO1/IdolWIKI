@@ -35,8 +35,8 @@ export function IdolCard({ idol, onLike, onClick, searchTerm }) {
         >
             <div className="absolute top-5 left-5 z-20 flex flex-col gap-2 items-start">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
-                    {idol.group ? <Users size={12} className="text-brand-pink" /> : <Music size={12} className="text-brand-purple" />}
-                    <span>{idol.group ? 'Member' : 'Soloist'}</span>
+                    {idol.group ? <Users size={20} className="text-brand-pink" /> : <Users size={20} className="text-brand-pink" />}
+                    <span>{idol.group ? 'Group' : 'Soloist'}</span>
                 </div>
                 {idol.status === 'Inactive' && (
                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/80 backdrop-blur-md border border-red-400/30 text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
@@ -97,12 +97,12 @@ export function IdolCard({ idol, onLike, onClick, searchTerm }) {
 
                 <div className="mt-8 flex items-center justify-between">
                     <div className="flex gap-3 flex-wrap">
-                        {idol.group && (
+                        {idol.group ? (
                             <div className="flex items-center gap-2 text-xs text-white font-black uppercase tracking-widest bg-white/10 backdrop-blur-2xl px-4 py-2 rounded-2xl border border-white/20">
                                 <Users size={12} className="text-brand-pink" />
                                 <span>{idol.group}</span>
                             </div>
-                        )}
+                        ) :null}
                     </div>
                     <div className="p-4 rounded-full bg-brand-pink text-white shadow-[0_10px_30px_-5px_rgba(255,51,153,0.5)] scale-0 group-hover:scale-100 transition-transform duration-500">
                         <ChevronRight size={24} />

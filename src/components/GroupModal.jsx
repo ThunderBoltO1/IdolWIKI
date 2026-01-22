@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon, GripVertical, Heart } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -17,7 +18,7 @@ const XIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-function DateSelect({ value, onChange, theme }) {
+function DateSelect({ value, onChange, theme, label }) {
     const date = value ? new Date(value) : new Date();
     const [year, setYear] = useState(value ? date.getFullYear() : '');
     const [month, setMonth] = useState(value ? date.getMonth() + 1 : '');
@@ -56,7 +57,7 @@ function DateSelect({ value, onChange, theme }) {
 
     return (
         <div className="space-y-2">
-            <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+            <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-4s00")}>
                 <Calendar size={12} /> {label}
             </label>
             <div className="flex gap-2">
@@ -130,6 +131,20 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         show: '',
         award: ''
     });
+
+    useEffect(() => {
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+            document.documentElement.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+        };
+    }, [isOpen]);
 
     useEffect(() => {
         if (isOpen) {
@@ -312,16 +327,16 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
 
     if (!isOpen) return null;
 
-    return (
+    return createPortal(
         <AnimatePresence>
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     onClick={onClose}
                     className={cn(
-                        "absolute inset-0 backdrop-blur-md",
+                        "absolute inset-0 backdrop-blur-md touch-none",
                         theme === 'dark' ? "bg-slate-950/80" : "bg-slate-900/40"
                     )}
                 />
@@ -343,7 +358,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="p-6 md:p-8 overflow-y-auto custom-scrollbar space-y-6">
+                    <form onSubmit={handleSubmit} className="p-6 md:p-8 overflow-y-auto custom-scrollbar space-y-6 overscroll-contain">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <InputGroup label="Group Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLACKPINK" required />
                             <InputGroup label="Korean Name" value={formData.koreanName} onChange={e => setFormData({...formData, koreanName: e.target.value})} theme={theme} icon={Globe} placeholder="e.g. 블랙핑크" />
@@ -381,7 +396,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                             </div>
 
                             <InputGroup label="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
-                            <DateSelect value={formData.debutDate} onChange={val => setFormData({...formData, debutDate: val})} theme={theme} />
+                            <DateSelect label="Debut Date" value={formData.debutDate} onChange={val => setFormData({...formData, debutDate: val})} theme={theme} />
                             <InputGroup label="Fanclub Name" value={formData.fanclub} onChange={e => setFormData({...formData, fanclub: e.target.value})} theme={theme} icon={Users} placeholder="e.g. BLINK" />
                             
                             <div className="space-y-2">
@@ -683,7 +698,8 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                     }}
                 />
             )}
-        </AnimatePresence>
+        </AnimatePresence>,
+        document.body
     );
 }
 

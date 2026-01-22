@@ -72,6 +72,10 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         ];
 
         return items.sort((a, b) => {
+            // Prioritize favorites
+            if (a.isFavorite && !b.isFavorite) return -1;
+            if (!a.isFavorite && b.isFavorite) return 1;
+
             switch (sortBy) {
                 case 'name_asc':
                     return a.name.localeCompare(b.name);

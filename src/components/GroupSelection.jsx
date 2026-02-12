@@ -22,7 +22,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
     const [companySearch, setCompanySearch] = useState('');
 
     useEffect(() => {
-        setVisibleCount(12);
+        setVisibleCount(24);
     }, [viewMode, searchTerm, selectedCompany]);
 
     const debutYears = useMemo(() => {
@@ -134,10 +134,10 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     // Debounce/Throttle to prevent freezing
                     setTimeout(() => {
                         setVisibleCount(prev => prev + 24);
-                    }, 100);
+                    }, 50);
                 }
             },
-            { threshold: 0, rootMargin: '200px' }
+            { threshold: 0, rootMargin: '400px' }
         );
 
         if (loadMoreRef.current) observer.observe(loadMoreRef.current);

@@ -1,4 +1,4 @@
-export function convertDriveLink(url) {
+export function convertDriveLink(url, width = 1000) {
   if (!url) return null;
   const trimmed = String(url).trim();
   if (!trimmed) return null;
@@ -22,7 +22,8 @@ export function convertDriveLink(url) {
     if (!id) return trimmed;
 
     // Use Google image CDN style URL for better performance
-    return `https://lh3.googleusercontent.com/d/${id}=w1000`;
+    // w{width} param allows requesting specific width
+    return `https://lh3.googleusercontent.com/d/${id}=w${width}`;
   } catch {
     return trimmed;
   }

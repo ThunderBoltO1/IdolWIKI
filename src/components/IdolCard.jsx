@@ -76,7 +76,7 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: imageLoaded ? 1 : 0 }}
                 transition={{ duration: 0.5 }}
-                src={convertDriveLink(idol.image)}
+                src={convertDriveLink(idol.image, 600)}
                 alt={idol.name}
                 className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"

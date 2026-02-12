@@ -98,7 +98,7 @@ export const ProfilePage = ({ onBack }) => {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={cn(
-                    "w-full max-w-2xl p-8 md:p-12 rounded-[40px] relative overflow-hidden transition-all duration-500",
+                    "w-full max-w-2xl p-6 md:p-12 rounded-[40px] relative overflow-hidden transition-all duration-500",
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
@@ -115,7 +115,7 @@ export const ProfilePage = ({ onBack }) => {
 
                 <div className="text-center mb-12 relative z-10">
                     <h2 className={cn(
-                        "text-4xl font-black mb-3 tracking-tight",
+                        "text-3xl md:text-4xl font-black mb-3 tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}>Profile Settings</h2>
                     <p className={cn(
@@ -199,7 +199,7 @@ export const ProfilePage = ({ onBack }) => {
                                         }, 1);
                                     }}
                                     className={cn(
-                                        "w-full rounded-[20px] py-4 px-5 focus:outline-none border-2 transition-all text-sm font-bold",
+                                        "w-full rounded-[20px] py-3 sm:py-4 px-5 focus:outline-none border-2 transition-all text-sm font-bold",
                                         theme === 'dark'
                                             ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                                             : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
@@ -258,7 +258,7 @@ export const ProfilePage = ({ onBack }) => {
                             type="submit"
                             disabled={loading}
                             className={cn(
-                                "w-full md:w-auto px-16 py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.2em] text-white shadow-2xl transition-all flex items-center gap-3 justify-center overflow-hidden relative group active:scale-95",
+                                "w-full md:w-auto px-16 py-3 sm:py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.2em] text-white shadow-2xl transition-all flex items-center gap-3 justify-center overflow-hidden relative group active:scale-95",
                                 "bg-gradient-to-r from-brand-purple via-brand-pink to-brand-blue",
                                 loading && "opacity-70 cursor-not-allowed"
                             )}
@@ -322,7 +322,7 @@ function InputGroup({ icon: Icon, label, value, onChange, theme, placeholder, ty
                 value={value}
                 onChange={onChange}
                 className={cn(
-                    "w-full rounded-[20px] py-4 px-5 focus:outline-none border-2 transition-all text-sm font-bold",
+                    "w-full rounded-[20px] py-3 sm:py-4 px-5 focus:outline-none border-2 transition-all text-sm font-bold",
                     isMono && "font-mono text-xs",
                     theme === 'dark'
                         ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"

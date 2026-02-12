@@ -438,7 +438,7 @@ export function IdolDetailPage() {
   if (!idol) return null;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
+    <div className="max-w-6xl mx-auto px-4 py-6 md:py-10 space-y-8 md:space-y-10">
       <BackgroundShapes image={idol.image} />
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -532,10 +532,10 @@ export function IdolDetailPage() {
             </div>
           </div>
 
-          <div className="md:col-span-7 p-8 md:p-10 space-y-6">
+          <div className="md:col-span-7 p-6 md:p-10 space-y-6">
             <div>
               <p className={cn('text-xs font-black uppercase tracking-[0.25em]', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Artist</p>
-              <h1 className={cn('text-3xl md:text-6xl font-black tracking-tight mt-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
+              <h1 className={cn('text-2xl sm:text-4xl md:text-6xl font-black tracking-tight mt-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <div className={cn(
                   'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border',
@@ -585,7 +585,7 @@ export function IdolDetailPage() {
             <div className="space-y-2">
               <p className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Profile</p>
               <div className={cn(
-                'rounded-3xl border p-6',
+                'rounded-3xl border p-5 md:p-6',
                 theme === 'dark' ? 'border-white/10 bg-slate-950/30 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-700'
               )}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-medium">
@@ -648,7 +648,7 @@ export function IdolDetailPage() {
       {/* Videos Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h2 className={cn('text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+          <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
             <Youtube size={20} /> Featured Videos
           </h2>
           {isEditingWorks && (
@@ -752,7 +752,7 @@ export function IdolDetailPage() {
 
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h2 className={cn('text-xl font-black uppercase tracking-widest', theme === 'dark' ? 'text-white' : 'text-slate-900')}>Discography</h2>
+          <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest', theme === 'dark' ? 'text-white' : 'text-slate-900')}>Discography</h2>
           {isEditingWorks && (
             <button
               type="button"
@@ -932,7 +932,7 @@ export function IdolDetailPage() {
       {/* Gallery Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
-          <h2 className={cn('text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+          <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
             <ImageIcon size={20} /> Gallery
           </h2>
           {isEditingWorks && (

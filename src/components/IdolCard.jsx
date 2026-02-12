@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { convertDriveLink } from '../lib/storage';
 import { Highlight } from './Highlight';
 
-export function IdolCard({ idol, onLike, onClick, searchTerm, onEdit }) {
+export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [imageLoaded, setImageLoaded] = useState(false);
@@ -78,7 +78,7 @@ export function IdolCard({ idol, onLike, onClick, searchTerm, onEdit }) {
                 transition={{ duration: 0.5 }}
                 src={convertDriveLink(idol.image)}
                 alt={idol.name}
-                className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"
                 decoding="async"
                 onLoad={() => setImageLoaded(true)}
@@ -91,28 +91,35 @@ export function IdolCard({ idol, onLike, onClick, searchTerm, onEdit }) {
                     : "from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-60"
             )} />
 
-            <div className="absolute inset-0 p-5 md:p-8 flex flex-col justify-end translate-z-10 mt-10">
-                <div className="space-y-2">
-                    <motion.p className="text-brand-pink font-black text-xs tracking-[0.3em] uppercase mb-1 truncate">
-                        <Highlight text={idol.company} highlight={searchTerm} />
-                    </motion.p>
-                    <h3 className="text-2xl md:text-4xl font-black text-white group-hover:text-brand-pink mb-1 transition-colors tracking-tight line-clamp-2 break-words">
-                        <Highlight text={idol.name} highlight={searchTerm} />
-                    </h3>
-                    <p className="text-slate-300 font-bold tracking-widest text-xs uppercase opacity-80">{idol.koreanName}</p>
-                </div>
-
-                <div className="mt-8 flex items-center justify-between">
-                    <div className="flex gap-3 flex-wrap">
-                        {idol.group ? (
-                            <div className="flex items-center gap-2 text-xs text-white font-black uppercase tracking-widest bg-white/10 backdrop-blur-2xl px-4 py-2 rounded-2xl border border-white/20">
-                                <Users size={12} className="text-brand-pink" />
-                                <span>{idol.group}</span>
-                            </div>
-                        ) :null}
+            <div className="absolute inset-0 p-5 md:p-8 flex flex-col justify-end z-10">
+                <div className="relative h-28">
+                    <div className={cn(
+                        "absolute bottom-0 left-0 right-0 transition-transform duration-300 ease-out",
+                        idol.group && idol.memberCount > 0 && "group-hover:-translate-y-14"
+                    )}>
+                        <div className="space-y-2">
+                            <motion.p className="text-brand-pink font-black text-xs tracking-[0.3em] uppercase mb-1 truncate">
+                                <Highlight text={idol.company} highlight={searchTerm} />
+                            </motion.p>
+                            <h3 className="text-2xl md:text-4xl font-black text-white group-hover:text-brand-pink mb-1 transition-colors tracking-tight line-clamp-2 break-words">
+                                <Highlight text={idol.name} highlight={searchTerm} />
+                            </h3>
+                            <p className="text-slate-300 font-bold tracking-widest text-xs uppercase opacity-80">{idol.koreanName}</p>
+                        </div>
                     </div>
-                    <div className="p-4 rounded-full bg-brand-pink text-white shadow-[0_10px_30px_-5px_rgba(255,51,153,0.5)] scale-0 group-hover:scale-100 transition-transform duration-500">
-                        <ChevronRight size={24} />
+
+                    <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between">
+                        <div className="flex gap-3 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 delay-100">
+                            {idol.group && idol.memberCount > 0 ? (
+                                <div className="flex items-center gap-2 text-xs text-white font-black uppercase tracking-widest bg-white/10 backdrop-blur-2xl px-4 py-2 rounded-2xl border border-white/20">
+                                    <Users size={12} className="text-brand-pink" />
+                                    <span>{idol.memberCount} Members</span>
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="p-4 rounded-full bg-brand-pink text-white shadow-[0_10px_30px_-5px_rgba(255,51,153,0.5)] scale-0 group-hover:scale-100 transition-transform duration-500">
+                            <ChevronRight size={24} />
+                        </div>
                     </div>
                 </div>
             </div>

@@ -154,11 +154,13 @@ function AppContent() {
   }, [rawGroups, user]);
 
   const idols = useMemo(() => {
+    const groupMap = new Map(rawGroups.map(g => [g.id, g]));
     return rawIdols.map(idol => ({
       ...idol,
-      isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false
+      isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false,
+      memberCount: idol.groupId ? (groupMap.get(idol.groupId)?.members?.length || 0) : 0,
     }));
-  }, [rawIdols, user]);
+  }, [rawIdols, rawGroups, user]);
 
   const filteredGroups = useMemo(() => {
     return groups

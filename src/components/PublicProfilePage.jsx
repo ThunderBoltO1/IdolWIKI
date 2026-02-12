@@ -429,7 +429,7 @@ export function PublicProfilePage() {
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <h1 className={cn('text-xl font-black tracking-tight truncate', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                  <h1 className={cn('text-lg md:text-xl font-black tracking-tight truncate', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
                     {profile?.name || normalizedUsername}
                   </h1>
                   <p className={cn('mt-1 text-[10px] font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>

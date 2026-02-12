@@ -22,7 +22,7 @@ export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGro
                 <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>
                     <ArrowLeft size={24} />
                 </button>
-                <h1 className={cn("text-3xl font-black flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                <h1 className={cn("text-2xl md:text-3xl font-black flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
                     <Star className="text-yellow-400" fill="currentColor" />
                     My Favorites
                 </h1>
@@ -69,7 +69,6 @@ export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGro
                                         idol={idol}
                                         onClick={onSelectIdol}
                                         onLike={onFavoriteIdol} // onLike is the prop for favoriting
-                                        onEdit={onEditIdol}
                                     />
                                 ))}
                             </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, TrendingUp, Users, Star, LayoutGrid, Music, ZoomIn, ZoomOut, Sparkles, Loader2, X, Calendar, Globe, Building2, Share2, Check } from 'lucide-react';
+import { ChevronRight, ChevronDown, TrendingUp, Users, Star, LayoutGrid, Music, ZoomIn, ZoomOut, Sparkles, Loader2, X, Calendar, Globe, Building2, Share2, Check, RotateCcw, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -13,23 +13,53 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
     const { theme } = useTheme();
     const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
     const [cardSize, setCardSize] = useState(300);
-    const [visibleCount, setVisibleCount] = useState(48);
+    const [visibleCount, setVisibleCount] = useState(12);
     const loadMoreRef = useRef(null);
     const [debutYearFilter, setDebutYearFilter] = useState('');
     const [quickViewIdol, setQuickViewIdol] = useState(null);
     const [sortBy, setSortBy] = useState('name_asc');
+    const [isCompanyDropdownOpen, setIsCompanyDropdownOpen] = useState(false);
+    const [companySearch, setCompanySearch] = useState('');
 
     useEffect(() => {
-        setVisibleCount(48);
+        setVisibleCount(12);
     }, [viewMode, searchTerm, selectedCompany]);
 
     const debutYears = useMemo(() => {
         const groupYears = (groups || []).map(g => g.debutDate ? new Date(g.debutDate).getFullYear() : null);
-        const idolYears = (idols || []).map(i => i.debutDate ? new Date(i.debutDate).getFullYear() : null);
+
+        const filteredIdols = selectedCompany
+            ? (idols || []).filter(i => (i.company || '').split(' (')[0] === selectedCompany)
+            : (idols || []);
+
+        const idolYears = filteredIdols.map(i => i.debutDate ? new Date(i.debutDate).getFullYear() : null);
         const allYears = [...groupYears, ...idolYears].filter(Boolean);
         const uniqueYears = [...new Set(allYears)];
         return uniqueYears.sort((a, b) => b - a); // Sort descending
-    }, [groups, idols]);
+    }, [groups, idols, selectedCompany]);
+
+    const companyCounts = useMemo(() => {
+        const counts = {};
+        companies.forEach(c => counts[c] = 0);
+
+        groups.forEach(g => {
+            const c = (g.company || '').split(' (')[0];
+            if (counts[c] !== undefined) counts[c]++;
+        });
+
+        idols.forEach(i => {
+            const c = (i.company || '').split(' (')[0];
+            const isGroupMember = i.groupId && groups.some(g => g.id === i.groupId);
+            if (!isGroupMember && counts[c] !== undefined) {
+                counts[c]++;
+            }
+        });
+        return counts;
+    }, [groups, idols, companies]);
+
+    const filteredCompanies = useMemo(() => {
+        return companies.filter(c => c.toLowerCase().includes(companySearch.toLowerCase()));
+    }, [companies, companySearch]);
 
     const filteredGroups = useMemo(() => (groups || []).filter(group => {
         const searchLower = (searchTerm || '').toLowerCase();
@@ -45,7 +75,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
     const displayIdols = useMemo(() => (idols || []).filter(idol => {
         const matchesCompany = !selectedCompany || (idol.company || '').split(' (')[0] === selectedCompany;
         const isGroupMember = idol.groupId && groups.some(g => g.id === idol.groupId);
-        
+
         const searchLower = (searchTerm || '').toLowerCase();
         const matchesYear = !debutYearFilter || (idol.debutDate && new Date(idol.debutDate).getFullYear().toString() === debutYearFilter);
         const zodiac = calculateZodiac(idol.birthDate);
@@ -63,7 +93,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
         if (a.isFavorite && !b.isFavorite) return -1;
         if (!a.isFavorite && b.isFavorite) return 1;
         return a.name.localeCompare(b.name);
-    }), [idols, groups, selectedCompany, searchTerm]);
+    }), [idols, groups, selectedCompany, searchTerm, debutYearFilter]);
 
     const allItems = useMemo(() => {
         const items = [
@@ -116,9 +146,9 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
     }, [loading, visibleCount, allItems.length]);
 
     return (
-        <div className="space-y-12 py-12 relative">
+        <div className="space-y-8 md:space-y-12 py-8 md:py-12 relative">
             <BackgroundShapes />
-            
+
             {/* Hero Section */}
             <section className="text-center space-y-8 max-w-4xl mx-auto px-4">
                 <motion.div
@@ -134,7 +164,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={cn(
-                        "text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter leading-tight relative z-10",
+                        "text-3xl sm:text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter leading-tight relative z-10",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}
                 >
@@ -149,7 +179,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
                     className={cn(
-                        "text-lg md:text-xl lg:text-2xl font-medium max-w-2xl mx-auto leading-relaxed",
+                        "text-base md:text-xl lg:text-2xl font-medium max-w-2xl mx-auto leading-relaxed",
                         theme === 'dark' ? "text-slate-400" : "text-slate-600"
                     )}
                 >
@@ -159,85 +189,190 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
             </section>
 
             {/* Controls Section */}
-            <div className="space-y-6 max-w-[1600px] mx-auto px-4">
-                {/* Top Row: View Mode & Search */}
-                <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                    {/* View Mode Toggle */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.15 }}
-                        className="flex justify-center md:justify-start gap-2 w-full md:w-auto"
-                    >
-                        {[
-                            { id: 'all', label: 'All', icon: LayoutGrid },
-                            { id: 'groups', label: 'Groups', icon: Users },
-                            { id: 'soloists', label: 'Soloists', icon: Music }
-                        ].map((mode) => (
+            <div className="space-y-4 md:space-y-6 max-w-[1600px] mx-auto px-4">
+                <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 md:gap-6">
+                    {/* Left Group: View Mode & Company */}
+                    <div className="flex flex-col md:flex-row items-center gap-4 w-full xl:w-auto">
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15 }}
+                            className="flex justify-center md:justify-start gap-2 w-full md:w-auto"
+                        >
+                            {[
+                                { id: 'all', label: 'All', icon: LayoutGrid },
+                                { id: 'groups', label: 'Groups', icon: Users },
+                                { id: 'soloists', label: 'Soloists', icon: Music }
+                            ].map((mode) => (
+                                <button
+                                    key={mode.id}
+                                    onClick={() => setViewMode(mode.id)}
+                                    className={cn(
+                                        "relative flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-2 md:px-6 md:py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all border overflow-hidden",
+                                        viewMode === mode.id
+                                            ? "text-white shadow-lg shadow-brand-purple/25 border-transparent"
+                                            : theme === 'dark'
+                                                ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20"
+                                                : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
+                                    )}
+                                >
+                                    {viewMode === mode.id && (
+                                        <motion.div
+                                            layoutId="activeViewMode"
+                                            className="absolute inset-0 bg-brand-purple"
+                                            initial={false}
+                                            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                                        />
+                                    )}
+                                    <span className="relative z-10 flex items-center gap-2">
+                                        <mode.icon size={14} />
+                                        <span>{mode.label}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </motion.div>
+
+                        <div className="w-full md:w-80 relative z-30">
                             <button
-                                key={mode.id}
-                                onClick={() => setViewMode(mode.id)}
+                                onClick={() => {
+                                    setIsCompanyDropdownOpen(!isCompanyDropdownOpen);
+                                    if (!isCompanyDropdownOpen) setCompanySearch('');
+                                }}
                                 className={cn(
-                                    "relative flex-1 md:flex-none justify-center flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all border overflow-hidden",
-                                    viewMode === mode.id
-                                        ? "text-white shadow-lg shadow-brand-purple/25 border-transparent"
-                                        : theme === 'dark'
-                                            ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20"
-                                            : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
+                                    "w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all shadow-sm hover:border-brand-pink/50",
+                                    theme === 'dark' ? "bg-slate-900 border-white/10 text-white" : "bg-white border-slate-200 text-slate-900"
                                 )}
                             >
-                                {viewMode === mode.id && (
-                                    <motion.div
-                                        layoutId="activeViewMode"
-                                        className="absolute inset-0 bg-brand-purple"
-                                        initial={false}
-                                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                                    />
-                                )}
-                                <span className="relative z-10 flex items-center gap-2">
-                                    <mode.icon size={14} />
-                                    <span>{mode.label}</span>
-                                </span>
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                    {selectedCompany ? <Building2 size={16} className="text-brand-pink shrink-0" /> : <Globe size={16} className="text-slate-400 shrink-0" />}
+                                    <span className="text-xs font-black uppercase tracking-widest truncate">{selectedCompany || "All Companies"}</span>
+                                </div>
+                                <ChevronDown size={16} className={cn("transition-transform shrink-0 ml-2", isCompanyDropdownOpen ? "rotate-180" : "")} />
                             </button>
-                        ))}
-                    </motion.div>
 
-                </div>
+                            <AnimatePresence>
+                                {isCompanyDropdownOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-20" onClick={() => setIsCompanyDropdownOpen(false)} />
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                                            transition={{ duration: 0.2 }}
+                                            className={cn(
+                                                "absolute top-full left-0 right-0 mt-2 rounded-xl border shadow-xl overflow-hidden max-h-80 flex flex-col z-30",
+                                                theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+                                            )}
+                                        >
+                                            <div className={cn("p-2 border-b border-dashed sticky top-0 z-10", theme === 'dark' ? "border-white/10 bg-slate-900" : "border-slate-100 bg-white")}>
+                                                <div className="relative">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                                    <input
+                                                        type="text"
+                                                        value={companySearch}
+                                                        onChange={(e) => setCompanySearch(e.target.value)}
+                                                        placeholder="Search company..."
+                                                        className={cn(
+                                                            "w-full pl-9 pr-8 py-2 rounded-lg text-xs font-bold outline-none transition-colors",
+                                                            theme === 'dark' ? "bg-slate-800 text-white placeholder:text-slate-500 focus:bg-slate-700" : "bg-slate-100 text-slate-900 placeholder:text-slate-400 focus:bg-slate-200"
+                                                        )}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        autoFocus
+                                                    />
+                                                    <AnimatePresence>
+                                                        {companySearch && (
+                                                            <motion.button
+                                                                initial={{ opacity: 0, scale: 0.8 }}
+                                                                animate={{ opacity: 1, scale: 1 }}
+                                                                exit={{ opacity: 0, scale: 0.8 }}
+                                                                transition={{ duration: 0.15 }}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setCompanySearch('');
+                                                                }}
+                                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 transition-colors"
+                                                                title="Clear search"
+                                                            >
+                                                                <X size={12} />
+                                                            </motion.button>
+                                                        )}
+                                                    </AnimatePresence>
+                                                </div>
+                                            </div>
+                                            <div className="overflow-y-auto custom-scrollbar flex-1">
+                                                <button
+                                                    onClick={() => { onSelectCompany(''); setIsCompanyDropdownOpen(false); }}
+                                                    className={cn(
+                                                        "w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-brand-pink/10 transition-colors border-b border-dashed flex items-center gap-3",
+                                                        theme === 'dark' ? "border-white/5" : "border-slate-100",
+                                                        !selectedCompany ? "text-brand-pink" : (theme === 'dark' ? "text-slate-400" : "text-slate-600")
+                                                    )}
+                                                >
+                                                    <Globe size={14} className={cn("shrink-0", !selectedCompany ? "text-brand-pink" : "opacity-50")} />
+                                                    All Companies
+                                                </button>
+                                                {filteredCompanies.length > 0 ? (
+                                                    filteredCompanies.map(company => (
+                                                        <button
+                                                            key={company}
+                                                            onClick={() => { onSelectCompany(company); setIsCompanyDropdownOpen(false); }}
+                                                            className={cn(
+                                                                "w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-brand-pink/10 transition-colors flex items-center gap-3",
+                                                                selectedCompany === company ? "text-brand-pink" : (theme === 'dark' ? "text-slate-400" : "text-slate-600")
+                                                            )}
+                                                        >
+                                                            <Building2 size={14} className={cn("shrink-0", selectedCompany === company ? "text-brand-pink" : "opacity-50")} />
+                                                            <span className="truncate">
+                                                                {company}
+                                                                <span className="ml-1.5 opacity-50 text-[10px] font-normal">({companyCounts[company] || 0})</span>
+                                                            </span>
+                                                        </button>
+                                                    ))
+                                                ) : (
+                                                    <div className="p-4 text-center text-xs text-slate-500 font-medium italic">No companies found</div>
+                                                )}
+                                            </div>
+                                        </motion.div>
+                                    </>
+                                )}
+                            </AnimatePresence>
+                        </div>
 
-                {/* Bottom Row: Filters & Slider */}
-                <div className="flex flex-col-reverse md:flex-row items-start md:items-center justify-between gap-6">
-                    {/* Filter Chips */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="flex flex-wrap justify-start gap-2 md:gap-3 flex-1"
-                    >
-                        <FilterButton label="All" isActive={!selectedCompany} onClick={() => onSelectCompany('')} theme={theme} />
-                        {companies.map(company => (
-                            <FilterButton
-                                key={company}
-                                label={company}
-                                isActive={selectedCompany === company}
-                                onClick={() => onSelectCompany(company)}
-                                theme={theme}
-                            />
-                        ))}
-                    </motion.div>
+                        {(selectedCompany || debutYearFilter || sortBy !== 'name_asc' || viewMode !== 'all') && (
+                            <motion.button
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.8 }}
+                                onClick={() => {
+                                    onSelectCompany('');
+                                    setDebutYearFilter('');
+                                    setSortBy('name_asc');
+                                    setViewMode('all');
+                                }}
+                                className={cn(
+                                    "p-3 rounded-xl border transition-all shadow-sm hover:scale-105 active:scale-95 shrink-0",
+                                    theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-400 hover:text-white hover:bg-white/10" : "bg-white border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50"
+                                )}
+                                title="Clear All Filters"
+                            >
+                                <RotateCcw size={20} />
+                            </motion.button>
+                        )}
+                    </div>
 
-                    {/* Right Controls: Filters & Slider */}
+                    {/* Right Group: Filters & Slider */}
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.25 }}
-                        className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto"
+                        className="flex flex-col sm:flex-row items-center gap-3 w-full xl:w-auto"
                     >
                         <div className="flex gap-2 w-full sm:w-auto">
                             <select
                                 value={debutYearFilter}
                                 onChange={(e) => setDebutYearFilter(e.target.value)}
                                 className={cn(
-                                    "flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
+                                    "flex-1 sm:flex-none px-3 py-2 md:px-4 md:py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
                                     theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
                                 )}
                             >
@@ -251,7 +386,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                 value={sortBy}
                                 onChange={(e) => setSortBy(e.target.value)}
                                 className={cn(
-                                    "flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
+                                    "flex-1 sm:flex-none px-3 py-2 md:px-4 md:py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all border outline-none appearance-none cursor-pointer",
                                     theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
                                 )}
                             >
@@ -265,16 +400,16 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                         </div>
 
                         <div className={cn(
-                            "w-full sm:w-auto flex items-center gap-3 px-4 py-2 rounded-xl border",
+                            "w-full sm:w-auto flex items-center gap-3 px-3 py-2 md:px-4 md:py-2 rounded-xl border",
                             theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
                         )}>
                             <ZoomOut size={14} className="text-slate-400" />
                             <input
                                 type="range"
-                                min="200" max="500" step="5"
+                                min="150" max="500" step="10"
                                 value={cardSize}
                                 onChange={(e) => setCardSize(Number(e.target.value))}
-                                className="w-24 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-pink"
+                                className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-brand-pink min-w-[100px]"
                             />
                             <ZoomIn size={14} className="text-slate-400" />
                         </div>
@@ -284,7 +419,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
 
             {/* Group Grid with Layout Transitions */}
             <motion.div
-                className="grid gap-6 md:gap-8 px-4"
+                className="grid gap-4 md:gap-8 px-4"
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
             >
                 <AnimatePresence mode="wait">
@@ -327,7 +462,6 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                             onLike={onLikeIdol}
                                             onClick={onSelectIdol}
                                             onQuickView={setQuickViewIdol}
-                                            onEdit={onEditIdol}
                                         />
                                     ))}
                         </>
@@ -377,7 +511,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 className={cn(
-                    "p-8 sm:p-16 rounded-[48px] flex flex-wrap justify-center gap-8 sm:gap-12 md:gap-32 relative overflow-hidden",
+                    "p-6 sm:p-16 rounded-[48px] flex flex-wrap justify-center gap-6 sm:gap-12 md:gap-32 relative overflow-hidden",
                     theme === 'dark'
                         ? "bg-slate-900/40 backdrop-blur-2xl border border-white/5"
                         : "bg-white border border-slate-100 shadow-2xl shadow-slate-200/50"
@@ -388,19 +522,19 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                 </div>
 
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink")}>
+                    <p className={cn("text-3xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-pink" : "text-slate-900 group-hover:text-brand-pink")}>
                         {(groups || []).length}
                     </p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Hot Categories</p>
                 </div>
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-purple" : "text-slate-900 group-hover:text-brand-purple")}>
+                    <p className={cn("text-3xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-purple" : "text-slate-900 group-hover:text-brand-purple")}>
                         {(groups || []).reduce((acc, g) => acc + ((g.members || []).length), 0) + displayIdols.length}
                     </p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Top Idols</p>
                 </div>
                 <div className="text-center group relative z-10">
-                    <p className={cn("text-4xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-blue" : "text-slate-900 group-hover:text-brand-blue")}>100%</p>
+                    <p className={cn("text-3xl sm:text-5xl md:text-6xl font-black transition-all group-hover:scale-110", theme === 'dark' ? "text-white group-hover:text-brand-blue" : "text-slate-900 group-hover:text-brand-blue")}>100%</p>
                     <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-4">Verified</p>
                 </div>
             </motion.div>
@@ -501,13 +635,13 @@ function QuickViewModal({ idol, onClose, theme, onSearchPosition }) {
                             </div>
                         </div>
                     </div>
-                    
+
                     <div>
                         <h4 className="text-sm font-black uppercase tracking-widest text-brand-purple mb-2">Positions</h4>
                         <div className="flex flex-wrap gap-2">
                             {idol.positions?.map((pos, i) => (
-                                <span 
-                                    key={i} 
+                                <span
+                                    key={i}
                                     onClick={() => handlePositionClick(pos)}
                                     className={cn(
                                         "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border cursor-pointer hover:opacity-80 transition-opacity",
@@ -535,25 +669,6 @@ function QuickViewModal({ idol, onClose, theme, onSearchPosition }) {
                 </div>
             </motion.div>
         </div>
-    );
-}
-
-function FilterButton({ label, isActive, onClick, theme }) {
-    return (
-        <button
-            onClick={onClick}
-            className={cn("relative px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.2em] transition-all outline-none overflow-hidden", isActive ? "text-white shadow-lg shadow-brand-pink/25" : theme === 'dark' ? "bg-slate-900 border border-white/5 text-slate-500 hover:text-white hover:border-white/10" : "bg-white border border-slate-100 text-slate-400 hover:text-slate-900 hover:border-slate-200 shadow-sm")}
-        >
-            {isActive && (
-                <motion.div
-                    layoutId="activeCompany"
-                    className="absolute inset-0 bg-gradient-to-r from-brand-pink to-brand-purple"
-                    initial={false}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                />
-            )}
-            <span className="relative z-10">{label}</span>
-        </button>
     );
 }
 

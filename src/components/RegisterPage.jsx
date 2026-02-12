@@ -59,7 +59,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                 initial={{ opacity: 0, scale: 0.9, y: 30 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 className={cn(
-                    "w-full max-w-md p-10 rounded-[40px] relative overflow-hidden transition-all duration-500",
+                    "w-full max-w-md p-6 sm:p-10 rounded-[40px] relative overflow-hidden transition-all duration-500",
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
@@ -68,7 +68,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                         <Rocket className="text-white" size={24} />
                     </div>
                     <h2 className={cn(
-                        "text-3xl font-black mb-2 tracking-tight",
+                        "text-2xl sm:text-3xl font-black mb-2 tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}>Join the K-PopDB</h2>
                     <p className={cn(
@@ -131,7 +131,7 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
                         type="submit"
                         disabled={loading}
                         className={cn(
-                            "w-full py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-2xl transition-all mt-6 relative overflow-hidden group active:scale-95",
+                            "w-full py-3 sm:py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-2xl transition-all mt-6 relative overflow-hidden group active:scale-95",
                             "bg-gradient-to-r from-brand-blue via-brand-pink to-brand-purple",
                             loading && "opacity-70 cursor-not-allowed"
                         )}
@@ -174,7 +174,7 @@ function InputGroup({ icon: Icon, label, value, onChange, theme, placeholder, ty
                     value={value}
                     onChange={onChange}
                     className={cn(
-                        "w-full rounded-[20px] py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
+                        "w-full rounded-[20px] py-3 sm:py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
                         theme === 'dark'
                             ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                             : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"

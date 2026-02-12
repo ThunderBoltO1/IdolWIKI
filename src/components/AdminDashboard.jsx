@@ -252,7 +252,7 @@ export function AdminDashboard({ onBack }) {
                         <ArrowLeft size={20} />
                     </button>
                     <div>
-                        <h1 className={cn("text-3xl md:text-4xl font-black tracking-tight flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                        <h1 className={cn("text-2xl md:text-4xl font-black tracking-tight flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
                             <LayoutDashboard className="text-brand-pink" size={32} />
                             Dashboard
                         </h1>

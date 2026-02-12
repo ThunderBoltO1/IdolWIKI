@@ -96,9 +96,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [galleryUploadProgress, setGalleryUploadProgress] = useState(0);
     const heroFileInputRef = useRef(null);
     const galleryInputRef = useRef(null);
-    const [galleryItems, setGalleryItems] = useState((group?.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
-    const [videoList, setVideoList] = useState((group?.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
-    const [albumList, setAlbumList] = useState((group?.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+    const [galleryItems, setGalleryItems] = useState([]);
+    const [videoList, setVideoList] = useState([]);
+    const [albumList, setAlbumList] = useState([]);
     const [videoPage, setVideoPage] = useState(1);
     const videosPerPage = 6;
     const [videoSearch, setVideoSearch] = useState('');
@@ -589,15 +589,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         if (onUserClick) onUserClick(u);
     };
 
+    // Utility function to generate stable IDs
+    const generateId = (prefix, index) => `${prefix}-${index}-${Date.now()}`;
+
     // Sync activeImage when group data changes from Firestore
     useEffect(() => {
         if (group) {
             setDisplayGroup(group);
             setActiveImage(group.image);
             setFormData(group);
-            setGalleryItems((group.gallery || []).map((url, index) => ({ id: `item-${index}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, url })));
-            setVideoList((group.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
-            setAlbumList((group.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
+            setGalleryItems((group.gallery || []).map((url, index) => ({ id: generateId('item', index), url })));
+            setVideoList((group.videos || []).map((v, i) => ({ ...v, internalId: generateId('vid', i) })));
+            setAlbumList((group.albums || []).map((a, i) => ({ ...a, internalId: generateId('alb', i) })));
             setVideoPage(1);
             
             // Initialize social links order if not present or update it
@@ -1181,12 +1184,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: "spring", stiffness: 260, damping: 30 }}
-            className="py-6 space-y-10"
+            className="py-4 md:py-6 space-y-8 md:space-y-10"
         >
             <BackgroundShapes />
 
             {/* Header / Hero Section */}
-            <section className="relative h-[40vh] min-h-[350px] md:h-[55vh] max-h-[600px] rounded-[24px] md:rounded-[48px] overflow-hidden shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] group/hero perspective-1000">
+            <section className="relative h-[35vh] min-h-[300px] md:h-[55vh] max-h-[600px] rounded-[24px] md:rounded-[48px] overflow-hidden shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] group/hero perspective-1000">
                 <motion.div
                     style={{ y: y1, scale }}
                     className="absolute inset-0 w-full h-full transition-all duration-700"
@@ -1399,10 +1402,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             </div>
                         ) : (
                             <>
-                                <h1 className="text-3xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] break-words">
+                                <h1 className="text-2xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] break-words">
                                     {displayGroup.name}
                                 </h1>
-                                <p className="text-lg md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
+                                <p className="text-base sm:text-xl md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
                                     {displayGroup.koreanName}
                                 </p>
                             </>
@@ -1439,7 +1442,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 30, delay: 0.2 } }}
                             viewport={{ once: true }}
                             className={cn(
-                                "p-6 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
+                                "p-5 md:p-8 rounded-[32px] space-y-6 border shadow-xl relative overflow-hidden",
                                 theme === 'dark' ? "bg-slate-900/60 border-white/5" : "bg-white border-slate-100 shadow-slate-200"
                             )}
                         >
@@ -1556,7 +1559,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                         {/* Description / Biography */}
                         <div className={cn(
-                            "p-6 md:p-8 rounded-[32px] border",
+                            "p-5 md:p-8 rounded-[32px] border",
                             theme === 'dark' ? "bg-slate-900/40 border-white/5" : "bg-white border-slate-100 shadow-xl"
                         )}>
                             <h3 className={cn("text-xl font-black mb-6 flex items-center gap-3", theme === 'dark' ? "text-white" : "text-slate-900")}>
@@ -1608,28 +1611,28 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 <div className={cn("space-y-8", activeTab === 'members' ? "lg:col-span-8" : "lg:col-span-12")}>
                     {/* Tabs Navigation */}
                     <div className="w-full">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 w-full">
-                            <button onClick={() => setActiveTab('members')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 w-full">
+                            <button onClick={() => setActiveTab('members')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'members' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><Star size={20} fill="currentColor" /></motion.div>}
                                 Members
                             </button>
-                            <button onClick={() => setActiveTab('gallery')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => setActiveTab('gallery')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'gallery' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><ImageIcon size={20} fill="currentColor" /></motion.div>}
                                 Gallery
                             </button>
-                            <button onClick={() => setActiveTab('timeline')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => setActiveTab('timeline')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'timeline' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><History size={20} /></motion.div>}
                                 Timeline
                             </button>
-                            <button onClick={() => setActiveTab('discography')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => setActiveTab('discography')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'discography' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-purple/10 text-brand-purple shadow-inner"><Disc size={20} fill="currentColor" /></motion.div>}
                                 Discography
                             </button>
-                            <button onClick={() => setActiveTab('videos')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => setActiveTab('videos')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'videos' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-red-500/10 text-red-500 shadow-inner"><Youtube size={20} fill="currentColor" /></motion.div>}
                                 Video Gallery
                             </button>
-                            <div onClick={() => setActiveTab('news')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <div onClick={() => setActiveTab('news')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'news' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-green-500/10 text-green-500 shadow-inner"><Newspaper size={20} fill="currentColor" /></motion.div>}
                                 <div className="flex items-center gap-3">
                                     News
@@ -1640,7 +1643,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     )}
                                 </div>
                             </div>
-                            <button onClick={() => setActiveTab('comments')} className={cn("text-lg sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => setActiveTab('comments')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'comments' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><MessageSquare size={20} fill="currentColor" /></motion.div>}
                                 Fan Talk
                                 <span className="text-base md:text-xl opacity-30 ml-2">({comments.length})</span>
@@ -2853,7 +2856,7 @@ function usePrevious(value) {
   return ref.current;
 }
 
-function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite, onEdit }) {
+const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite, onEdit }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
     
     const x = useMotionValue(0);
@@ -2934,24 +2937,21 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
             }}
             whileInView={{
                 scale: [1, 1.03, 1],
-                filter: ["brightness(1)", "brightness(1.1)", "brightness(1)"],
-                transition: { duration: 0.6, ease: "easeOut" }
             }}
-            viewport={{ once: true, margin: "-10%" }}
-            whileHover={{ scale: 1.02, y: -5 }}
-            whileTap={{ scale: 0.98 }}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            onClick={onClick}
+            onClick={() => {
+                if (onClick) {
+                    onClick(member);
+                }
+            }}
             className={cn(
-                "group p-4 md:p-6 rounded-[32px] border text-left relative overflow-hidden transition-all duration-500 cursor-pointer",
-                theme === 'dark'
-                    ? "bg-slate-900/40 border-white/5 hover:bg-slate-900 hover:border-white/10"
+                "relative group rounded-3xl overflow-hidden cursor-pointer transition-all duration-500 min-h-[280px]",
+                theme === 'dark' 
+                    ? "bg-slate-900/40 border border-white/10 hover:border-brand-pink/30" 
                     : "bg-white border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:border-slate-200"
             )}
         >
             <div
-                className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500 pointer-events-none z-10"
+                className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500 z-10"
                 style={{
                     background: `radial-gradient(circle at ${glowPos.x}% ${glowPos.y}%, rgba(255,255,255,0.4) 0%, transparent 60%)`
                 }}
@@ -2959,7 +2959,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
 
             <div className="absolute top-0 right-0 w-48 h-48 bg-brand-pink/5 rounded-full blur-[90px] -mr-24 -mt-24 transition-all duration-700 group-hover:bg-brand-pink/20" />
 
-            <div className="flex flex-col sm:flex-row items-center gap-6 md:gap-10 relative z-10">
+            <div className="flex flex-col sm:flex-row items-center gap-6 md:gap-10 relative z-10 h-full">
                 <motion.div 
                     style={{ rotateX, rotateY, perspective: 1000 }}
                     className="relative shrink-0 cursor-zoom-in min-w-0"
@@ -2974,7 +2974,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                             src={convertDriveLink(member.image)}
                             alt={member.name}
                             loading="lazy"
-                            className="w-36 h-36 md:w-48 md:h-48 rounded-2xl object-cover border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
+                            className="w-36 h-48 md:w-48 md:h-64 rounded-2xl object-cover object-center border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
                         />
                     </motion.div>
                     {user && (
@@ -3003,23 +3003,12 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                                     />
                                 </motion.div>
                             </motion.button>
-                            {onEdit && (
-                                <motion.button
-                                    whileHover={{ scale: 1.1 }}
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={handleEditClick}
-                                    className="p-3 rounded-full bg-black/20 backdrop-blur-sm border-4 border-transparent text-white/70 hover:bg-brand-purple/50 hover:text-white transition-all duration-300"
-                                    title="Edit Member"
-                                >
-                                    <Edit2 size={16} />
-                                </motion.button>
-                            )}
                         </div>
                     )}
                 </motion.div>
 
-                <div className="flex-1 space-y-3 min-w-0">
-                    <p className="text-sm text-brand-pink font-black uppercase tracking-[0.4em] truncate" title={(member.positions && member.positions[0]) || 'Member'}>
+                <div className="flex-1 space-y-3 min-w-0 flex flex-col justify-center">
+                    <p className="text-[15px] text-brand-pink font-black uppercase tracking-widest" title={(member.positions && member.positions[0]) || 'Member'}>
                         {(member.positions && member.positions[0]) || 'Member'}
                     </p>
                     <h4 className={cn(
@@ -3034,7 +3023,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
                                 key={i} 
                                 onClick={(e) => handlePositionClick(e, pos)}
                                 className={cn(
-                                    "text-xs md:text-sm px-4 py-2 rounded-xl font-black uppercase tracking-widest border transition-colors cursor-pointer hover:opacity-80",
+                                    "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-colors cursor-pointer hover:opacity-80",
                                     getPositionStyle(pos)
                                 )}
                             >
@@ -3053,7 +3042,7 @@ function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition
             </div>
         </motion.div>
     );
-}
+});
 
 function InfoRow({ icon: Icon, label, value, theme, isHighlight, valueClass, onClick }) {
     return (

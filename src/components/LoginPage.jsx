@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Lock, Mail, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BackgroundShapes } from './BackgroundShapes';
 
@@ -30,7 +30,13 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
             await login(formData.identifier, formData.password, rememberMe);
             onLoginSuccess();
         } catch (err) {
-            setError(err.message || 'Failed to login');
+            if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+                setError('Invalid username or password.');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Too many login attempts. Please try again later.');
+            } else {
+                setError('Error: ' + (err.message || 'Failed to login'));
+            }
         } finally {
             setLoading(false);
         }
@@ -43,16 +49,16 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={cn(
-                    "w-full max-w-md p-10 rounded-[40px] relative overflow-hidden transition-all duration-500",
+                    "w-full max-w-md p-6 sm:p-10 rounded-[40px] relative overflow-hidden transition-all duration-500",
                     theme === 'dark' ? "glass-card" : "bg-white shadow-2xl shadow-slate-200 border border-slate-100"
                 )}
             >
                 <div className="text-center mb-10 relative z-10">
-                    <div className="inline-flex p-3 rounded-2xl bg-gradient-to-tr from-brand-pink to-brand-purple shadow-xl shadow-brand-pink/30 mb-6 transition-all hover:scale-110 hover:rotate-6">
-                        <Sparkles className="text-white" size={24} />
+                    <div className="inline-flex rounded-ms mb-0 transition-all hover:scale-110 hover:rotate-6">
+                        <img src="https://firebasestorage.googleapis.com/v0/b/idolwiki-490f9.firebasestorage.app/o/Idolwiki-2.png?alt=media" alt="Logo" className="w-12 h-12 sm:w-16 sm:h-16 object-contain" />
                     </div>
                     <h2 className={cn(
-                        "text-3xl font-black mb-2 tracking-tight",
+                        "text-2xl sm:text-3xl font-black mb-2 tracking-tight",
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}>Welcome To My KpopIDOL-WIKI</h2>
                     <p className={cn(
@@ -85,7 +91,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                                 value={formData.identifier}
                                 onChange={e => setFormData(prev => ({ ...prev, identifier: e.target.value }))}
                                 className={cn(
-                                    "w-full rounded-[20px] py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
+                                    "w-full rounded-[20px] py-3 sm:py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
                                     theme === 'dark'
                                         ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                                         : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
@@ -116,7 +122,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                                 value={formData.password}
                                 onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))}
                                 className={cn(
-                                    "w-full rounded-[20px] py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
+                                    "w-full rounded-[20px] py-3 sm:py-4 pl-12 pr-6 focus:outline-none border-2 transition-all text-sm font-bold",
                                     theme === 'dark'
                                         ? "bg-slate-900/50 border-white/5 focus:border-brand-pink text-white"
                                         : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
@@ -149,7 +155,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                         type="submit"
                         disabled={loading}
                         className={cn(
-                            "w-full py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-xl shadow-brand-pink/25 transition-all mt-6 relative overflow-hidden group active:scale-95",
+                            "w-full py-3 sm:py-4 rounded-[20px] font-black uppercase text-xs tracking-[0.3em] text-white shadow-xl shadow-brand-pink/25 transition-all mt-6 relative overflow-hidden group active:scale-95",
                             "bg-gradient-to-r from-brand-purple via-brand-pink to-brand-blue",
                             loading && "opacity-70 cursor-not-allowed"
                         )}
@@ -164,7 +170,7 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
                         "text-xs font-bold transition-colors",
                         theme === 'dark' ? "text-slate-500" : "text-slate-400"
                     )}>
-                        New to the K-Pop Universe?{' '}
+                        Are you new to the K-Pop Universe?{' '}
                         <button
                             onClick={() => onNavigate('register')}
                             className="text-brand-pink hover:text-brand-pink/80 font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 ml-1"

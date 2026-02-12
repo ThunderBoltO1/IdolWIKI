@@ -49,12 +49,27 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                             value={searchTerm}
                             onChange={(e) => onSearchChange(e.target.value)}
                             className={cn(
-                                "w-full pl-10 pr-4 py-2 rounded-full transition-all focus:outline-none border text-sm font-medium",
+                                "w-full pl-10 pr-10 py-2 rounded-full transition-all focus:outline-none border text-sm font-medium",
                                 theme === 'dark'
                                     ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder-slate-500"
                                     : "bg-slate-100 border-transparent focus:border-brand-pink text-slate-900 placeholder-slate-400"
                             )}
                         />
+                        <AnimatePresence>
+                            {searchTerm && (
+                                <motion.button
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    transition={{ duration: 0.15 }}
+                                    onClick={() => onSearchChange('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-slate-400 transition-colors"
+                                    title="Clear search"
+                                >
+                                    <X size={14} />
+                                </motion.button>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
 
@@ -111,7 +126,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onLoginClick, onProfileCli
                     ) : (
                         <button
                             onClick={onLoginClick}
-                            className="px-6 py-2 rounded-full bg-gradient-to-r from-brand-purple to-brand-pink text-white font-bold hover:opacity-90 transition-all text-sm shadow-lg shadow-brand-purple/20 active:scale-95"
+                            className="px-6 py-2 rounded-full bg-linear-to-tr from-brand-pink to-brand-purple text-white font-bold hover:opacity-90 transition-all text-sm shadow-lg shadow-brand-purple/20 active:scale-95"
                         >
                             Log In
                         </button>

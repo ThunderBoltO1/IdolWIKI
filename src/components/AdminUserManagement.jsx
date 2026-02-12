@@ -250,7 +250,7 @@ export function AdminUserManagement({ onBack }) {
                     <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>
                         <ArrowLeft size={24} />
                     </button>
-                    <h1 className={cn("text-3xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                    <h1 className={cn("text-2xl md:text-3xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
                         User Management
                     </h1>
                 </div>
@@ -279,7 +279,7 @@ export function AdminUserManagement({ onBack }) {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className={cn(
-                        "w-full pl-12 pr-4 py-4 rounded-2xl border-2 focus:outline-none transition-all font-medium",
+                        "w-full pl-12 pr-4 py-3 md:py-4 rounded-2xl border-2 focus:outline-none transition-all font-medium",
                         theme === 'dark' 
                             ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600" 
                             : "bg-white border-slate-200 focus:border-brand-pink text-slate-900"
@@ -324,7 +324,7 @@ export function AdminUserManagement({ onBack }) {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
                             className={cn(
-                                "p-6 rounded-3xl border flex flex-col md:flex-row items-center gap-6 transition-all",
+                                "p-4 md:p-6 rounded-3xl border flex flex-col md:flex-row items-center gap-6 transition-all",
                                 theme === 'dark' 
                                     ? "bg-slate-900/40 border-white/5 hover:border-white/10" 
                                     : "bg-white border-slate-100 shadow-sm hover:shadow-md"

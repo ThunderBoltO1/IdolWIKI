@@ -49,13 +49,13 @@ export function PublicProfilePage() {
 
   // Modal State
   const [modalConfig, setModalConfig] = useState({
-      isOpen: false,
-      title: '',
-      message: '',
-      type: 'info',
-      singleButton: true,
-      onConfirm: null,
-      confirmText: 'OK'
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info',
+    singleButton: true,
+    onConfirm: null,
+    confirmText: 'OK'
   });
 
   useEffect(() => {
@@ -137,22 +137,22 @@ export function PublicProfilePage() {
       setFriendsDocExists(false);
       return;
     }
-    
+
     const unsub = onSnapshot(doc(db, 'users', user.uid, 'friends', profileUid), (docSnap) => {
       setFriendsDocExists(docSnap.exists());
     }, (err) => {
-        console.error('Friends doc error:', err);
-        setFriendsDocExists(false);
+      console.error('Friends doc error:', err);
+      setFriendsDocExists(false);
     });
-    
+
     const reqId = `${user.uid}__${profileUid}`;
     const unsubReq = onSnapshot(doc(db, 'friendRequests', reqId), (docSnap) => {
-        setHasPendingRequest(docSnap.exists() && docSnap.data().status === 'pending');
+      setHasPendingRequest(docSnap.exists() && docSnap.data().status === 'pending');
     });
 
     return () => {
-        unsub();
-        unsubReq();
+      unsub();
+      unsubReq();
     };
   }, [user?.uid, profileUid]);
 
@@ -212,10 +212,10 @@ export function PublicProfilePage() {
     } catch (err) {
       console.error('Post wall error:', err);
       setModalConfig({
-          isOpen: true,
-          title: 'Error',
-          message: 'Failed to post',
-          type: 'danger'
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to post',
+        type: 'danger'
       });
     } finally {
       setPosting(false);
@@ -225,120 +225,120 @@ export function PublicProfilePage() {
   const handleAddFriend = async () => {
     if (!user?.uid || !profileUid) return;
     try {
-        const reqId = `${user.uid}__${profileUid}`;
-        const reqRef = doc(db, 'friendRequests', reqId);
-        
-        const reqSnap = await getDoc(reqRef);
-        if (reqSnap.exists()) {
-            const data = reqSnap.data();
-            if (data.status === 'pending') return;
-            if (data.status === 'accepted') return;
-            await deleteDoc(reqRef);
-        }
+      const reqId = `${user.uid}__${profileUid}`;
+      const reqRef = doc(db, 'friendRequests', reqId);
 
-        await setDoc(reqRef, {
-            fromUid: user.uid,
-            toUid: profileUid,
-            fromUsername: (user.username || '').toLowerCase().trim(),
-            fromName: user.name || '',
-            fromAvatar: user.avatar || '',
-            status: 'pending',
-            createdAt: serverTimestamp(),
-        });
-        
-        setModalConfig({
-            isOpen: true,
-            title: 'Request Sent',
-            message: 'Friend request sent successfully!',
-            type: 'success'
-        });
+      const reqSnap = await getDoc(reqRef);
+      if (reqSnap.exists()) {
+        const data = reqSnap.data();
+        if (data.status === 'pending') return;
+        if (data.status === 'accepted') return;
+        await deleteDoc(reqRef);
+      }
+
+      await setDoc(reqRef, {
+        fromUid: user.uid,
+        toUid: profileUid,
+        fromUsername: (user.username || '').toLowerCase().trim(),
+        fromName: user.name || '',
+        fromAvatar: user.avatar || '',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+
+      setModalConfig({
+        isOpen: true,
+        title: 'Request Sent',
+        message: 'Friend request sent successfully!',
+        type: 'success'
+      });
     } catch (err) {
-        console.error('Add friend error:', err);
-        if (err.code === 'permission-denied') {
-            setModalConfig({
-                isOpen: true,
-                title: 'Permission Denied',
-                message: 'Please check Firestore Security Rules.',
-                type: 'danger'
-            });
-        } else {
-            setModalConfig({
-                isOpen: true,
-                title: 'Error',
-                message: 'Failed to send friend request',
-                type: 'danger'
-            });
-        }
+      console.error('Add friend error:', err);
+      if (err.code === 'permission-denied') {
+        setModalConfig({
+          isOpen: true,
+          title: 'Permission Denied',
+          message: 'Please check Firestore Security Rules.',
+          type: 'danger'
+        });
+      } else {
+        setModalConfig({
+          isOpen: true,
+          title: 'Error',
+          message: 'Failed to send friend request',
+          type: 'danger'
+        });
+      }
     }
   };
 
   const handleUnfriend = async () => {
     setModalConfig({
-        isOpen: true,
-        title: 'Unfriend',
-        message: 'Are you sure you want to unfriend this user?',
-        type: 'danger',
-        singleButton: false,
-        confirmText: 'Unfriend',
-        onConfirm: executeUnfriend
+      isOpen: true,
+      title: 'Unfriend',
+      message: 'Are you sure you want to unfriend this user?',
+      type: 'danger',
+      singleButton: false,
+      confirmText: 'Unfriend',
+      onConfirm: executeUnfriend
     });
   };
 
   const executeUnfriend = async () => {
     try {
-        // 1. Remove from current user's friend list
-        await deleteDoc(doc(db, 'users', user.uid, 'friends', profileUid));
-        await updateDoc(doc(db, 'users', user.uid), { friendCount: increment(-1) });
+      // 1. Remove from current user's friend list
+      await deleteDoc(doc(db, 'users', user.uid, 'friends', profileUid));
+      await updateDoc(doc(db, 'users', user.uid), { friendCount: increment(-1) });
     } catch (err) {
-        console.error('Unfriend error:', err);
-        // Error handling
-        return;
+      console.error('Unfriend error:', err);
+      // Error handling
+      return;
     }
 
     try {
-        // 2. Try to remove from the other user's friend list
-        await deleteDoc(doc(db, 'users', profileUid, 'friends', user.uid));
-        await updateDoc(doc(db, 'users', profileUid), { friendCount: increment(-1) });
+      // 2. Try to remove from the other user's friend list
+      await deleteDoc(doc(db, 'users', profileUid, 'friends', user.uid));
+      await updateDoc(doc(db, 'users', profileUid), { friendCount: increment(-1) });
     } catch (e) {
-        console.warn('Failed to remove from friend\'s list (expected if restricted)', e);
+      console.warn('Failed to remove from friend\'s list (expected if restricted)', e);
     }
   };
 
   const handleReportUser = () => {
     setModalConfig({
-        isOpen: true,
-        title: 'Report User',
-        message: 'Are you sure you want to report this user?',
-        type: 'danger',
-        singleButton: false,
-        confirmText: 'Report',
-        onConfirm: executeReportUser
+      isOpen: true,
+      title: 'Report User',
+      message: 'Are you sure you want to report this user?',
+      type: 'danger',
+      singleButton: false,
+      confirmText: 'Report',
+      onConfirm: executeReportUser
     });
   };
 
   const executeReportUser = async () => {
     try {
-        await addDoc(collection(db, 'reports'), {
-            targetId: profileUid,
-            targetType: 'user',
-            reportedBy: user.uid,
-            createdAt: serverTimestamp(),
-            status: 'pending'
-        });
-        setModalConfig({
-            isOpen: true,
-            title: 'Report Sent',
-            message: 'Thank you. We will review this user.',
-            type: 'success'
-        });
+      await addDoc(collection(db, 'reports'), {
+        targetId: profileUid,
+        targetType: 'user',
+        reportedBy: user.uid,
+        createdAt: serverTimestamp(),
+        status: 'pending'
+      });
+      setModalConfig({
+        isOpen: true,
+        title: 'Report Sent',
+        message: 'Thank you. We will review this user.',
+        type: 'success'
+      });
     } catch (error) {
-        console.error("Error reporting user:", error);
-        setModalConfig({
-            isOpen: true,
-            title: 'Error',
-            message: 'Failed to send report.',
-            type: 'danger'
-        });
+      console.error("Error reporting user:", error);
+      setModalConfig({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to send report.',
+        type: 'danger'
+      });
     }
   };
 
@@ -363,11 +363,13 @@ export function PublicProfilePage() {
           type="button"
           onClick={() => navigate(-1)}
           className={cn(
-            'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
-            theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50'
+            'p-3 rounded-2xl transition-all active:scale-95 shadow-sm border',
+            theme === 'dark'
+              ? 'bg-slate-800 border-white/5 hover:bg-slate-700 text-white'
+              : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-900'
           )}
         >
-          <ArrowLeft size={14} /> Back
+          <ArrowLeft size={20} />
         </button>
 
         <div className={cn(
@@ -388,11 +390,13 @@ export function PublicProfilePage() {
           type="button"
           onClick={() => navigate(-1)}
           className={cn(
-            'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
-            theme === 'dark' ? 'border-white/10 text-white hover:bg-white/5' : 'border-slate-200 text-slate-900 hover:bg-slate-50'
+            'p-3 rounded-2xl transition-all active:scale-95 shadow-sm border',
+            theme === 'dark'
+              ? 'bg-slate-800 border-white/5 hover:bg-slate-700 text-white'
+              : 'bg-white border-slate-100 hover:bg-slate-50 text-slate-900'
           )}
         >
-          <ArrowLeft size={14} /> Back
+          <ArrowLeft size={20} />
         </button>
 
         <div className={cn('text-xs font-bold', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
@@ -671,8 +675,8 @@ export function PublicProfilePage() {
       </div>
 
       <ConfirmationModal
-          {...modalConfig}
-          onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
+        {...modalConfig}
+        onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

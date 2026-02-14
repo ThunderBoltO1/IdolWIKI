@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, Clock, User, FileText, AlertCircle, ChevronRight, Eye } from 'lucide-react';
+import { Check, X, Clock, User, FileText, AlertCircle, ChevronRight, Eye, ArrowLeft, FileCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ import { IdolModal } from './IdolModal';
 import { GroupCard } from './GroupCard';
 import { diffChars } from 'diff';
 import { convertDriveLink } from '../lib/storage';
+import { BackgroundShapes } from './BackgroundShapes';
 
 const DiffViewer = ({ oldStr, newStr }) => {
     const differences = diffChars(oldStr, newStr);
@@ -24,8 +25,8 @@ const DiffViewer = ({ oldStr, newStr }) => {
         <pre className="whitespace-pre-wrap break-words font-mono text-xs p-2 rounded-lg bg-black/20">
             {differences.map((part, index) => {
                 const color = part.added ? 'bg-green-500/20 text-green-300' :
-                              part.removed ? 'bg-red-500/20 text-red-300 line-through' :
-                              'text-slate-400';
+                    part.removed ? 'bg-red-500/20 text-red-300 line-through' :
+                        'text-slate-400';
                 return (
                     <span key={index} className={cn(color, 'transition-colors')}>
                         {part.value}
@@ -36,9 +37,9 @@ const DiffViewer = ({ oldStr, newStr }) => {
     );
 };
 
-export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
+export function AdminSubmissionDashboard({ onBack, initialTab = 'idols' }) {
     const { theme } = useTheme();
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
     const [activeTab, setActiveTab] = useState(initialTab); // idols, groups, edits
     const [pendingItems, setPendingItems] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -65,7 +66,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
         setLoading(true);
         setError(null);
         setIndexWarning(null);
-        
+
         let collectionName = '';
         if (activeTab === 'idols') collectionName = 'pendingIdols';
         else if (activeTab === 'groups') collectionName = 'pendingGroups';
@@ -199,7 +200,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
 
         if (result.success) {
             setPendingItems(prev => prev.filter(i => i.id !== selectedItem.id));
-            
+
             // Create notification for rejection
             const recipientId = selectedItem.submittedBy || selectedItem.submitterId;
             if (recipientId) {
@@ -251,7 +252,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                 if (docSnap.exists()) {
                     const originalData = { id: docSnap.id, ...docSnap.data() };
                     const mergedData = { ...originalData };
-                    
+
                     // Apply changes for preview
                     if (item.changes) {
                         Object.keys(item.changes).forEach(key => {
@@ -260,7 +261,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                             }
                         });
                     }
-                    
+
                     setPreviewItem(mergedData);
                     setPreviewChanges(item.changes);
                 } else {
@@ -275,36 +276,50 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
         }
     };
 
+    if (!isAdmin) return <div className="p-10 text-center text-red-500 font-bold">Access Denied: Admin privileges required.</div>;
+
     return (
-        <div className={cn("fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4 sm:p-6",
-            theme === 'dark' ? "bg-black/90" : "bg-slate-900/50 backdrop-blur-sm")}>
+        <div className="container mx-auto px-4 py-8 min-h-screen max-w-7xl">
+            <BackgroundShapes />
 
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={cn(
-                    "w-full max-w-6xl h-[90vh] md:h-[85vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl relative",
-                    theme === 'dark' ? "bg-slate-900 border border-white/10" : "bg-white"
-                )}
-            >
-                {/* Header */}
-                <div className="p-6 border-b border-white/5 flex items-center justify-between shrink-0">
-                    <div>
-                        <h2 className={cn("text-2xl font-black uppercase tracking-tight", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                            Submission <span className="text-brand-pink">Dashboard</span>
-                        </h2>
-                        <p className="text-slate-500 text-sm mt-1">Manage user submissions and edit requests</p>
-                    </div>
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+                <div className="flex items-center gap-4">
                     <button
-                        onClick={onClose}
-                        className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                        onClick={onBack}
+                        className={cn(
+                            "p-3 rounded-2xl transition-all active:scale-95 shadow-sm border",
+                            theme === 'dark'
+                                ? "bg-slate-800 border-white/5 hover:bg-slate-700 text-white"
+                                : "bg-white border-slate-100 hover:bg-slate-50 text-slate-900"
+                        )}
                     >
-                        <X className={theme === 'dark' ? "text-white" : "text-slate-900"} />
+                        <ArrowLeft size={20} />
                     </button>
+                    <div>
+                        <h1 className={cn(
+                            "text-2xl md:text-4xl font-black tracking-tight flex items-center gap-3",
+                            theme === 'dark' ? "text-white" : "text-slate-900"
+                        )}>
+                            <FileCheck className="text-brand-pink" size={32} />
+                            Pending Submissions
+                        </h1>
+                        <p className={cn(
+                            "text-sm font-medium mt-1",
+                            theme === 'dark' ? "text-slate-400" : "text-slate-500"
+                        )}>
+                            Review and manage user submissions
+                        </p>
+                    </div>
                 </div>
+            </div>
 
-                {/* Tabs */}
-                <div className={cn("flex border-b shrink-0", theme === 'dark' ? "border-white/5 bg-white/5" : "border-slate-100 bg-slate-50")}>
+            {/* Tabs */}
+            <div className={cn(
+                "rounded-3xl border overflow-hidden mb-6",
+                theme === 'dark' ? "border-white/5 bg-slate-900/40" : "border-slate-200 bg-white"
+            )}>
+                <div className={cn("flex border-b", theme === 'dark' ? "border-white/5 bg-white/5" : "border-slate-100 bg-slate-50")}>
                     {[
                         { id: 'idols', label: 'Pending Idols' },
                         { id: 'groups', label: 'Pending Groups' },
@@ -332,7 +347,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+                <div className="p-6">
                     {loading ? (
                         <div className="flex items-center justify-center h-full">
                             <motion.div
@@ -355,7 +370,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                                     <div className="flex-1">
                                         <p className="font-bold text-sm">Missing Index</p>
                                         <p className="text-xs mt-1 opacity-80">
-                                            A Firestore index is required for sorting. 
+                                            A Firestore index is required for sorting.
                                             <a href={indexWarning} target="_blank" rel="noopener noreferrer" className="underline ml-1 hover:text-yellow-500">
                                                 Click here to create it
                                             </a>.
@@ -419,9 +434,9 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-full bg-brand-pink/20 flex items-center justify-center text-brand-pink overflow-hidden">
                                                         {item.submitterAvatar ? (
-                                                            <img 
-                                                                src={convertDriveLink(item.submitterAvatar)} 
-                                                                alt={item.submitterName} 
+                                                            <img
+                                                                src={convertDriveLink(item.submitterAvatar)}
+                                                                alt={item.submitterName}
                                                                 className="w-full h-full object-cover"
                                                                 onError={(e) => { e.target.style.display = 'none'; }}
                                                             />
@@ -479,7 +494,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                                                         <Eye size={14} /> View Full Details
                                                     </button>
                                                 )}
-                                                
+
                                                 <button
                                                     onClick={() => handleRejectClick(item)}
                                                     disabled={processingId === item.id}
@@ -503,7 +518,7 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                         </>
                     )}
                 </div>
-            </motion.div>
+            </div>
 
             {/* Reject Modal */}
             <AnimatePresence>
@@ -558,9 +573,9 @@ export function AdminSubmissionDashboard({ onClose, initialTab = 'idols' }) {
                     highlightedChanges={previewChanges}
                     onClose={() => { setPreviewItem(null); setPreviewChanges(null); }}
                     onSave={handlePreviewSave}
-                    onDelete={() => {}}
-                    onLike={() => {}}
-                    onGroupClick={() => {}}
+                    onDelete={() => { }}
+                    onLike={() => { }}
+                    onGroupClick={() => { }}
                 />
             )}
         </div>

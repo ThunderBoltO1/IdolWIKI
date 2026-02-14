@@ -1,0 +1,151 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Helper Functions ---
+    function isAdmin() {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // 1. ข้อมูลผู้ใช้ (Users)
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && (request.auth.uid == userId || isAdmin());
+     
+      match /friends/{friendId} {
+        allow read: if signedIn() && (request.auth.uid == userId || request.auth.uid == friendId);
+        allow write: if signedIn() && (request.auth.uid == userId || request.auth.uid == friendId);
+      }
+    }
+
+    // 2. ระบบ Username
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if signedIn();
+      allow list: if signedIn();
+      allow update, delete: if false;
+    }
+
+    // 3. ข้อมูลกลุ่มศิลปิน (Groups)
+    match /groups/{groupId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoritedBy'])
+      );
+    }
+
+    // 4. ข้อมูลศิลปิน (Idols)
+    match /idols/{idolId} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        signedIn() && 
+        request.resource.data.diff(resource.data).affectedKeys().hasAny(['favoritedBy', 'likes']) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoritedBy', 'likes', 'updatedAt'])
+      );
+    }
+
+    // 11. ข้อมูลค่ายเพลง (Companies)
+    // ADDED: For company profiles feature
+    match /companies/{companyId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 5. ระบบคอมเมนต์ (Comments)
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if signedIn();
+      allow update: if signedIn() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy'])
+      );
+      allow delete: if signedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // 6. ระบบแจ้งเตือน (Notifications)
+    match /notifications/{notificationId} {
+      allow read, update, delete: if signedIn() && resource.data.recipientId == request.auth.uid;
+      allow create: if signedIn();
+    }
+
+    // 7. คำขอเป็นเพื่อน (Friend Requests)
+    match /friendRequests/{reqId} {
+      allow read: if signedIn() && (
+        (resource != null && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid)) ||
+        resource == null
+      );
+      allow create: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid;
+      allow update: if signedIn()
+        && (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid);
+      allow delete: if signedIn()
+        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    // 8. ข้อมูลรางวัล (Award Categories)
+    match /award_categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 9. Logs & Reports
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+    
+    match /banLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /activityLogs/{logId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 10. ระบบรออนุมัติ (Pending Submissions) - เพิ่มส่วนนี้เพื่อแก้ Error Permission Denied
+    match /pendingIdols/{docId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /pendingGroups/{docId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /editRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -6,11 +6,13 @@ import { useTheme } from '../context/ThemeContext';
 import { Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BackgroundShapes } from './BackgroundShapes';
+import { useToast } from './Toast';
 
 export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
     const { login, user } = useAuth();
     const navigate = useNavigate();
     const { theme } = useTheme();
+    const toast = useToast();
     const [formData, setFormData] = useState({ identifier: '', password: '' });
     const [rememberMe, setRememberMe] = useState(false);
     const [error, setError] = useState('');
@@ -28,14 +30,18 @@ export const LoginPage = ({ onNavigate, onLoginSuccess }) => {
         setLoading(true);
         try {
             await login(formData.identifier, formData.password, rememberMe);
+            toast.success('Login successful! Welcome back!');
             onLoginSuccess();
         } catch (err) {
             if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
                 setError('Invalid username or password.');
+                toast.error('Invalid username or password.');
             } else if (err.code === 'auth/too-many-requests') {
                 setError('Too many login attempts. Please try again later.');
+                toast.error('Too many login attempts. Please try again later.');
             } else {
                 setError('Error: ' + (err.message || 'Failed to login'));
+                toast.error(err.message || 'Failed to login');
             }
         } finally {
             setLoading(false);

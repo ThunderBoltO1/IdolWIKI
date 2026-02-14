@@ -418,56 +418,127 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
             </div>
 
             {/* Group Grid with Layout Transitions */}
-            <motion.div
-                className="grid gap-4 md:gap-8 px-4"
-                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
-            >
-                <AnimatePresence mode="wait">
-                    {loading ? (
-                        Array.from({ length: 12 }).map((_, i) => (
+            <div className="space-y-12">
+                {loading ? (
+                    <motion.div
+                        className="grid gap-4 md:gap-8 px-4"
+                        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
+                    >
+                        {Array.from({ length: 12 }).map((_, i) => (
                             <SkeletonCard key={`skeleton-${i}`} theme={theme} />
-                        ))
-                    ) : (
-                        <>
-                            {/* Render Groups */}
-                            {(viewMode === 'all' || viewMode === 'groups') &&
-                                visibleItems
-                                    .filter(item => item._type === 'group')
-                                    .map((item) => (
-                                        <GroupCard
-                                            key={item.id}
-                                            searchTerm={searchTerm}
-                                            group={item}
-                                            onClick={() => onSelectGroup(item.id)}
-                                            onFavorite={() => onFavoriteGroup(item.id)}
-                                        />
-                                    ))}
-
-                            {/* Separator and Header for Solo Artists */}
-                            {viewMode === 'all' &&
-                                visibleItems.some(i => i._type === 'group') &&
-                                visibleItems.some(i => i._type === 'idol') && (
-                                    <div className="col-span-full h-px bg-white/10 my-8" />
+                        ))}
+                    </motion.div>
+                ) : (
+                    <>
+                        {/* Groups Section */}
+                        {(viewMode === 'all' || viewMode === 'groups') && visibleItems.some(i => i._type === 'group') && (
+                            <section className="space-y-6">
+                                {viewMode === 'all' && (
+                                    <motion.div
+                                        initial={{ opacity: 0, x: -20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        className="px-4"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className={cn(
+                                                "p-4 rounded-2xl border",
+                                                theme === 'dark'
+                                                    ? "bg-gradient-to-br from-brand-purple/20 to-brand-pink/10 border-brand-purple/30"
+                                                    : "bg-gradient-to-br from-brand-purple/10 to-brand-pink/5 border-brand-purple/20"
+                                            )}>
+                                                <Users size={28} className="text-brand-purple" />
+                                            </div>
+                                            <div>
+                                                <h2 className={cn(
+                                                    "text-3xl md:text-4xl font-black tracking-tight",
+                                                    theme === 'dark' ? "text-white" : "text-slate-900"
+                                                )}>
+                                                    Groups
+                                                </h2>
+                                                <p className="text-sm font-bold text-brand-purple uppercase tracking-widest">
+                                                    {visibleItems.filter(i => i._type === 'group').length} {visibleItems.filter(i => i._type === 'group').length === 1 ? 'Group' : 'Groups'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </motion.div>
                                 )}
+                                <motion.div
+                                    className="grid gap-4 md:gap-8 px-4"
+                                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
+                                >
+                                    <AnimatePresence mode="wait">
+                                        {visibleItems
+                                            .filter(item => item._type === 'group')
+                                            .map((item) => (
+                                                <GroupCard
+                                                    key={item.id}
+                                                    searchTerm={searchTerm}
+                                                    group={item}
+                                                    onClick={() => onSelectGroup(item.id)}
+                                                    onFavorite={() => onFavoriteGroup(item.id)}
+                                                />
+                                            ))}
+                                    </AnimatePresence>
+                                </motion.div>
+                            </section>
+                        )}
 
-                            {/* Render Solo Artists */}
-                            {(viewMode === 'all' || viewMode === 'soloists') &&
-                                visibleItems
-                                    .filter(item => item._type === 'idol')
-                                    .map((item) => (
-                                        <IdolCard
-                                            key={item.id}
-                                            idol={item}
-                                            searchTerm={searchTerm}
-                                            onLike={onLikeIdol}
-                                            onClick={onSelectIdol}
-                                            onQuickView={setQuickViewIdol}
-                                        />
-                                    ))}
-                        </>
-                    )}
-                </AnimatePresence>
-            </motion.div>
+                        {/* Solo Artists Section */}
+                        {(viewMode === 'all' || viewMode === 'soloists') && visibleItems.some(i => i._type === 'idol') && (
+                            <section className="space-y-6">
+                                {viewMode === 'all' && (
+                                    <motion.div
+                                        initial={{ opacity: 0, x: -20 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        className="px-4"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className={cn(
+                                                "p-4 rounded-2xl border",
+                                                theme === 'dark'
+                                                    ? "bg-gradient-to-br from-brand-pink/20 to-brand-purple/10 border-brand-pink/30"
+                                                    : "bg-gradient-to-br from-brand-pink/10 to-brand-purple/5 border-brand-pink/20"
+                                            )}>
+                                                <Music size={28} className="text-brand-pink" />
+                                            </div>
+                                            <div>
+                                                <h2 className={cn(
+                                                    "text-3xl md:text-4xl font-black tracking-tight",
+                                                    theme === 'dark' ? "text-white" : "text-slate-900"
+                                                )}>
+                                                    Solo Artists
+                                                </h2>
+                                                <p className="text-sm font-bold text-brand-pink uppercase tracking-widest">
+                                                    {visibleItems.filter(i => i._type === 'idol').length} {visibleItems.filter(i => i._type === 'idol').length === 1 ? 'Artist' : 'Artists'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                                <motion.div
+                                    className="grid gap-4 md:gap-8 px-4"
+                                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardSize}px), 1fr))` }}
+                                >
+                                    <AnimatePresence mode="wait">
+                                        {visibleItems
+                                            .filter(item => item._type === 'idol')
+                                            .map((item) => (
+                                                <IdolCard
+                                                    key={item.id}
+                                                    idol={item}
+                                                    searchTerm={searchTerm}
+                                                    onLike={onLikeIdol}
+                                                    onClick={onSelectIdol}
+                                                    onQuickView={setQuickViewIdol}
+                                                />
+                                            ))}
+                                    </AnimatePresence>
+                                </motion.div>
+                            </section>
+                        )}
+                    </>
+                )}
+            </div>
 
             {!loading && allItems.length === 0 && (
                 <div className="px-4">

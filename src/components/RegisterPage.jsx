@@ -5,10 +5,12 @@ import { useTheme } from '../context/ThemeContext';
 import { Lock, Mail, User, Loader2, AlertCircle, Rocket } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BackgroundShapes } from './BackgroundShapes';
+import { useToast } from './Toast';
 
 export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
     const { register } = useAuth();
     const { theme } = useTheme();
+    const toast = useToast();
     const [formData, setFormData] = useState({ name: '', username: '', email: '', password: '' });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -36,16 +38,21 @@ export const RegisterPage = ({ onNavigate, onRegisterSuccess }) => {
         setLoading(true);
         try {
             await register(formData.name, formData.username, formData.email, formData.password);
+            toast.success('Registration successful! Welcome to K-PopDB!');
             onRegisterSuccess();
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') {
                 setError('Email is already in use. Please login or use a different email.');
+                toast.error('Email is already in use.');
             } else if (err.code === 'auth/weak-password') {
                 setError('Password should be at least 6 characters.');
+                toast.error('Password should be at least 6 characters.');
             } else if (err.code === 'auth/invalid-email') {
                 setError('Invalid email address.');
+                toast.error('Invalid email address.');
             } else {
                 setError(err.message || 'Failed to register');
+                toast.error(err.message || 'Failed to register');
             }
         } finally {
             setLoading(false);

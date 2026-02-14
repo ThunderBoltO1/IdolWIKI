@@ -6,12 +6,14 @@ import { ConfirmationModal } from './components/ConfirmationModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
 import { logAudit } from './lib/audit';
+import { ToastProvider } from './components/Toast';
 
 // Lazy load components for better performance (Code Splitting)
 const GroupPage = React.lazy(() => import('./components/GroupPage').then(module => ({ default: module.GroupPage })));
@@ -24,12 +26,17 @@ const ProfilePage = React.lazy(() => import('./components/ProfilePage').then(mod
 const FavoritesPage = React.lazy(() => import('./components/FavoritesPage').then(module => ({ default: module.FavoritesPage })));
 const IdolDetailPage = React.lazy(() => import('./components/IdolDetailPage').then(module => ({ default: module.IdolDetailPage })));
 const PublicProfilePage = React.lazy(() => import('./components/PublicProfilePage').then(module => ({ default: module.PublicProfilePage })));
+const AdminManagement = React.lazy(() => import('./components/AdminManagement').then(module => ({ default: module.AdminManagement })));
 const AdminUserManagement = React.lazy(() => import('./components/AdminUserManagement').then(module => ({ default: module.AdminUserManagement })));
 const AdminDashboard = React.lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 const AdminAwardManagement = React.lazy(() => import('./components/AdminAwardManagement').then(module => ({ default: module.AdminAwardManagement })));
 const AdminAuditLogs = React.lazy(() => import('./components/AdminAuditLogs').then(module => ({ default: module.AdminAuditLogs })));
 const AdminSubmissionDashboard = React.lazy(() => import('./components/AdminSubmissionDashboard').then(module => ({ default: module.AdminSubmissionDashboard })));
 const IdolModal = React.lazy(() => import('./components/IdolModal').then(module => ({ default: module.IdolModal })));
+const CompanyDetailPage = React.lazy(() => import('./components/CompanyDetailPage').then(module => ({ default: module.CompanyDetailPage })));
+const CompanyModal = React.lazy(() => import('./components/CompanyModal').then(module => ({ default: module.CompanyModal })));
+const CompanyManagement = React.lazy(() => import('./components/CompanyManagement').then(module => ({ default: module.CompanyManagement })));
+import { PageViewLogger } from './components/PageViewLogger';
 
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-[50vh]">
@@ -80,6 +87,7 @@ function AppContent() {
   const [modalMode, setModalMode] = useState('view'); // 'view', 'edit', 'create'
   const [selectedIdol, setSelectedIdol] = useState(null);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [companyModalOpen, setCompanyModalOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { } });
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [adminDashboardInitialTab, setAdminDashboardInitialTab] = useState('idols');
@@ -450,7 +458,7 @@ function AppContent() {
       onConfirm: async () => {
         try {
           await deleteDoc(doc(db, 'idols', id));
-          
+
           if (user) {
             await logAudit({
               action: 'delete',
@@ -529,24 +537,24 @@ function AppContent() {
       await updateDoc(groupRef, data);
 
       if (user) {
-         // Calculate changes if possible, or just log the update
-         const group = groups.find(g => g.id === groupId);
-         const changes = {};
-         if (group) {
-             Object.keys(data).forEach(key => {
-                 if (JSON.stringify(data[key]) !== JSON.stringify(group[key])) {
-                     changes[key] = { from: group[key] || null, to: data[key] };
-                 }
-             });
-         }
+        // Calculate changes if possible, or just log the update
+        const group = groups.find(g => g.id === groupId);
+        const changes = {};
+        if (group) {
+          Object.keys(data).forEach(key => {
+            if (JSON.stringify(data[key]) !== JSON.stringify(group[key])) {
+              changes[key] = { from: group[key] || null, to: data[key] };
+            }
+          });
+        }
 
-         await logAudit({
-             action: 'update',
-             targetType: 'group',
-             targetId: groupId,
-             user: user,
-             details: { changes: Object.keys(changes).length > 0 ? changes : data }
-         });
+        await logAudit({
+          action: 'update',
+          targetType: 'group',
+          targetId: groupId,
+          user: user,
+          details: { changes: Object.keys(changes).length > 0 ? changes : data }
+        });
       }
     } catch (err) {
       console.error("Group update error:", err);
@@ -608,7 +616,7 @@ function AppContent() {
         let tab = 'idols';
         if (notification.targetType === 'group') tab = 'groups';
         else if (notification.targetType === 'edit_request') tab = 'edits';
-        
+
         setAdminDashboardInitialTab(tab);
         setIsAdminDashboardOpen(true);
       }
@@ -641,6 +649,7 @@ function AppContent() {
       "min-h-screen transition-colors duration-500 font-sans selection:bg-brand-pink/30 relative",
       theme === 'dark' ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-900"
     )}>
+      <PageViewLogger />
       {/* Dynamic Background Effects */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className={cn(
@@ -661,6 +670,7 @@ function AppContent() {
       <Navbar
         onAddClick={handleAddClick}
         onAddGroupClick={handleAddGroupClick}
+        onAddCompanyClick={() => setCompanyModalOpen(true)}
         onLoginClick={() => navigate('/login')}
         onProfileClick={() => {
           const u = (user?.username || '').toLowerCase().trim();
@@ -675,8 +685,9 @@ function AppContent() {
         onFavoritesClick={() => navigate('/favorites')}
         onNotificationClick={handleNotificationClick}
         onManageUsersClick={() => navigate('/admin/users')}
-
-        onDashboardClick={() => setIsAdminDashboardOpen(true)}
+        onManageCompaniesClick={() => navigate('/admin/companies')}
+        onManageReportsClick={() => navigate('/admin/reports')}
+        onDashboardClick={() => navigate('/admin/dashboard')}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         onLogoutRequest={handleLogoutRequest}
@@ -695,225 +706,299 @@ function AppContent() {
 
       <main className="container mx-auto px-4 py-8 relative z-10">
         <Suspense fallback={<PageLoader />}>
-        <AnimatePresence mode='wait'>
-          <Routes location={location} key={location.pathname}>
-            <Route path="/" element={
-              <motion.div
-                key="landing"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <GroupSelection
-                  groups={filteredGroups}
-                  idols={idols}
-                  companies={groupCompanies}
-                  selectedCompany={filters.company}
-                  onSelectCompany={(company) => setFilters(prev => ({ ...prev, company }))}
-                  onSelectGroup={handleGroupClick}
-                  onSelectIdol={handleCardClick}
-                  onLikeIdol={handleFavoriteIdol}
-                  onFavoriteGroup={handleFavoriteGroup}
-                  loading={loading}
-                  searchTerm={searchTerm}
-                />
-              </motion.div>
-            } />
-
-            <Route path="/login" element={
-              <motion.div
-                key="login"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <LoginPage
-                  onNavigate={(view) => navigate(`/${view}`)}
-                  onLoginSuccess={() => navigate('/')}
-                />
-              </motion.div>
-            } />
-
-            <Route path="/register" element={
-              <motion.div
-                key="register"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <RegisterPage
-                  onNavigate={(view) => navigate(`/${view}`)}
-                  onRegisterSuccess={() => navigate('/profile')}
-                />
-              </motion.div>
-            } />
-
-            <Route path="/forgot-password" element={
-              <motion.div
-                key="forgot-password"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <ForgotPasswordPage
-                  onNavigate={(view) => navigate(`/${view}`)}
-                />
-              </motion.div>
-            } />
-
-            <Route path="/profile" element={
-              <motion.div
-                key="profile"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <ProfilePage
-                  onBack={() => navigate('/')}
-                />
-              </motion.div>
-            } />
-
-            <Route path="/favorites" element={
-              <motion.div
-                key="favorites"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-              >
-                <FavoritesPage
-                  idols={idols}
-                  groups={groups}
-                  onBack={() => navigate('/')}
-                  onSelectIdol={handleCardClick}
-                  onSelectGroup={handleGroupClick}
-                  onFavoriteIdol={handleFavoriteIdol}
-                  onFavoriteGroup={handleFavoriteGroup}
-                  onEditIdol={handleEditIdol}
-                />
-              </motion.div>
-            } />
-
-            <Route
-              path="/idol/:idolId"
-              element={
+          <AnimatePresence mode='wait'>
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={
                 <motion.div
-                  key="idol-detail"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  key="landing"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                 >
-                  <IdolDetailPage />
+                  <GroupSelection
+                    groups={filteredGroups}
+                    idols={idols}
+                    companies={groupCompanies}
+                    selectedCompany={filters.company}
+                    onSelectCompany={(company) => setFilters(prev => ({ ...prev, company }))}
+                    onSelectGroup={handleGroupClick}
+                    onSelectIdol={handleCardClick}
+                    onLikeIdol={handleFavoriteIdol}
+                    onFavoriteGroup={handleFavoriteGroup}
+                    loading={loading}
+                    searchTerm={searchTerm}
+                  />
                 </motion.div>
-              }
-            />
+              } />
 
-            <Route
-              path="/u/:username"
-              element={
+              <Route path="/login" element={
                 <motion.div
-                  key="public-profile"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                  key="login"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
                 >
-                  <PublicProfilePage />
+                  <LoginPage
+                    onNavigate={(view) => navigate(`/${view}`)}
+                    onLoginSuccess={() => navigate('/')}
+                  />
                 </motion.div>
-              }
-            />
+              } />
 
-            <Route
-              path="/admin/users"
-              element={
-                <RequireAdmin>
+              <Route path="/register" element={
+                <motion.div
+                  key="register"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                >
+                  <RegisterPage
+                    onNavigate={(view) => navigate(`/${view}`)}
+                    onRegisterSuccess={() => navigate('/profile')}
+                  />
+                </motion.div>
+              } />
+
+              <Route path="/forgot-password" element={
+                <motion.div
+                  key="forgot-password"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                >
+                  <ForgotPasswordPage
+                    onNavigate={(view) => navigate(`/${view}`)}
+                  />
+                </motion.div>
+              } />
+
+              <Route path="/profile" element={
+                <motion.div
+                  key="profile"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                >
+                  <ProfilePage
+                    onBack={() => navigate(-1)}
+                  />
+                </motion.div>
+              } />
+
+              <Route path="/favorites" element={
+                <motion.div
+                  key="favorites"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                >
+                  <FavoritesPage
+                    idols={idols}
+                    groups={groups}
+                    onBack={() => navigate(-1)}
+                    onSelectIdol={handleCardClick}
+                    onSelectGroup={handleGroupClick}
+                    onFavoriteIdol={handleFavoriteIdol}
+                    onFavoriteGroup={handleFavoriteGroup}
+                    onEditIdol={handleEditIdol}
+                  />
+                </motion.div>
+              } />
+
+              <Route
+                path="/idol/:idolId"
+                element={
                   <motion.div
-                    key="admin-users"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    key="idol-detail"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
                   >
-                    <AdminUserManagement onBack={() => navigate('/')} />
+                    <IdolDetailPage />
                   </motion.div>
-                </RequireAdmin>
-              }
-            />
+                }
+              />
 
-            <Route
-              path="/admin/dashboard"
-              element={
-                <RequireAdmin>
+              <Route
+                path="/company/:companyName"
+                element={
                   <motion.div
-                    key="admin-dashboard"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    key="company"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
                   >
-                    <AdminDashboard onBack={() => navigate('/')} />
+                    <CompanyDetailPage />
                   </motion.div>
-                </RequireAdmin>
-              }
-            />
+                }
+              />
 
-            <Route
-              path="/admin/awards"
-              element={
-                <RequireAdmin>
+              <Route
+                path="/u/:username"
+                element={
                   <motion.div
-                    key="admin-awards"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
+                    key="public-profile"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
                   >
-                    <AdminAwardManagement onBack={() => navigate('/')} />
+                    <PublicProfilePage />
                   </motion.div>
-                </RequireAdmin>
-              }
-            />
+                }
+              />
 
-            <Route
-              path="/admin/audit-logs"
-              element={
-                <RequireAdmin>
-                  <motion.div
-                    key="admin-audit-logs"
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                  >
-                    <AdminAuditLogs onBack={() => navigate('/')} />
-                  </motion.div>
-                </RequireAdmin>
-              }
-            />
+              <Route
+                path="/admin"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-management"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminManagement onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
 
-            <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} onFavoriteIdol={handleFavoriteIdol} onEditIdol={handleEditIdol} />} />
-          </Routes>
-        </AnimatePresence>
+              <Route
+                path="/admin/users"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-users"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminUserManagement onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route
+                path="/admin/companies"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-companies"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <CompanyManagement />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route
+                path="/admin/dashboard"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-dashboard"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminDashboard onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route
+                path="/admin/awards"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-awards"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminAwardManagement onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route
+                path="/admin/submissions"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-submissions"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminSubmissionDashboard onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route
+                path="/admin/audit-logs"
+                element={
+                  <RequireAdmin>
+                    <motion.div
+                      key="admin-audit-logs"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                    >
+                      <AdminAuditLogs onBack={() => navigate(-1)} />
+                    </motion.div>
+                  </RequireAdmin>
+                }
+              />
+
+              <Route path="/group/:groupId" element={<GroupRouteWrapper groups={groups} idols={idols} handleMemberClick={handleMemberClick} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} navigate={navigate} onSearch={setSearchTerm} allIdols={idols} onGroupClick={handleGroupClick} onFavoriteIdol={handleFavoriteIdol} onEditIdol={handleEditIdol} />} />
+            </Routes>
+          </AnimatePresence>
         </Suspense>
       </main>
 
       <Suspense fallback={null}>
-      <IdolModal
-        isOpen={modalOpen}
-        mode={modalMode}
-        idol={selectedIdol}
-        onClose={handleCloseModal}
-        onSave={handleSave}
-        onDelete={handleDelete}
-        onLike={handleFavoriteIdol}
-        onGroupClick={handleGroupClick}
-        onIdolClick={handleCardClick}
-      />
+        <IdolModal
+          isOpen={modalOpen}
+          mode={modalMode}
+          idol={selectedIdol}
+          onClose={handleCloseModal}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          onLike={handleFavoriteIdol}
+          onGroupClick={handleGroupClick}
+          onIdolClick={handleCardClick}
+        />
       </Suspense>
 
       <Suspense fallback={null}>
-      <GroupModal
-        isOpen={groupModalOpen}
-        onClose={() => setGroupModalOpen(false)}
-        onSave={handleSaveGroup}
-        idols={idols}
-        onAddIdol={handleAddClick}
-      />
+        <GroupModal
+          isOpen={groupModalOpen}
+          onClose={() => setGroupModalOpen(false)}
+          onSave={handleSaveGroup}
+          idols={idols}
+          onAddIdol={handleAddClick}
+        />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <CompanyModal
+          isOpen={companyModalOpen}
+          onClose={() => setCompanyModalOpen(false)}
+          initialData={{ isNew: true }}
+          onSave={(data) => {
+            setCompanyModalOpen(false);
+            navigate(`/company/${encodeURIComponent(data.name)}`);
+          }}
+        />
       </Suspense>
 
       <ConfirmationModal
@@ -930,10 +1015,10 @@ function AppContent() {
       <AnimatePresence>
         {isAdminDashboardOpen && isAdmin && (
           <Suspense fallback={<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"><Loader2 className="animate-spin text-white" /></div>}>
-          <AdminSubmissionDashboard 
-            onClose={() => setIsAdminDashboardOpen(false)} 
-            initialTab={adminDashboardInitialTab}
-          />
+            <AdminSubmissionDashboard
+              onClose={() => setIsAdminDashboardOpen(false)}
+              initialTab={adminDashboardInitialTab}
+            />
           </Suspense>
         )}
       </AnimatePresence>
@@ -956,7 +1041,7 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, on
       <GroupPage
         group={group}
         members={members}
-        onBack={() => navigate('/')}
+        onBack={() => navigate(-1)}
         onMemberClick={handleMemberClick}
         onUpdateGroup={onUpdateGroup}
         onDeleteGroup={onDeleteGroup}
@@ -975,9 +1060,11 @@ function App() {
     <Router>
       <ThemeProvider>
         <AuthProvider>
-          <ErrorBoundary>
-            <AppContent />
-          </ErrorBoundary>
+          <ToastProvider>
+            <ErrorBoundary>
+              <AppContent />
+            </ErrorBoundary>
+          </ToastProvider>
         </AuthProvider>
       </ThemeProvider>
     </Router>

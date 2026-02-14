@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, User, Star, LayoutDashboard, Users as UsersIcon, LogOut, Flag, Trophy, History } from 'lucide-react';
+import { Settings, User, Star, LogOut, } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 
-export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick, onFavoritesClick, onDashboardClick, onManageUsersClick, onManageReportsClick, onManageAwardsClick, onAuditLogsClick, onLogoutRequest }) {
+export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick, onFavoritesClick, onLogoutRequest }) {
     const { theme } = useTheme();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -21,17 +23,9 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
     }, []);
 
     const userMenuItems = [
-        { label: 'Profile', icon: User, action: onProfileClick, admin: false },
-        { label: 'Edit Profile', icon: Settings, action: onEditProfileClick, admin: false },
-        { label: 'Favorites', icon: Star, action: onFavoritesClick, admin: false },
-    ];
-
-    const adminMenuItems = [
-        { label: 'Dashboard', icon: LayoutDashboard, action: onDashboardClick, admin: true },
-        { label: 'Manage Users', icon: UsersIcon, action: onManageUsersClick, admin: true },
-        { label: 'Manage Reports', icon: Flag, action: onManageReportsClick, admin: true },
-        { label: 'Manage Awards', icon: Trophy, action: onManageAwardsClick, admin: true },
-        { label: 'Audit Logs', icon: History, action: onAuditLogsClick, admin: true },
+        { label: 'Profile', icon: User, action: onProfileClick },
+        { label: 'Edit Profile', icon: Settings, action: onEditProfileClick },
+        { label: 'Favorites', icon: Star, action: onFavoritesClick },
     ];
 
     return (
@@ -76,12 +70,19 @@ export function UserDropdown({ user, isAdmin, onProfileClick, onEditProfileClick
                             {isAdmin && (
                                 <>
                                     <div className={cn("my-1 h-px", theme === 'dark' ? "bg-white/5" : "bg-slate-100")} />
-                                    {adminMenuItems.map(item => (
-                                        <button key={item.label} onClick={() => { item.action(); setIsOpen(false); }} className={cn("w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors", theme === 'dark' ? "hover:bg-white/5 text-slate-300" : "hover:bg-slate-100 text-slate-700")}>
-                                            <item.icon size={16} />
-                                            <span>{item.label}</span>
-                                        </button>
-                                    ))}
+                                    <button
+                                        onClick={() => {
+                                            navigate('/admin');
+                                            setIsOpen(false);
+                                        }}
+                                        className={cn(
+                                            "w-full text-left px-3 py-2.5 rounded-xl text-sm font-bold flex items-center gap-3 transition-colors",
+                                            theme === 'dark' ? "hover:bg-brand-pink/10 text-brand-pink" : "hover:bg-brand-pink/10 text-brand-pink"
+                                        )}
+                                    >
+                                        <Settings size={16} />
+                                        <span>Manage</span>
+                                    </button>
                                 </>
                             )}
                         </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Edit2, Globe, Calendar, Users, MapPin, Building2, Share2, Check, Maximize2, Music, User, Search, Trash2, Plus, Link as LinkIcon } from 'lucide-react';
+import { ArrowLeft, Edit2, Globe, Calendar, Users, MapPin, Building2, Share2, Check, Maximize2, Music, User, Search, Trash2, Plus, Link as LinkIcon, Facebook, Youtube, Instagram } from 'lucide-react';
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,29 @@ import { logAudit } from '../lib/audit';
 import { CompanyModal } from './CompanyModal';
 import { BackgroundShapes } from './BackgroundShapes';
 import { ConfirmationModal } from './ConfirmationModal';
+
+const TiktokIcon = ({ size = 24, className }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+    >
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
 
 export function CompanyDetailPage() {
     const { companyName } = useParams();
@@ -408,40 +431,116 @@ export function CompanyDetailPage() {
                             </div>
 
                             {/* Quick Info Badges */}
-                            <div className="flex flex-wrap items-center gap-2">
-                                {company.founded && (
-                                    <div className={cn(
-                                        'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border',
-                                        theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
-                                    )}>
-                                        <Calendar size={14} className="text-brand-purple" />
-                                        <span>Est. {new Date(company.founded).getFullYear()}</span>
-                                    </div>
-                                )}
-                                {company.headquarters && (
-                                    <div className={cn(
-                                        'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border',
-                                        theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
-                                    )}>
-                                        <MapPin size={14} className="text-brand-pink" />
-                                        <span>{company.headquarters}</span>
-                                    </div>
-                                )}
-                                {company.website && (
-                                    <a
-                                        href={company.website}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className={cn(
-                                            'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
-                                            theme === 'dark' ? 'border-white/10 text-sky-400 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-sky-600 bg-slate-50 hover:bg-slate-100'
-                                        )}
-                                    >
-                                        <Globe size={14} />
-                                        Website
-                                    </a>
-                                )}
+                            <div className="flex flex-col gap-3">
+                                {/* Row 1: Info (Est, Location) */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {company.founded && (
+                                        <div className={cn(
+                                            'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border',
+                                            theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
+                                        )}>
+                                            <Calendar size={14} className="text-brand-purple" />
+                                            <span>Est. {new Date(company.founded).getFullYear()}</span>
+                                        </div>
+                                    )}
+                                    {company.headquarters && (
+                                        <div className={cn(
+                                            'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border',
+                                            theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
+                                        )}>
+                                            <MapPin size={14} className="text-brand-pink" />
+                                            <span>{company.headquarters}</span>
+                                        </div>
+                                    )}
+                                </div>
 
+                                {/* Row 2: Links (Website, Socials) */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {company.website && (
+                                        <a
+                                            href={company.website}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-sky-400 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-sky-600 bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <Globe size={14} />
+                                            Website
+                                        </a>
+                                    )}
+                                    {company.facebook && (
+                                        <a
+                                            href={company.facebook}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-blue-400 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-blue-600 bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <Facebook size={14} />
+                                            Facebook
+                                        </a>
+                                    )}
+                                    {company.youtube && (
+                                        <a
+                                            href={company.youtube}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-red-500 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-red-600 bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <Youtube size={14} />
+                                            YouTube
+                                        </a>
+                                    )}
+                                    {company.tiktok && (
+                                        <a
+                                            href={company.tiktok}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-white bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-black bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <TiktokIcon size={14} />
+                                            TikTok
+                                        </a>
+                                    )}
+                                    {company.instagram && (
+                                        <a
+                                            href={company.instagram}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-pink-500 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-pink-600 bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <Instagram size={14} />
+                                            Instagram
+                                        </a>
+                                    )}
+                                    {company.twitter && (
+                                        <a
+                                            href={company.twitter}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                'inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold border hover:scale-105 transition-transform',
+                                                theme === 'dark' ? 'border-white/10 text-sky-500 bg-slate-950/40 hover:bg-slate-950/60' : 'border-slate-200 text-sky-500 bg-slate-50 hover:bg-slate-100'
+                                            )}
+                                        >
+                                            <XIcon size={14} />
+                                            X
+                                        </a>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

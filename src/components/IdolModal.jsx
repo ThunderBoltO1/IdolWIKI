@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText, Facebook } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,23 @@ import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
 import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
 import { useToast } from './Toast';
+
+const TiktokIcon = ({ size = 24, className }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+    >
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
 
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -44,6 +61,8 @@ const defaultIdolData = {
     image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
     gallery: [],
     instagram: '',
+    facebook: '',
+    tiktok: '',
     twitter: '',
     youtube: '',
     videos: [],
@@ -1436,7 +1455,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Media & Links</h3>
                                                         <div className="space-y-4">
                                                             <DetailItem icon={Instagram} label="Instagram URL" value={formData.instagram} editMode={editMode} name="instagram" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.instagram} />
+                                                            <DetailItem icon={Facebook} label="Facebook URL" value={formData.facebook} editMode={editMode} name="facebook" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.facebook} />
+                                                            <DetailItem icon={TiktokIcon} label="TikTok URL" value={formData.tiktok} editMode={editMode} name="tiktok" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.tiktok} />
                                                             <DetailItem icon={XIcon} label="X URL" value={formData.twitter} editMode={editMode} name="twitter" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.twitter} />
+                                                            <DetailItem icon={Youtube} label="YouTube URL" value={formData.youtube} editMode={editMode} name="youtube" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.youtube} />
 
                                                             {/* Videos Section */}
                                                             <div className="space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
@@ -1659,34 +1681,39 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         highlighted={highlightedChanges?.company}
                                                     />
                                                     {formData.formerCompanies?.length > 0 && (
-                                                        <DetailItem
-                                                            icon={History}
-                                                            label="Former Companies"
-                                                            value={
-                                                                <div className="flex flex-col gap-1">
-                                                                    {[...formData.formerCompanies].sort((a, b) => {
-                                                                        const getEndYear = (item) => {
-                                                                            const val = typeof item === 'string' ? '' : (item.duration || '');
-                                                                            const lower = val.toLowerCase();
-                                                                            if (lower.includes('now') || lower.includes('present') || lower.includes('current')) return 9999;
-                                                                            const match = val.match(/(\d{4})/g);
-                                                                            return match ? parseInt(match[match.length - 1]) : 0;
-                                                                        };
-                                                                        return getEndYear(b) - getEndYear(a);
-                                                                    }).map((c, i) => (
-                                                                        <div key={i} className="cursor-pointer hover:text-brand-pink transition-colors" onClick={() => {
+                                                        <div className="p-2 rounded-xl transition-colors">
+                                                            <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
+                                                                <History size={12} />
+                                                                Former Companies
+                                                            </p>
+                                                            <div className={cn(
+                                                                "font-black text-base md:text-lg transition-colors flex flex-col gap-1",
+                                                                theme === 'dark' ? "text-slate-100" : "text-slate-900"
+                                                            )}>
+                                                                {[...formData.formerCompanies].sort((a, b) => {
+                                                                    const getEndYear = (item) => {
+                                                                        const val = typeof item === 'string' ? '' : (item.duration || '');
+                                                                        const lower = val.toLowerCase();
+                                                                        if (lower.includes('now') || lower.includes('present') || lower.includes('current')) return 9999;
+                                                                        const match = val.match(/(\d{4})/g);
+                                                                        return match ? parseInt(match[match.length - 1]) : 0;
+                                                                    };
+                                                                    return getEndYear(b) - getEndYear(a);
+                                                                }).map((c, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="cursor-pointer hover:text-brand-pink transition-colors w-fit"
+                                                                        onClick={() => {
                                                                             const name = typeof c === 'string' ? c : c.company;
                                                                             navigate(`/company/${encodeURIComponent(name)}`);
                                                                             onClose();
-                                                                        }}>
-                                                                            {typeof c === 'string' ? c : (c.duration ? `${c.company} (${c.duration})` : c.company)}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            }
-                                                            theme={theme}
-                                                            highlighted={highlightedChanges?.formerCompanies}
-                                                        />
+                                                                        }}
+                                                                    >
+                                                                        {typeof c === 'string' ? c : (c.duration ? `${c.company} (${c.duration})` : c.company)}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
                                                     )}
                                                     <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} />
                                                     <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} />
@@ -1833,7 +1860,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className={cn(
-                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-linear-to-tr from-brand-pink/10 to-brand-purple/10 border border-brand-pink/20 text-brand-pink font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
                                                                             highlightedChanges?.instagram && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
                                                                         )}
                                                                     >
@@ -1846,11 +1873,53 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
                                                                         className={cn(
-                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-linear-to-tr from-sky-500/10 to-blue-500/10 border border-sky-500/20 text-sky-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
                                                                             highlightedChanges?.twitter && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
                                                                         )}
                                                                     >
                                                                         <XIcon size={20} /> X
+                                                                    </a>
+                                                                )}
+                                                                {formData.facebook && (
+                                                                    <a
+                                                                        href={formData.facebook}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className={cn(
+                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-linear-to-tr from-blue-500/10 to-indigo-500/10 border border-blue-500/20 text-blue-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                                            highlightedChanges?.facebook && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
+                                                                        )}
+                                                                    >
+                                                                        <Facebook size={20} /> Facebook
+                                                                    </a>
+                                                                )}
+                                                                {formData.youtube && (
+                                                                    <a
+                                                                        href={formData.youtube}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className={cn(
+                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr from-red-500/10 to-orange-500/10 border border-red-500/20 text-red-500 font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                                            highlightedChanges?.youtube && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
+                                                                        )}
+                                                                    >
+                                                                        <Youtube size={20} /> YouTube
+                                                                    </a>
+                                                                )}
+                                                                {formData.tiktok && (
+                                                                    <a
+                                                                        href={formData.tiktok}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className={cn(
+                                                                            "inline-flex items-center gap-3 px-6 py-3 rounded-2xl bg-gradient-to-tr font-black uppercase text-xs tracking-widest hover:scale-105 transition-all shadow-md active:scale-95",
+                                                                            theme === 'dark'
+                                                                                ? "from-white/10 to-slate-200/5 border border-white/20 text-white"
+                                                                                : "from-black/5 to-slate-900/5 border border-black/10 text-black",
+                                                                            highlightedChanges?.tiktok && "ring-2 ring-brand-pink ring-offset-2 ring-offset-slate-900"
+                                                                        )}
+                                                                    >
+                                                                        <TiktokIcon size={20} /> TikTok
                                                                     </a>
                                                                 )}
                                                             </div>
@@ -2490,7 +2559,9 @@ function calculateZodiac(dateString) {
     return null;
 }
 
-function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick, highlighted }) {
+
+
+function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick, highlighted, disableHoverEffect }) {
     if (editMode) {
         return (
             <div className="space-y-2">
@@ -2521,7 +2592,7 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                         type="button"
                         onClick={onClick}
                         className={cn(
-                            "font-black text-base md:text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 group/link",
+                            "font-black text-base md:text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 group/link cursor-pointer",
                             theme === 'dark' ? "text-slate-100" : "text-slate-900"
                         )}
                         title="Click to search"
@@ -2530,12 +2601,13 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
                         <Search size={16} className="opacity-0 group-hover/link:opacity-100 transition-opacity" />
                     </button>
                 ) : (
-                    <p className={cn(
-                        "font-black text-base md:text-lg transition-colors group-hover/detail:text-brand-pink",
+                    <div className={cn(
+                        "font-black text-base md:text-lg transition-colors",
+                        !disableHoverEffect && "group-hover/detail:text-brand-pink",
                         theme === 'dark' ? "text-slate-100" : "text-slate-900"
                     )}>
                         {value || '-'}
-                    </p>
+                    </div>
                 )}
                 {onAction && value && (
                     <button

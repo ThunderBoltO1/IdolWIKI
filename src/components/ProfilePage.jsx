@@ -2,13 +2,25 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw, Settings } from 'lucide-react';
+import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw, Settings, Facebook, Youtube, Instagram } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { ImageCropper } from './ImageCropper';
 import { isDataUrl } from '../lib/cropImage';
 import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
+
+const TiktokIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
 
 export const ProfilePage = ({ onBack }) => {
     const { user, updateUser } = useAuth();
@@ -17,7 +29,12 @@ export const ProfilePage = ({ onBack }) => {
         name: user?.name || '',
         avatar: user?.avatar || '',
         email: user?.email || '',
-        bio: user?.bio || ''
+        bio: user?.bio || '',
+        facebook: user?.facebook || '',
+        twitter: user?.twitter || '',
+        instagram: user?.instagram || '',
+        tiktok: user?.tiktok || '',
+        youtube: user?.youtube || ''
     });
 
     // Sync formData when user data is loaded or changed in Firestore
@@ -27,7 +44,12 @@ export const ProfilePage = ({ onBack }) => {
                 name: user.name || '',
                 avatar: user.avatar || '',
                 email: user.email || '',
-                bio: user.bio || ''
+                bio: user.bio || '',
+                facebook: user.facebook || '',
+                twitter: user.twitter || '',
+                instagram: user.instagram || '',
+                tiktok: user.tiktok || '',
+                youtube: user.youtube || ''
             });
         }
     }, [user]);
@@ -123,6 +145,34 @@ export const ProfilePage = ({ onBack }) => {
                         )}>
                             Customize your presence in the K-Pop Universe
                         </p>
+
+                        <div className="flex items-center gap-2 mt-4">
+                            {formData.facebook && (
+                                <a href={formData.facebook} target="_blank" rel="noopener noreferrer" className={cn("p-2 rounded-full transition-all hover:scale-110", theme === 'dark' ? "bg-white/10 hover:bg-[#1877F2] text-white" : "bg-slate-100 hover:bg-[#1877F2] text-slate-600 hover:text-white")}>
+                                    <Facebook size={16} />
+                                </a>
+                            )}
+                            {formData.instagram && (
+                                <a href={formData.instagram} target="_blank" rel="noopener noreferrer" className={cn("p-2 rounded-full transition-all hover:scale-110", theme === 'dark' ? "bg-white/10 hover:bg-[#E4405F] text-white" : "bg-slate-100 hover:bg-[#E4405F] text-slate-600 hover:text-white")}>
+                                    <Instagram size={16} />
+                                </a>
+                            )}
+                            {formData.twitter && (
+                                <a href={formData.twitter} target="_blank" rel="noopener noreferrer" className={cn("p-2 rounded-full transition-all hover:scale-110", theme === 'dark' ? "bg-white/10 hover:bg-[#1DA1F2] text-white" : "bg-slate-100 hover:bg-[#1DA1F2] text-slate-600 hover:text-white")}>
+                                    <XIcon size={16} />
+                                </a>
+                            )}
+                            {formData.tiktok && (
+                                <a href={formData.tiktok} target="_blank" rel="noopener noreferrer" className={cn("p-2 rounded-full transition-all hover:scale-110", theme === 'dark' ? "bg-white/10 hover:bg-white hover:text-black text-white" : "bg-slate-100 hover:bg-black hover:text-white text-slate-600")}>
+                                    <TiktokIcon size={16} />
+                                </a>
+                            )}
+                            {formData.youtube && (
+                                <a href={formData.youtube} target="_blank" rel="noopener noreferrer" className={cn("p-2 rounded-full transition-all hover:scale-110", theme === 'dark' ? "bg-white/10 hover:bg-[#FF0000] text-white" : "bg-slate-100 hover:bg-[#FF0000] text-slate-600 hover:text-white")}>
+                                    <Youtube size={16} />
+                                </a>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -138,7 +188,7 @@ export const ProfilePage = ({ onBack }) => {
                         {/* Avatar Preview */}
                         <div className="flex flex-col items-center gap-4 md:w-72 w-full">
                             <div className="relative group">
-                                <div className="absolute inset-0 bg-gradient-to-tr from-brand-pink to-brand-purple rounded-full blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
+                                <div className="absolute inset-0 bg-linear-to-tr from-brand-pink to-brand-purple rounded-full blur-xl opacity-20 group-hover:opacity-40 transition-opacity" />
                                 {formData.avatar ? (
                                     <img
                                         src={convertDriveLink(formData.avatar)}
@@ -278,6 +328,67 @@ export const ProfilePage = ({ onBack }) => {
                                     placeholder="Tell the world about your journey with K-Pop..."
                                 />
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div className={cn('h-px', theme === 'dark' ? 'bg-white/5' : 'bg-slate-200')} />
+
+                    {/* Social Media */}
+                    <div>
+                        <h3 className={cn(
+                            'text-xs font-black uppercase tracking-[0.25em] mb-6',
+                            theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                        )}>
+                            Social Media
+                        </h3>
+
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <InputGroup
+                                icon={Facebook}
+                                label="Facebook"
+                                name="facebook"
+                                value={formData.facebook}
+                                onChange={e => setFormData(prev => ({ ...prev, facebook: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://facebook.com/..."
+                            />
+                            <InputGroup
+                                icon={Instagram}
+                                label="Instagram"
+                                name="instagram"
+                                value={formData.instagram}
+                                onChange={e => setFormData(prev => ({ ...prev, instagram: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://instagram.com/..."
+                            />
+                            <InputGroup
+                                icon={XIcon}
+                                label="X (Twitter)"
+                                name="twitter"
+                                value={formData.twitter}
+                                onChange={e => setFormData(prev => ({ ...prev, twitter: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://x.com/..."
+                            />
+                            <InputGroup
+                                icon={TiktokIcon}
+                                label="TikTok"
+                                name="tiktok"
+                                value={formData.tiktok}
+                                onChange={e => setFormData(prev => ({ ...prev, tiktok: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://tiktok.com/@..."
+                            />
+                            <InputGroup
+                                icon={Youtube}
+                                label="YouTube"
+                                name="youtube"
+                                value={formData.youtube}
+                                onChange={e => setFormData(prev => ({ ...prev, youtube: e.target.value }))}
+                                theme={theme}
+                                placeholder="https://youtube.com/..."
+                            />
                         </div>
                     </div>
 

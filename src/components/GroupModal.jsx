@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon, GripVertical, Heart } from 'lucide-react';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon, GripVertical, Heart, Facebook, Music2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { ImageCropper } from './ImageCropper';
@@ -16,6 +16,18 @@ import { useToast } from './Toast';
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
+
+const TiktokIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
+
+const SpotifyIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141 4.439-1.38 9.9-0.78 13.619 1.5.42.18.6.72.122 1.321zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
     </svg>
 );
 
@@ -123,7 +135,14 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         awards: [],
         albums: [],
         status: 'Active',
-        disbandDate: ''
+        disbandDate: '',
+        facebook: '',
+        instagram: '',
+        twitter: '',
+        tiktok: '',
+        youtube: '',
+        appleMusic: '',
+        spotify: ''
     });
     const { awards: awardData } = useAwards();
 
@@ -645,6 +664,36 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             </AnimatePresence>
                                         </Reorder.Group>
                                     )}
+                                </div>
+
+                                <div className="md:col-span-2 space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
+                                    <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <Globe size={12} /> Social Media Links
+                                    </label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {[
+                                            { id: 'facebook', label: 'Facebook', icon: Facebook },
+                                            { id: 'instagram', label: 'Instagram', icon: Instagram },
+                                            { id: 'twitter', label: 'X (Twitter)', icon: XIcon },
+                                            { id: 'tiktok', label: 'TikTok', icon: TiktokIcon },
+                                            { id: 'youtube', label: 'YouTube', icon: Youtube },
+                                            { id: 'appleMusic', label: 'Apple Music', icon: Music2 },
+                                            { id: 'spotify', label: 'Spotify', icon: SpotifyIcon }
+                                        ].map(social => (
+                                            <div key={social.id} className="relative group/input">
+                                                <social.icon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-brand-pink transition-colors" size={16} />
+                                                <input
+                                                    value={formData[social.id]}
+                                                    onChange={(e) => setFormData({ ...formData, [social.id]: e.target.value })}
+                                                    placeholder={`${social.label} URL`}
+                                                    className={cn(
+                                                        "w-full rounded-2xl py-3 pl-10 pr-4 border-2 focus:outline-none transition-all text-sm font-bold",
+                                                        theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
+                                                    )}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <div className="md:col-span-2 space-y-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">

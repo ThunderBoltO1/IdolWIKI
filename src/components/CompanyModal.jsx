@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Building2, MapPin, Calendar, Globe, Users, Edit2, Save, Upload, Info, Loader2, Image as ImageIcon } from 'lucide-react';
+import { X, Building2, MapPin, Calendar, Globe, Users, Edit2, Save, Upload, Info, Loader2, Image as ImageIcon, Facebook, Youtube, Instagram } from 'lucide-react';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, query, where, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
@@ -14,6 +14,31 @@ import { logAudit } from '../lib/audit';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
+const TiktokIcon = ({ size = 24, className }) => (
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={className}
+    >
+        <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
+    </svg>
+);
+
+const XIcon = ({ size = 24, className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
+
+
+
 export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
@@ -26,9 +51,15 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         founders: '',
         headquarters: '',
         website: '',
+        facebook: '',
+        youtube: '',
+        tiktok: '',
+        image: '',
         image: '',
         parentCompanies: [], // New field for Parent Company
-        subsidiaries: [] // New field for Subsidiary Companies
+        subsidiaries: [], // New field for Subsidiary Companies
+        instagram: '',
+        twitter: ''
     });
 
     const [loading, setLoading] = useState(false);
@@ -66,10 +97,15 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     founders: initialData.founders || '',
                     headquarters: initialData.headquarters || '',
                     website: initialData.website || '',
+                    facebook: initialData.facebook || '',
+                    youtube: initialData.youtube || '',
+                    tiktok: initialData.tiktok || '',
                     image: initialData.image || '',
                     // Support multiple parent companies, backward compatible with single string
                     parentCompanies: initialData.parentCompanies || (initialData.parentCompany ? [initialData.parentCompany] : []),
-                    subsidiaries: []
+                    subsidiaries: [],
+                    instagram: initialData.instagram || '',
+                    twitter: initialData.twitter || ''
                 });
 
                 // Fetch subsidiaries
@@ -103,7 +139,10 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     website: '',
                     image: '',
                     parentCompanies: initialData?.parentCompany ? [initialData.parentCompany] : [],
-                    subsidiaries: []
+                    parentCompanies: initialData?.parentCompany ? [initialData.parentCompany] : [],
+                    subsidiaries: [],
+                    instagram: '',
+                    twitter: ''
                 });
                 setInitialSubs([]);
             }
@@ -345,7 +384,7 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <h2 className="text-xl md:text-2xl font-black uppercase tracking-tight flex items-center gap-2">
                                     <Building2 className="text-brand-pink" size={20} />
                                     <span className="hidden sm:inline">{initialData?.isNew || !initialData?.id ? 'Create Company' : 'Edit Company'}</span>
-                                    <span className="sm:hidden">{initialData?.isNew || !initialData?.id ? 'Create' : 'Edit'}</span>ฟ
+                                    <span className="sm:hidden">{initialData?.isNew || !initialData?.id ? 'Create' : 'Edit'}</span>
                                 </h2>
                                 <p className="text-xs md:text-sm text-slate-500 font-bold mt-1 hidden sm:block">Manage company details and information.</p>
                             </div>
@@ -661,6 +700,91 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 </div>
 
                                 <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Facebook</label>
+                                    <div className="relative">
+                                        <Facebook className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            name="facebook"
+                                            value={formData.facebook}
+                                            onChange={handleChange}
+                                            placeholder="https://facebook.com/..."
+                                            className={cn(
+                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Instagram</label>
+                                    <div className="relative">
+                                        <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            name="instagram"
+                                            value={formData.instagram}
+                                            onChange={handleChange}
+                                            placeholder="https://instagram.com/..."
+                                            className={cn(
+                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">X (Twitter)</label>
+                                    <div className="relative">
+                                        <XIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            name="twitter"
+                                            value={formData.twitter}
+                                            onChange={handleChange}
+                                            placeholder="https://x.com/..."
+                                            className={cn(
+                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">YouTube</label>
+                                    <div className="relative">
+                                        <Youtube className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            name="youtube"
+                                            value={formData.youtube}
+                                            onChange={handleChange}
+                                            placeholder="https://youtube.com/..."
+                                            className={cn(
+                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">TikTok</label>
+                                    <div className="relative">
+                                        <TiktokIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <input
+                                            name="tiktok"
+                                            value={formData.tiktok}
+                                            onChange={handleChange}
+                                            placeholder="https://tiktok.com/@..."
+                                            className={cn(
+                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                            )}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Description</label>
                                     <textarea
                                         name="description"
@@ -704,8 +828,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                             </div>
                         </div>
                     </form>
-                </motion.div>
-            </div>
-        </AnimatePresence>
+                </motion.div >
+            </div >
+        </AnimatePresence >
     );
 }

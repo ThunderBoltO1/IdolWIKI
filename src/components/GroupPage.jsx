@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder, useAnimation } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp, ImageIcon } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp, ImageIcon, Facebook } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +43,17 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const { theme } = useTheme();
     const navigate = useNavigate();
     const containerRef = useRef(null);
+
+    const defaultOrder = [
+        { id: 'instagram', label: 'Instagram', icon: Instagram },
+        { id: 'facebook', label: 'Facebook', icon: Facebook },
+        { id: 'twitter', label: 'X', icon: XIcon },
+        { id: 'youtube', label: 'YouTube', icon: Youtube },
+        { id: 'tiktok', label: 'TikTok', icon: TikTokIcon },
+        { id: 'appleMusic', label: 'Apple Music', icon: Music2 },
+        { id: 'spotify', label: 'Spotify', icon: SpotifyIcon }
+    ];
+
     const [displayGroup, setDisplayGroup] = useState(group);
     const [activeImage, setActiveImage] = useState(group?.image || '');
     const [lightboxImage, setLightboxImage] = useState(null);
@@ -1104,14 +1115,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 setVideoList((newData.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
                 setAlbumList((newData.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` })));
                 setVideoPage(1);
-                const defaultOrder = [
-                    { id: 'instagram', label: 'Instagram', icon: Instagram },
-                    { id: 'twitter', label: 'X', icon: XIcon },
-                    { id: 'youtube', label: 'YouTube', icon: Youtube },
-                    { id: 'tiktok', label: 'TikTok', icon: TikTokIcon },
-                    { id: 'appleMusic', label: 'Apple Music', icon: Music2 },
-                    { id: 'spotify', label: 'Spotify', icon: SpotifyIcon }
-                ];
+                setVideoPage(1);
+
+                // defaultOrder is now defined at component level
 
                 if (newData.socialOrder) {
                     const savedOrderWithIcons = newData.socialOrder.map(item => {
@@ -1376,6 +1382,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     className="w-full bg-transparent text-lg md:text-2xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
                                     placeholder="Korean Name"
                                 />
+
+
                                 <div className="space-y-2">
                                     {isAdmin && (
                                         <div className="flex items-center justify-between">
@@ -1399,6 +1407,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
                                         placeholder="Hero Image URL"
                                     />
+
+
                                 </div>
                             </div>
                         ) : (
@@ -1530,28 +1540,50 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 )}
 
                                 {/* Social Media Links */}
-                                {!isEditing && socialLinksOrder.some(link => displayGroup?.[link.id]) && (
+                                {(isEditing || socialLinksOrder.some(link => displayGroup?.[link.id])) && (
                                     <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
                                         <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                             <Globe size={12} /> Social Media
                                         </h4>
-                                        <div className="flex flex-wrap gap-2">
-                                            {socialLinksOrder.map(link => {
-                                                const url = displayGroup[link.id];
-                                                if (!url) return null;
 
-                                                let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
-                                                if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
-                                                else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
-                                                else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
+                                        {isEditing ? (
+                                            <div className="grid grid-cols-1 gap-3">
+                                                {defaultOrder.map(link => (
+                                                    <div key={link.id} className="relative group/input">
+                                                        <link.icon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/input:text-brand-pink transition-colors" size={14} />
+                                                        <input
+                                                            value={formData[link.id] || ''}
+                                                            onChange={e => setFormData({ ...formData, [link.id]: e.target.value })}
+                                                            className={cn(
+                                                                "w-full bg-transparent text-xs font-bold border-b pl-9 py-2 focus:outline-none transition-colors",
+                                                                theme === 'dark' ? "text-white border-white/10 focus:border-brand-pink placeholder:text-white/20" : "text-slate-900 border-slate-200 focus:border-brand-pink placeholder:text-slate-400"
+                                                            )}
+                                                            placeholder={link.label}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-wrap gap-2">
+                                                {socialLinksOrder.map(link => {
+                                                    const url = displayGroup[link.id];
+                                                    if (!url) return null;
 
-                                                return (
-                                                    <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
-                                                        <link.icon size={14} /> {link.label}
-                                                    </a>
-                                                );
-                                            })}
-                                        </div>
+                                                    let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
+                                                    if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
+                                                    else if (link.id === 'facebook') colorClass = theme === 'dark' ? "bg-slate-800 text-blue-500 hover:bg-blue-600 hover:text-white border-white/5" : "bg-slate-50 text-blue-600 hover:bg-blue-600 hover:text-white border-slate-100";
+                                                    else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
+                                                    else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
+                                                    else if (link.id === 'tiktok') colorClass = theme === 'dark' ? "bg-slate-800 text-white hover:bg-white hover:text-black border-white/5" : "bg-slate-50 text-black hover:bg-black hover:text-white border-slate-100";
+
+                                                    return (
+                                                        <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
+                                                            <link.icon size={14} /> {link.label}
+                                                        </a>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

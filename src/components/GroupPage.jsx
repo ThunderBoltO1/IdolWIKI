@@ -19,7 +19,7 @@ import { deleteImage, uploadImage, validateFile, compressImage, dataURLtoFile } 
 import { BackgroundShapes } from './BackgroundShapes';
 import { logAudit } from '../lib/audit';
 import { BackToTopButton } from './BackToTopButton';
-
+import { OptimizedImage } from './OptimizedImage';
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -171,7 +171,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         const ordered = currentMemberIds.map(id => memberMap.get(id)).filter(Boolean);
         const orderedIds = new Set(ordered.map(m => m.id));
         const remaining = members.filter(m => !orderedIds.has(m.id));
-        return [...ordered, ...remaining];
+        
+        const allItems = [...ordered, ...remaining];
+        
+        // Sort: Active members first, then former members
+        return allItems.sort((a, b) => {
+            const isAInactive = ['inactive', 'former'].includes(a.status?.toLowerCase());
+            const isBInactive = ['inactive', 'former'].includes(b.status?.toLowerCase());
+            return (isAInactive ? 1 : 0) - (isBInactive ? 1 : 0);
+        });
     }, [members, isEditing, formData.members, displayGroup?.members]);
 
     const timelineMembers = useMemo(() => {
@@ -181,6 +189,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             return dateA - dateB;
         });
     }, [members]);
+
+    const activeMembers = useMemo(() => {
+        return sortedMembers.filter(m => !['inactive', 'former'].includes(m.status?.toLowerCase()));
+    }, [sortedMembers]);
+
+    const formerMembers = useMemo(() => {
+        return sortedMembers.filter(m => ['inactive', 'former'].includes(m.status?.toLowerCase()));
+    }, [sortedMembers]);
 
     useEffect(() => {
         if (members) {
@@ -287,52 +303,15 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         });
                     }
 
-                    const extractThumbnail = async (url) => {
-                        try {
-                            // Note: Direct fetching might be blocked by CORS policies on the client-side.
-                            // A proxy would be required for this to work reliably for all URLs.
-                            const response = await fetch(url, { signal });
-                            const html = await response.text();
-                            const parser = new DOMParser();
-                            const doc = parser.parseFromString(html, 'text/html');
-
-                            // Try og:image
-                            let thumbnail = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') ||
-                                doc.querySelector('meta[name="twitter:image"]')?.getAttribute('content');
-
-                            if (!thumbnail) {
-                                // Fallback: find first large enough image
-                                const images = Array.from(doc.querySelectorAll('img'));
-                                for (const img of images) {
-                                    const src = img.getAttribute('src');
-                                    // Skip small icons, tracking pixels, etc.
-                                    if (src && !src.includes('icon') && !src.includes('logo') && !src.includes('pixel')) {
-                                        thumbnail = src;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (thumbnail && !thumbnail.startsWith('http')) {
-                                thumbnail = new URL(thumbnail, new URL(url).origin).href;
-                            }
-                            return thumbnail || null;
-                        } catch (err) {
-                            if (err.name === 'AbortError') return null;
-                            console.warn(`Failed to extract thumbnail for ${url}:`, err);
-                            return null;
-                        }
-                    };
-
                     if (filteredItems.length > 0) {
-                        const enrichedItems = await Promise.all(filteredItems.map(async (item) => {
-                            const thumbnail = await extractThumbnail(item.link);
+                        const enrichedItems = filteredItems.map((item) => {
                             let contentImg = null;
                             const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
                             if (imgMatch) contentImg = imgMatch[1];
 
                             // Check for enclosure or media:content from rss2json structure
                             const enclosureImg = item.enclosure?.link || item.thumbnail;
-                            const finalThumbnail = thumbnail || enclosureImg || contentImg;
+                            const finalThumbnail = enclosureImg || contentImg || displayGroup.image;
 
                             return {
                                 name: item.title,
@@ -346,7 +325,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     }
                                 }
                             };
-                        }));
+                        });
                         mappedNews = enrichedItems
                             .sort((a, b) => new Date(b.datePublished) - new Date(a.datePublished))
                             .slice(0, 10);
@@ -365,10 +344,17 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(displayGroup.name + ' kpop')}&hl=en-US&gl=US&ceid=US:en&when:7d`;
                     const googleApiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleRssUrl)}`;
 
-                    const response = await fetch(googleApiUrl, { signal });
-                    const data = await response.json();
+                    let data = null;
+                    // Retry up to 4 times (max 6 seconds total wait) since rss2json queues new URLs
+                    for (let i = 0; i < 4; i++) {
+                        const response = await fetch(googleApiUrl, { signal });
+                        data = await response.json();
+                        if (data.status === 'ok') break;
+                        // wait 1.5s before retry
+                        await new Promise(r => setTimeout(r, 1500));
+                    }
 
-                    if (data.status === 'ok') {
+                    if (data && data.status === 'ok') {
                         const googleNews = data.items.map(item => {
                             // Try to find image in description if not in thumbnail/enclosure
                             let contentImg = null;
@@ -383,6 +369,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             if (!thumbnail && item.content) {
                                 const contentMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
                                 if (contentMatch) thumbnail = contentMatch[1];
+                            }
+                            
+                            // Fallback to group hero image if no image found in RSS at all
+                            if (!thumbnail) {
+                                thumbnail = displayGroup.image;
                             }
 
                             return {
@@ -1426,7 +1417,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     <div className="flex gap-2 md:gap-4">
                         <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-pink/50 transition-colors">
                             <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-pink transition-colors">Members</p>
-                            <p className="text-xl md:text-3xl font-black text-white">{members.length}</p>
+                            <p className="text-xl md:text-3xl font-black text-white">{activeMembers.length}</p>
                         </div>
                         <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
                             <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
@@ -1564,21 +1555,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 ))}
                                             </div>
                                         ) : (
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="flex flex-wrap gap-3">
                                                 {socialLinksOrder.map(link => {
                                                     const url = displayGroup[link.id];
                                                     if (!url) return null;
 
-                                                    let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/5" : "bg-slate-50 text-slate-600 border-slate-100";
-                                                    if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-pink-500 hover:text-white border-white/5" : "bg-slate-50 text-pink-500 hover:bg-pink-500 hover:text-white border-slate-100";
-                                                    else if (link.id === 'facebook') colorClass = theme === 'dark' ? "bg-slate-800 text-blue-500 hover:bg-blue-600 hover:text-white border-white/5" : "bg-slate-50 text-blue-600 hover:bg-blue-600 hover:text-white border-slate-100";
-                                                    else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-sky-500 hover:text-white border-white/5" : "bg-slate-50 text-sky-500 hover:bg-sky-500 hover:text-white border-slate-100";
-                                                    else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-red-500 hover:text-white border-white/5" : "bg-slate-50 text-red-500 hover:bg-red-500 hover:text-white border-slate-100";
-                                                    else if (link.id === 'tiktok') colorClass = theme === 'dark' ? "bg-slate-800 text-white hover:bg-white hover:text-black border-white/5" : "bg-slate-50 text-black hover:bg-black hover:text-white border-slate-100";
+                                                    let baseClass = "px-4 py-2 rounded-full transition-all duration-300 hover:scale-110 hover:-translate-y-1 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border";
+                                                    let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100";
+                                                    
+                                                    if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-gradient-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-white/10 hover:border-transparent" : "bg-white text-pink-500 hover:bg-gradient-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-pink-100 hover:border-transparent";
+                                                    else if (link.id === 'facebook') colorClass = theme === 'dark' ? "bg-slate-800 text-blue-500 hover:bg-[#1877F2] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-blue-600 hover:bg-[#1877F2] hover:text-white border-blue-100 hover:border-transparent";
+                                                    else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-black hover:text-white border-white/10 hover:border-transparent" : "bg-white text-sky-500 hover:bg-black hover:text-white border-sky-100 hover:border-transparent";
+                                                    else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-[#FF0000] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-red-500 hover:bg-[#FF0000] hover:text-white border-red-100 hover:border-transparent";
+                                                    else if (link.id === 'tiktok') colorClass = theme === 'dark' ? "bg-slate-800 text-white hover:bg-gradient-to-r hover:from-[#00f2fe] hover:to-[#4facfe] border-white/10 hover:border-transparent" : "bg-white text-black hover:bg-gradient-to-r hover:from-[#00f2fe] hover:to-[#4facfe] hover:text-white border-slate-200 hover:border-transparent";
+                                                    else if (link.id === 'spotify') colorClass = theme === 'dark' ? "bg-slate-800 text-green-500 hover:bg-[#1DB954] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-green-600 hover:bg-[#1DB954] hover:text-white border-green-100 hover:border-transparent";
+                                                    else if (link.id === 'appleMusic') colorClass = theme === 'dark' ? "bg-slate-800 text-rose-500 hover:bg-[#FA243C] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-rose-600 hover:bg-[#FA243C] hover:text-white border-rose-100 hover:border-transparent";
 
                                                     return (
-                                                        <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn("px-3 py-2 rounded-xl transition-all hover:scale-105 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border", colorClass)}>
-                                                            <link.icon size={14} /> {link.label}
+                                                        <a key={link.id} href={url} target="_blank" rel="noopener noreferrer" title={url} className={cn(baseClass, colorClass)}>
+                                                            <link.icon size={16} /> {link.label}
                                                         </a>
                                                     );
                                                 })}
@@ -1722,7 +1717,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             )}>
                                                 <GripVertical className="text-slate-400" />
                                                 <img src={convertDriveLink(member.image)} className="w-12 h-12 rounded-full object-cover" alt="" />
-                                                <div className="font-bold">{member.name}</div>
+                                                <div className={cn("font-bold flex items-center gap-2", member.status === 'Inactive' && "text-slate-500")}>
+                                                    {member.name}
+                                                    {member.status === 'Inactive' && (
+                                                        <span className="text-[10px] bg-red-100 text-red-600 dark:bg-red-500/10 dark:text-red-400 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-red-500/20">Inactive</span>
+                                                    )}
+                                                </div>
                                             </div>
                                         </Reorder.Item>
                                     ))}
@@ -1738,20 +1738,68 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     animate="show"
                                     className="grid grid-cols-1 md:grid-cols-1 xl:grid-cols-2 gap-6 md:gap-8"
                                 >
-                                    {sortedMembers.map((member, idx) => (
-                                        <MemberCard
-                                            key={member.id || idx}
-                                            id={`member-${member.id}`}
-                                            member={member}
-                                            theme={theme}
-                                            onClick={() => onMemberClick(member)}
-                                            onImageClick={(img) => setLightboxImage(img)}
-                                            onSearchPosition={onSearchPosition}
-                                            user={user}
-                                            onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
-                                            onEdit={() => onEditMember && onEditMember(member)}
-                                        />
-                                    ))}
+                                    {(() => {
+                                        return (
+                                            <>
+                                                {/* Active Members Header - Only show if there's at least one active member */}
+                                                {activeMembers.length > 0 && (
+                                                    <div className="col-span-1 md:col-span-1 xl:col-span-2 mt-4 mb-2">
+                                                        <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                                            <div className="w-8 h-1 bg-brand-pink rounded-full" />
+                                                            Active Members
+                                                        </h3>
+                                                    </div>
+                                                )}
+
+                                                {activeMembers.map((member, idx) => (
+                                                    <MemberCard
+                                                        key={member.id || idx}
+                                                        id={`member-${member.id}`}
+                                                        member={member}
+                                                        theme={theme}
+                                                        onClick={() => onMemberClick(member)}
+                                                        onImageClick={(img) => setLightboxImage(img)}
+                                                        onSearchPosition={onSearchPosition}
+                                                        user={user}
+                                                        onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
+                                                        onEdit={() => onEditMember && onEditMember(member)}
+                                                    />
+                                                ))}
+
+                                                {/* Former Members Header */}
+                                                {formerMembers.length > 0 && (
+                                                    <>
+                                                        <div className="col-span-1 md:col-span-1 xl:col-span-2 mt-12 mb-6">
+                                                            <div className="flex items-center gap-4">
+                                                                <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                                                    <div className="w-8 h-1 bg-slate-400 rounded-full" />
+                                                                    Former Members
+                                                                </h3>
+                                                                <div className={cn("h-px w-full", theme === 'dark' ? "bg-white/5" : "bg-slate-100")} />
+                                                            </div>
+                                                            <p className={cn("text-xs font-bold mt-2", theme === 'dark' ? "text-slate-600" : "text-slate-400")}>
+                                                                Members who have officially left the group.
+                                                            </p>
+                                                        </div>
+                                                        {formerMembers.map((member, idx) => (
+                                                            <MemberCard
+                                                                key={member.id || idx}
+                                                                id={`member-${member.id}`}
+                                                                member={member}
+                                                                theme={theme}
+                                                                onClick={() => onMemberClick(member)}
+                                                                onImageClick={(img) => setLightboxImage(img)}
+                                                                onSearchPosition={onSearchPosition}
+                                                                user={user}
+                                                                onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
+                                                                onEdit={() => onEditMember && onEditMember(member)}
+                                                            />
+                                                        ))}
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </motion.div>
                             )}
                         </>
@@ -1899,9 +1947,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 handleTimelineDotClick(member.id);
                                             }}
                                             className={cn(
-                                                "absolute left-4 md:left-1/2 w-4 h-4 rounded-full border-4 -ml-2 z-10 cursor-pointer",
-                                                isSelected ? "bg-brand-pink border-brand-pink" : (theme === 'dark' ? "bg-slate-900 border-brand-pink" : "bg-white border-brand-pink")
-                                            )} title="Click to view member card" />
+                                                "absolute left-4 md:left-1/2 w-4 h-4 rounded-full border-[3px] -ml-2 z-10 cursor-pointer transition-all duration-500 shadow-lg hover:shadow-2xl hover:scale-125",
+                                                isSelected ? "bg-brand-pink border-white scale-125 ring-4 ring-brand-pink/20" : (
+                                                    ['inactive', 'former'].includes(member.status?.toLowerCase())
+                                                        ? "bg-amber-500 border-white dark:border-slate-900 shadow-amber-500/40"
+                                                        : "bg-brand-pink border-white dark:border-slate-900 shadow-brand-pink/40"
+                                                )
+                                            )} title={['inactive', 'former'].includes(member.status?.toLowerCase()) ? `${member.name} (Inactive Member)` : member.name} 
+                                        >
+                                            <div className={cn(
+                                                "absolute inset-[-4px] rounded-full animate-pulse opacity-20",
+                                                ['inactive', 'former'].includes(member.status?.toLowerCase()) ? "bg-amber-400" : "bg-brand-pink"
+                                            )} />
+                                        </motion.div>
 
                                         {/* Content */}
                                         <div className={cn(
@@ -1912,25 +1970,52 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 layout
                                                 whileHover={{ y: -5, scale: 1.02 }}
                                                 className={cn(
-                                                    "rounded-3xl border transition-colors cursor-pointer group overflow-hidden",
+                                                    "rounded-3xl border transition-all duration-500 cursor-pointer group overflow-hidden",
                                                     theme === 'dark' ? "bg-slate-900/60 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 hover:border-brand-pink/30 shadow-lg",
-                                                    isSelected && "ring-2 ring-brand-pink border-brand-pink/50"
+                                                    isSelected && "ring-2 ring-brand-pink border-brand-pink/50",
+                                                    ['inactive', 'former'].includes(member.status?.toLowerCase()) && "opacity-60 saturate-[0.8] hover:opacity-100 hover:saturate-100"
                                                 )} onClick={() => setSelectedTimelineMember(isSelected ? null : member)}>
                                                 <div className={cn(
                                                     "flex items-center gap-4",
                                                     "p-6",
                                                     index % 2 === 0 ? "md:flex-row-reverse" : ""
                                                 )}>
-                                                    <img
-                                                        src={convertDriveLink(member.image)}
-                                                        className="w-16 h-16 rounded-2xl object-cover shadow-md"
-                                                        loading="lazy"
-                                                        alt={member.name}
-                                                    />
+                                                    <div className="relative">
+                                                        <img
+                                                            src={convertDriveLink(member.image)}
+                                                            className={cn(
+                                                                "w-16 h-16 rounded-2xl object-cover shadow-md transition-all duration-500",
+                                                                ['inactive', 'former'].includes(member.status?.toLowerCase()) && "opacity-70 group-hover:opacity-100"
+                                                            )}
+                                                            loading="lazy"
+                                                            alt={member.name}
+                                                        />
+                                                        {['inactive', 'former'].includes(member.status?.toLowerCase()) && (
+                                                            <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl skew-x-[-12deg]">
+                                                                <div className="flex items-center gap-2 px-4 py-2 bg-white/10 dark:bg-black/40 backdrop-blur-xl text-white border-l-4 border-amber-400/80">
+                                                                    <div className="relative flex h-2 w-2">
+                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                                                    </div>
+                                                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none text-amber-200/90 italic">Inactive</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                     <div>
-                                                        <p className="text-xs font-black text-brand-pink uppercase tracking-widest mb-1">
-                                                            Joined {member.debutDate ? new Date(member.debutDate).getFullYear() : 'Unknown'}
-                                                        </p>
+                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                            <p className="text-xs font-black text-brand-pink uppercase tracking-widest">
+                                                                Joined {member.debutDate ? new Date(member.debutDate).getFullYear() : 'Unknown'}
+                                                            </p>
+                                                            {['inactive', 'former'].includes(member.status?.toLowerCase()) && member.retirementDate && (
+                                                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-red-500/5 border border-red-500/10 transition-colors hover:bg-red-500/10">
+                                                                    <div className="w-1 h-1 rounded-full bg-red-500/40" />
+                                                                    <span className="text-[10px] font-bold text-red-500/70 tracking-tight">
+                                                                        Left: {new Date(member.retirementDate).toLocaleDateString()}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                         <h4 className={cn("text-xl font-black group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-white" : "text-slate-900")}>
                                                             {member.name}
                                                         </h4>
@@ -1974,6 +2059,17 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                                         <p className="text-[10px] text-slate-500 uppercase font-bold mb-1 tracking-wider">Nationality</p>
                                                                         <p className={cn("font-bold text-sm", theme === 'dark' ? "text-white" : "text-slate-900")}>{member.nationality || '-'}</p>
                                                                     </div>
+                                                                    {['inactive', 'former'].includes(member.status?.toLowerCase()) && (
+                                                                        <div className="p-3 rounded-2xl bg-red-500/5 border border-red-500/10 flex items-center justify-between group">
+                                                                            <div>
+                                                                                <p className="text-[10px] text-red-500/60 uppercase font-black mb-1 tracking-widest">Departure Date</p>
+                                                                                <p className={cn("font-black text-base text-red-500")}>{member.retirementDate || '-'}</p>
+                                                                            </div>
+                                                                            <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                                                <History size={18} />
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
 
                                                                 {member.positions && member.positions.length > 0 && (
@@ -2838,7 +2934,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             />
                             <div className="flex justify-end gap-3">
                                 <button onClick={() => setShowReasonModal(false)} className={cn("px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors", theme === 'dark' ? "hover:bg-white/10 text-slate-400" : "hover:bg-slate-100 text-slate-500")}>Cancel</button>
-                                <button onClick={confirmSubmitEdit} className="px-6 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-widest hover:bg-brand-pink/90 transition-colors shadow-lg shadow-brand-pink/20">Submit Request</button>
+                                <button onClick={confirmSubmitEdit} className="px-6 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-widest hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-colors shadow-lg shadow-brand-pink/20">Submit Request</button>
                             </div>
                         </motion.div>
                     </div>
@@ -2979,6 +3075,7 @@ const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onIm
             }}
             className={cn(
                 "relative group rounded-3xl overflow-hidden cursor-pointer transition-all duration-500 min-h-[280px]",
+                ['inactive', 'former'].includes(member.status?.toLowerCase()) && "opacity-60 saturate-[0.8] hover:opacity-100 hover:saturate-100",
                 theme === 'dark'
                     ? "bg-slate-900/40 border border-white/10 hover:border-brand-pink/30"
                     : "bg-white border-slate-100 shadow-xl shadow-slate-200/50 hover:shadow-2xl hover:border-slate-200"
@@ -3008,8 +3105,22 @@ const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onIm
                             src={convertDriveLink(member.image)}
                             alt={member.name}
                             loading="lazy"
-                            className="w-36 h-48 md:w-48 md:h-64 rounded-2xl object-cover object-center border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105"
+                            className={cn(
+                                "w-36 h-48 md:w-48 md:h-64 rounded-2xl object-cover object-center border-4 border-white/10 shadow-xl transition-all duration-700 group-hover:scale-105",
+                                ['inactive', 'former'].includes(member.status?.toLowerCase()) && "opacity-80 group-hover:opacity-100"
+                            )}
                         />
+                        {['inactive', 'former'].includes(member.status?.toLowerCase()) && (
+                            <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl skew-x-[-12deg]">
+                                <div className="flex items-center gap-2 px-4 py-2 bg-white/10 dark:bg-black/40 backdrop-blur-xl text-white border-l-4 border-amber-400/80">
+                                    <div className="relative flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                    </div>
+                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none text-amber-200/90 italic">Inactive</span>
+                                </div>
+                            </div>
+                        )}
                     </motion.div>
                     {user && (
                         <div className="absolute -top-2 -right-2 z-20 flex flex-col gap-2">

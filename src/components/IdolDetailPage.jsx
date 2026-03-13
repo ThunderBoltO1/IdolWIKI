@@ -628,10 +628,10 @@ export function IdolDetailPage() {
                         <option value="Inactive">Inactive</option>
                       </select>
                     ) : (
-                      <div className={cn("font-bold", idol.status === 'Inactive' ? "text-red-500" : "text-green-500")}>{idol.status || 'Active'}</div>
+                      <div className={cn("font-bold", ['inactive', 'former'].includes(idol.status?.toLowerCase()) ? "text-red-500" : "text-green-500")}>{idol.status || 'Active'}</div>
                     )}
                   </div>
-                  {(isEditingWorks ? profileDraft.status === 'Inactive' : idol.status === 'Inactive') && (
+                  {(isEditingWorks ? ['inactive', 'former'].includes(profileDraft.status?.toLowerCase()) : ['inactive', 'former'].includes(idol.status?.toLowerCase())) && (
                     <div>
                       <span className={cn('text-xs font-black uppercase tracking-widest text-red-500')}>Retirement Date</span>
                       {isEditingWorks ? (

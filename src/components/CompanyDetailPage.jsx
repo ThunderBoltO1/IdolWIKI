@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Edit2, Globe, Calendar, Users, MapPin, Building2, Share2, Check, Maximize2, Music, User, Search, Trash2, Plus, Link as LinkIcon, Facebook, Youtube, Instagram } from 'lucide-react';
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -182,18 +182,26 @@ export function CompanyDetailPage() {
         setDeleteConfirmModal({
             isOpen: true,
             title: 'Delete Company',
-            message: `Are you sure you want to delete ${company.name}? This action cannot be undone and will remove all associated data.`,
+            message: `Are you sure you want to delete "${company.name}"? This will move it to trash and permanent deletion will occur in 7 days.`,
             type: 'danger',
             confirmText: 'Delete',
             onConfirm: async () => {
                 try {
-                    await deleteDoc(doc(db, 'companies', company.id));
+                    const expireDate = new Date();
+                    expireDate.setDate(expireDate.getDate() + 7);
+
+                    await updateDoc(doc(db, 'companies', company.id), {
+                        deleted: true,
+                        deletedAt: serverTimestamp(),
+                        expireAt: Timestamp.fromDate(expireDate)
+                    });
+
                     await logAudit({
                         action: 'delete',
                         targetType: 'company',
                         targetId: company.id,
                         user: user,
-                        details: { name: company.name }
+                        details: { name: company.name, type: 'soft-delete' }
                     });
                     navigate('/admin/companies');
                 } catch (err) {

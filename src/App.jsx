@@ -8,7 +8,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
@@ -155,19 +155,23 @@ function AppContent() {
   }, []);
 
   const groups = useMemo(() => {
-    return rawGroups.map(group => ({
-      ...group,
-      isFavorite: user ? (group.favoritedBy || []).includes(user.uid) : false
-    }));
+    return rawGroups
+      .filter(g => !g.deleted)
+      .map(group => ({
+        ...group,
+        isFavorite: user ? (group.favoritedBy || []).includes(user.uid) : false
+      }));
   }, [rawGroups, user]);
 
   const idols = useMemo(() => {
     const groupMap = new Map(rawGroups.map(g => [g.id, g]));
-    return rawIdols.map(idol => ({
-      ...idol,
-      isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false,
-      memberCount: idol.groupId ? (groupMap.get(idol.groupId)?.members?.length || 0) : 0,
-    }));
+    return rawIdols
+      .filter(i => !i.deleted)
+      .map(idol => ({
+        ...idol,
+        isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false,
+        memberCount: idol.groupId ? (groupMap.get(idol.groupId)?.members?.length || 0) : 0,
+      }));
   }, [rawIdols, rawGroups, user]);
 
   const filteredGroups = useMemo(() => {
@@ -454,23 +458,36 @@ function AppContent() {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Idol',
-      message: 'Are you sure you want to delete this idol? This action cannot be undone.',
+      message: 'Are you sure you want to delete this idol? This will move it to trash and permanent deletion will occur in 7 days.',
+      confirmText: 'Delete',
+      type: 'danger',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'idols', id));
+          const expireDate = new Date();
+          expireDate.setDate(expireDate.getDate() + 7);
+
+          const idolRef = doc(db, 'idols', id);
+          await updateDoc(idolRef, {
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireDate)
+          });
 
           if (user) {
             await logAudit({
               action: 'delete',
               targetType: 'idol',
               targetId: id,
-              user: user
+              user: user,
+              details: { type: 'soft-delete' }
             });
           }
 
           setModalOpen(false);
+          // Force refresh or optimistic update might be handled by Firestore listener
         } catch (err) {
           console.error("Delete error:", err);
+          alert("Failed to delete idol");
         }
       }
     });
@@ -574,17 +591,28 @@ function AppContent() {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Group',
-      message: 'Are you sure you want to delete this group? This cannot be undone.',
+      message: 'Are you sure you want to delete this group? This will move it to trash and permanent deletion will occur in 7 days.',
+      confirmText: 'Delete',
+      type: 'danger',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'groups', groupId));
+          const expireDate = new Date();
+          expireDate.setDate(expireDate.getDate() + 7);
+
+          const groupRef = doc(db, 'groups', groupId);
+          await updateDoc(groupRef, {
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireDate)
+          });
 
           if (user) {
             await logAudit({
               action: 'delete',
               targetType: 'group',
               targetId: groupId,
-              user: user
+              user: user,
+              details: { type: 'soft-delete' }
             });
           }
 

@@ -55,7 +55,6 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         youtube: '',
         tiktok: '',
         image: '',
-        image: '',
         parentCompanies: [], // New field for Parent Company
         subsidiaries: [], // New field for Subsidiary Companies
         instagram: '',
@@ -138,7 +137,6 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     headquarters: '',
                     website: '',
                     image: '',
-                    parentCompanies: initialData?.parentCompany ? [initialData.parentCompany] : [],
                     parentCompanies: initialData?.parentCompany ? [initialData.parentCompany] : [],
                     subsidiaries: [],
                     instagram: '',
@@ -803,27 +801,30 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
                         {/* Sticky Footer */}
                         <div className={cn(
-                            "sticky bottom-0 z-10 p-4 md:p-6 border-t shrink-0",
-                            theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+                            "sticky bottom-0 z-30 pt-6 pb-6 mt-8 p-6 md:px-10 border-t backdrop-blur-xl transition-all duration-300",
+                            theme === 'dark' 
+                                ? "border-white/5 bg-slate-900/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.5)]" 
+                                : "border-slate-100 bg-white/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)]"
                         )}>
-                            <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-3">
+                            <div className="flex flex-col sm:flex-row justify-end gap-3 md:gap-4">
                                 <button
                                     type="button"
                                     onClick={onClose}
                                     className={cn(
-                                        "w-full sm:w-auto px-6 py-4 sm:py-3 rounded-xl text-sm font-black uppercase tracking-wider transition-colors",
-                                        theme === 'dark' ? "bg-slate-800 text-slate-400 hover:bg-slate-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                        "w-full sm:w-auto px-8 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 shadow-sm flex items-center justify-center gap-2",
+                                        theme === 'dark' ? "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                     )}
                                 >
-                                    Cancel
+                                    <X size={16} />
+                                    Discard Changes
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full sm:w-auto px-6 py-4 sm:py-3 rounded-xl bg-brand-pink text-white text-sm font-black uppercase tracking-wider shadow-lg shadow-brand-pink/20 hover:bg-brand-pink/90 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full sm:w-auto px-10 py-3.5 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white text-[11px] font-black uppercase tracking-[0.2em] shadow-xl shadow-brand-pink/20 hover:opacity-95 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {loading ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                                    {loading ? 'Saving...' : 'Save Company'}
+                                    {loading ? 'Processing...' : 'Save Company Details'}
                                 </button>
                             </div>
                         </div>

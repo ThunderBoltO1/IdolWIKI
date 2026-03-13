@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, addDoc, serverTimestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, addDoc, serverTimestamp, where, writeBatch, Timestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
 import { Loader2, Trash2, Shield, User, Search, CheckCircle2, ArrowLeft, Ban, AlertCircle, History, X, MessageSquare, Send, Megaphone, Activity, KeyRound } from 'lucide-react';
@@ -42,13 +42,15 @@ export function AdminUserManagement({ onBack }) {
         try {
             // Fetch all users without server-side ordering to avoid index issues
             const snapshot = await getDocs(collection(db, 'users'));
-            const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
+            const usersData = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(user => !user.deleted);
+
             // Sort client-side
             usersData.sort((a, b) => {
                 return (new Date(b.createdAt || 0)) - (new Date(a.createdAt || 0));
             });
-            
+
             setUsers(usersData);
         } catch (error) {
             console.error("Error fetching users:", error);
@@ -77,7 +79,7 @@ export function AdminUserManagement({ onBack }) {
         try {
             const newStatus = !currentStatus;
             await updateDoc(doc(db, 'users', userId), { banned: newStatus });
-            
+
             await addDoc(collection(db, 'banLogs'), {
                 userId,
                 action: newStatus ? 'ban' : 'unban',
@@ -97,13 +99,22 @@ export function AdminUserManagement({ onBack }) {
     };
 
     const handleDeleteUser = async (userId) => {
-        if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
-        
+        if (!window.confirm("Are you sure you want to delete this user? This user will be scheduled for permanent deletion in 7 days.")) return;
+
         setActionLoading(`${userId}-delete`);
         try {
-            await deleteDoc(doc(db, 'users', userId));
+            // Soft delete: mark as deleted and set expiration date (7 days from now)
+            const expireDate = new Date();
+            expireDate.setDate(expireDate.getDate() + 7);
+
+            await updateDoc(doc(db, 'users', userId), {
+                deleted: true,
+                deletedAt: serverTimestamp(),
+                expireAt: Timestamp.fromDate(expireDate)
+            });
+
             setUsers(users.filter(u => u.id !== userId));
-            showSuccess('User deleted successfully');
+            showSuccess('User scheduled for deletion in 7 days');
         } catch (error) {
             console.error("Error deleting user:", error);
             alert("Failed to delete user");
@@ -114,7 +125,7 @@ export function AdminUserManagement({ onBack }) {
 
     const handleResetPassword = async (userItem) => {
         if (!window.confirm(`Are you sure you want to send a password reset email to ${userItem.email}?`)) return;
-        
+
         setActionLoading(`${userItem.id}-reset-password`);
         try {
             await sendPasswordResetEmail(auth, userItem.email);
@@ -133,7 +144,7 @@ export function AdminUserManagement({ onBack }) {
         setHistoryLogs([]);
         try {
             const q = query(
-                collection(db, 'banLogs'), 
+                collection(db, 'banLogs'),
                 where('userId', '==', userItem.id)
             );
             const snapshot = await getDocs(q);
@@ -173,7 +184,7 @@ export function AdminUserManagement({ onBack }) {
 
     const handleSendNotification = async () => {
         if (!notificationMessage.trim() || !notificationTarget) return;
-        
+
         setIsSendingNotification(true);
         try {
             if (notificationTarget.id === 'all') {
@@ -194,7 +205,7 @@ export function AdminUserManagement({ onBack }) {
                             recipientId: u.id,
                             senderId: user.uid || user.id,
                             senderName: 'Admin Broadcast',
-                            senderAvatar: '', 
+                            senderAvatar: '',
                             type: 'admin_message',
                             text: notificationMessage.trim(),
                             createdAt: serverTimestamp(),
@@ -209,7 +220,7 @@ export function AdminUserManagement({ onBack }) {
                     recipientId: notificationTarget.id,
                     senderId: user.uid || user.id,
                     senderName: 'Admin Notification',
-                    senderAvatar: '', 
+                    senderAvatar: '',
                     type: 'admin_message',
                     text: notificationMessage.trim(),
                     createdAt: serverTimestamp(),
@@ -232,8 +243,8 @@ export function AdminUserManagement({ onBack }) {
         setTimeout(() => setSuccessMessage(''), 3000);
     };
 
-    const filteredUsers = users.filter(u => 
-        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    const filteredUsers = users.filter(u =>
+        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.username?.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -280,15 +291,15 @@ export function AdminUserManagement({ onBack }) {
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className={cn(
                         "w-full pl-12 pr-4 py-3 md:py-4 rounded-2xl border-2 focus:outline-none transition-all font-medium",
-                        theme === 'dark' 
-                            ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600" 
+                        theme === 'dark'
+                            ? "bg-slate-900/50 border-white/10 focus:border-brand-pink text-white placeholder:text-slate-600"
                             : "bg-white border-slate-200 focus:border-brand-pink text-slate-900"
                     )}
                 />
             </div>
 
             {successMessage && (
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-3 text-emerald-500 font-bold"
@@ -299,7 +310,7 @@ export function AdminUserManagement({ onBack }) {
             )}
 
             {error && (
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 font-bold"
@@ -316,149 +327,149 @@ export function AdminUserManagement({ onBack }) {
             ) : (
                 <div className="grid gap-4">
                     <AnimatePresence mode="popLayout">
-                    {filteredUsers.map(userItem => (
-                        <motion.div
-                            layout
-                            key={userItem.id}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                            className={cn(
-                                "p-4 md:p-6 rounded-3xl border flex flex-col md:flex-row items-center gap-6 transition-all",
-                                theme === 'dark' 
-                                    ? "bg-slate-900/40 border-white/5 hover:border-white/10" 
-                                    : "bg-white border-slate-100 shadow-sm hover:shadow-md"
-                            )}
-                        >
-                            <img 
-                                src={convertDriveLink(userItem.avatar)} 
-                                alt={userItem.name}
-                                className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700"
-                                onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${userItem.name}&background=random`}
-                            />
-                            
-                            <div className="flex-1 text-center md:text-left min-w-0">
-                                <h3 className={cn("text-lg font-black truncate flex items-center gap-2 justify-center md:justify-start", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                                    {userItem.name}
-                                    {userItem.banned && <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 text-xs uppercase tracking-widest border border-red-500/20">Banned</span>}
-                                </h3>
-                                <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-3 text-sm text-slate-500 font-medium">
-                                    <span className="text-brand-pink">@{userItem.username}</span>
-                                    <span className="hidden md:inline">•</span>
-                                    <span className="truncate">{userItem.email}</span>
-                                </div>
-                            </div>
+                        {filteredUsers.map(userItem => (
+                            <motion.div
+                                layout
+                                key={userItem.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                                className={cn(
+                                    "p-4 md:p-6 rounded-3xl border flex flex-col md:flex-row items-center gap-6 transition-all",
+                                    theme === 'dark'
+                                        ? "bg-slate-900/40 border-white/5 hover:border-white/10"
+                                        : "bg-white border-slate-100 shadow-sm hover:shadow-md"
+                                )}
+                            >
+                                <img
+                                    src={convertDriveLink(userItem.avatar)}
+                                    alt={userItem.name}
+                                    className="w-14 h-14 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700"
+                                    onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${userItem.name}&background=random`}
+                                />
 
-                            <div className="flex items-center gap-4">
-                                <div className={cn(
-                                    "flex items-center gap-2 px-3 py-1.5 rounded-xl border",
-                                    theme === 'dark' ? "bg-slate-800 border-white/5" : "bg-slate-50 border-slate-200"
-                                )}>
-                                    {userItem.role === 'admin' ? <Shield size={16} className="text-brand-purple" /> : <User size={16} className="text-slate-400" />}
-                                    <select
-                                        value={userItem.role || 'user'}
-                                        onChange={(e) => handleRoleUpdate(userItem.id, e.target.value)}
+                                <div className="flex-1 text-center md:text-left min-w-0">
+                                    <h3 className={cn("text-lg font-black truncate flex items-center gap-2 justify-center md:justify-start", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                                        {userItem.name}
+                                        {userItem.banned && <span className="px-2 py-0.5 rounded-md bg-red-500/10 text-red-500 text-xs uppercase tracking-widest border border-red-500/20">Banned</span>}
+                                    </h3>
+                                    <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-3 text-sm text-slate-500 font-medium">
+                                        <span className="text-brand-pink">@{userItem.username}</span>
+                                        <span className="hidden md:inline">•</span>
+                                        <span className="truncate">{userItem.email}</span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-4">
+                                    <div className={cn(
+                                        "flex items-center gap-2 px-3 py-1.5 rounded-xl border",
+                                        theme === 'dark' ? "bg-slate-800 border-white/5" : "bg-slate-50 border-slate-200"
+                                    )}>
+                                        {userItem.role === 'admin' ? <Shield size={16} className="text-brand-purple" /> : <User size={16} className="text-slate-400" />}
+                                        <select
+                                            value={userItem.role || 'user'}
+                                            onChange={(e) => handleRoleUpdate(userItem.id, e.target.value)}
+                                            disabled={isUserLoading(userItem.id) || userItem.id === user.uid}
+                                            className={cn(
+                                                "bg-transparent text-xs font-bold uppercase tracking-wider outline-none cursor-pointer",
+                                                theme === 'dark' ? "text-white" : "text-slate-700",
+                                                (isUserLoading(userItem.id) || userItem.id === user.uid) && "opacity-50 cursor-not-allowed"
+                                            )}
+                                        >
+                                            <option value="user">User</option>
+                                            <option value="admin">Admin</option>
+                                        </select>
+                                    </div>
+
+                                    <button
+                                        onClick={() => fetchBanHistory(userItem)}
+                                        className={cn(
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-blue-900/30 text-slate-500 hover:text-blue-400"
+                                                : "hover:bg-blue-50 text-slate-400 hover:text-blue-500"
+                                        )}
+                                        title="View History"
+                                    >
+                                        <History size={20} />
+                                    </button>
+
+                                    <button
+                                        onClick={() => fetchActivityLogs(userItem)}
+                                        className={cn(
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-emerald-900/30 text-slate-500 hover:text-emerald-400"
+                                                : "hover:bg-emerald-50 text-slate-400 hover:text-emerald-500"
+                                        )}
+                                        title="View Activity Logs"
+                                    >
+                                        <Activity size={20} />
+                                    </button>
+
+                                    <button
+                                        onClick={() => setNotificationTarget(userItem)}
+                                        className={cn(
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-purple-900/30 text-slate-500 hover:text-purple-400"
+                                                : "hover:bg-purple-50 text-slate-400 hover:text-purple-500"
+                                        )}
+                                        title="Send Message"
+                                    >
+                                        <MessageSquare size={20} />
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleResetPassword(userItem)}
+                                        disabled={isUserLoading(userItem.id)}
+                                        className={cn(
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-yellow-900/30 text-slate-500 hover:text-yellow-400"
+                                                : "hover:bg-yellow-50 text-slate-400 hover:text-yellow-500",
+                                            (isUserLoading(userItem.id)) && "opacity-50 cursor-not-allowed"
+                                        )}
+                                        title="Send Password Reset Email"
+                                    >
+                                        {actionLoading === `${userItem.id}-reset-password` ? <Loader2 size={20} className="animate-spin" /> : <KeyRound size={20} />}
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleBanUser(userItem.id, userItem.banned)}
                                         disabled={isUserLoading(userItem.id) || userItem.id === user.uid}
                                         className={cn(
-                                            "bg-transparent text-xs font-bold uppercase tracking-wider outline-none cursor-pointer",
-                                            theme === 'dark' ? "text-white" : "text-slate-700",
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-orange-900/30 text-slate-500 hover:text-orange-400"
+                                                : "hover:bg-orange-50 text-slate-400 hover:text-orange-500",
+                                            (isUserLoading(userItem.id) || userItem.id === user.uid) && "opacity-50 cursor-not-allowed",
+                                            userItem.banned && "text-orange-500 bg-orange-500/10"
+                                        )}
+                                        title={userItem.banned ? "Unban User" : "Ban User"}
+                                    >
+                                        {actionLoading === `${userItem.id}-ban` ? <Loader2 size={20} className="animate-spin" /> : <Ban size={20} />}
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleDeleteUser(userItem.id)}
+                                        disabled={isUserLoading(userItem.id) || userItem.id === user.uid}
+                                        className={cn(
+                                            "p-2.5 rounded-xl transition-colors",
+                                            theme === 'dark'
+                                                ? "hover:bg-red-900/30 text-slate-500 hover:text-red-400"
+                                                : "hover:bg-red-50 text-slate-400 hover:text-red-500",
                                             (isUserLoading(userItem.id) || userItem.id === user.uid) && "opacity-50 cursor-not-allowed"
                                         )}
+                                        title="Delete User"
                                     >
-                                        <option value="user">User</option>
-                                        <option value="admin">Admin</option>
-                                    </select>
+                                        {actionLoading === `${userItem.id}-delete` ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
+                                    </button>
                                 </div>
-
-                                <button
-                                    onClick={() => fetchBanHistory(userItem)}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-blue-900/30 text-slate-500 hover:text-blue-400" 
-                                            : "hover:bg-blue-50 text-slate-400 hover:text-blue-500"
-                                    )}
-                                    title="View History"
-                                >
-                                    <History size={20} />
-                                </button>
-
-                                <button
-                                    onClick={() => fetchActivityLogs(userItem)}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-emerald-900/30 text-slate-500 hover:text-emerald-400" 
-                                            : "hover:bg-emerald-50 text-slate-400 hover:text-emerald-500"
-                                    )}
-                                    title="View Activity Logs"
-                                >
-                                    <Activity size={20} />
-                                </button>
-
-                                <button
-                                    onClick={() => setNotificationTarget(userItem)}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-purple-900/30 text-slate-500 hover:text-purple-400" 
-                                            : "hover:bg-purple-50 text-slate-400 hover:text-purple-500"
-                                    )}
-                                    title="Send Message"
-                                >
-                                    <MessageSquare size={20} />
-                                </button>
-
-                                <button
-                                    onClick={() => handleResetPassword(userItem)}
-                                    disabled={isUserLoading(userItem.id)}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-yellow-900/30 text-slate-500 hover:text-yellow-400" 
-                                            : "hover:bg-yellow-50 text-slate-400 hover:text-yellow-500",
-                                        (isUserLoading(userItem.id)) && "opacity-50 cursor-not-allowed"
-                                    )}
-                                    title="Send Password Reset Email"
-                                >
-                                    {actionLoading === `${userItem.id}-reset-password` ? <Loader2 size={20} className="animate-spin" /> : <KeyRound size={20} />}
-                                </button>
-
-                                <button
-                                    onClick={() => handleBanUser(userItem.id, userItem.banned)}
-                                    disabled={isUserLoading(userItem.id) || userItem.id === user.uid}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-orange-900/30 text-slate-500 hover:text-orange-400" 
-                                            : "hover:bg-orange-50 text-slate-400 hover:text-orange-500",
-                                        (isUserLoading(userItem.id) || userItem.id === user.uid) && "opacity-50 cursor-not-allowed",
-                                        userItem.banned && "text-orange-500 bg-orange-500/10"
-                                    )}
-                                    title={userItem.banned ? "Unban User" : "Ban User"}
-                                >
-                                    {actionLoading === `${userItem.id}-ban` ? <Loader2 size={20} className="animate-spin" /> : <Ban size={20} />}
-                                </button>
-
-                                <button
-                                    onClick={() => handleDeleteUser(userItem.id)}
-                                    disabled={isUserLoading(userItem.id) || userItem.id === user.uid}
-                                    className={cn(
-                                        "p-2.5 rounded-xl transition-colors",
-                                        theme === 'dark' 
-                                            ? "hover:bg-red-900/30 text-slate-500 hover:text-red-400" 
-                                            : "hover:bg-red-50 text-slate-400 hover:text-red-500",
-                                        (isUserLoading(userItem.id) || userItem.id === user.uid) && "opacity-50 cursor-not-allowed"
-                                    )}
-                                    title="Delete User"
-                                >
-                                    {actionLoading === `${userItem.id}-delete` ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
-                                </button>
-                            </div>
-                        </motion.div>
-                    ))}
+                            </motion.div>
+                        ))}
                     </AnimatePresence>
-                    
+
                     {filteredUsers.length === 0 && (
                         <div className="text-center py-20">
                             <User size={48} className="mx-auto text-slate-300 mb-4" />
@@ -562,13 +573,13 @@ export function AdminUserManagement({ onBack }) {
                                     placeholder="Type your message here..."
                                     className={cn(
                                         "w-full h-32 p-4 rounded-2xl resize-none focus:outline-none border-2 transition-all font-medium",
-                                        theme === 'dark' 
-                                            ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white placeholder:text-slate-500" 
+                                        theme === 'dark'
+                                            ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white placeholder:text-slate-500"
                                             : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
                                     )}
                                     autoFocus
                                 />
-                                
+
                                 <div className="flex justify-end gap-3">
                                     <button
                                         onClick={() => setNotificationTarget(null)}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, deleteDoc, updateDoc, doc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -31,7 +31,9 @@ export function CompanyManagement() {
         try {
             const q = query(collection(db, 'companies'), orderBy('name'));
             const snapshot = await getDocs(q);
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const data = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(company => !company.deleted);
             setCompanies(data);
         } catch (error) {
             console.error("Error fetching companies:", error);
@@ -53,16 +55,25 @@ export function CompanyManagement() {
         setConfirmModal({
             isOpen: true,
             title: 'Delete Company',
-            message: `Are you sure you want to delete "${company.name}"? This action cannot be undone.`,
+            message: `Are you sure you want to delete "${company.name}"? This will be permanently removed in 7 days.`,
             onConfirm: () => deleteCompany(company.id),
             type: 'danger',
-            confirmText: 'Delete'
+            confirmText: 'Schedule Deletion'
         });
     };
 
     const deleteCompany = async (id) => {
         try {
-            await deleteDoc(doc(db, 'companies', id));
+            // Soft delete with 7-day expiration
+            const expireDate = new Date();
+            expireDate.setDate(expireDate.getDate() + 7);
+
+            await updateDoc(doc(db, 'companies', id), {
+                deleted: true,
+                deletedAt: serverTimestamp(),
+                expireAt: Timestamp.fromDate(expireDate)
+            });
+
             setCompanies(prev => prev.filter(c => c.id !== id));
             setConfirmModal({ isOpen: false });
         } catch (error) {

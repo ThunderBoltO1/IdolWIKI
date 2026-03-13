@@ -38,9 +38,15 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
                     {idol.group ? <Users size={20} className="text-brand-pink" /> : <Users size={20} className="text-brand-pink" />}
                     <span>{idol.group ? 'Group' : 'Soloist'}</span>
                 </div>
-                {idol.status === 'Inactive' && (
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/80 backdrop-blur-md border border-red-400/30 text-white text-[10px] font-black uppercase tracking-widest shadow-lg">
-                        <span>Inactive</span>
+                {['inactive', 'former'].includes(idol.status?.toLowerCase()) && (
+                    <div className="overflow-hidden ring-1 ring-white/20 rounded-xl shadow-2xl skew-x-[-12deg]">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-xl text-white border-l-4 border-amber-400">
+                            <div className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] leading-none text-amber-200 italic">Inactive</span>
+                        </div>
                     </div>
                 )}
             </div>
@@ -57,6 +63,27 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
                     >
                         <Star size={18} className={cn("transition-all", idol.isFavorite && "fill-yellow-400 text-yellow-400")} />
                     </button>
+                    {/* Animated Vertical Line */}
+                    <motion.div
+                        initial={{ height: 0 }}
+                        whileInView={{ height: "100%" }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 1.5, ease: "easeInOut" }}
+                        className="absolute left-4 md:left-1/2 top-0 w-0.5 -ml-px bg-gradient-to-b from-brand-pink via-brand-purple to-transparent shadow-[0_0_20px_rgba(236,72,153,0.3)]"
+                    >
+                        <motion.div
+                            animate={{
+                                top: ["0%", "100%"],
+                                opacity: [0, 1, 0]
+                            }}
+                            transition={{
+                                duration: 3,
+                                repeat: Infinity,
+                                ease: "linear"
+                            }}
+                            className="absolute top-0 left-0 w-full h-20 bg-gradient-to-b from-transparent via-white to-transparent"
+                        />
+                    </motion.div>
                     {onEdit && (
                         <button
                             onClick={(e) => {

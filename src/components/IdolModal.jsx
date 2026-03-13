@@ -68,7 +68,8 @@ const defaultIdolData = {
     videos: [],
     likes: 0,
     albums: [],
-    formerCompanies: []
+    formerCompanies: [],
+    status: 'Active'
 };
 
 export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
@@ -1361,6 +1362,85 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                     <div className="space-y-4">
                                                         <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Career</h3>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                            <div className="space-y-2">
+                                                                <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] ml-2 flex items-center gap-2">
+                                                                    <Activity size={12} className="text-brand-pink" /> Status
+                                                                </label>
+                                                                {editMode ? (
+                                                                    <div className={cn(
+                                                                        "relative rounded-2xl overflow-hidden border-2 transition-all p-1",
+                                                                        theme === 'dark' ? "bg-slate-900/50 border-white/5" : "bg-white border-slate-100"
+                                                                    )}>
+                                                                        <select
+                                                                            name="status"
+                                                                            value={formData.status || 'Active'}
+                                                                            onChange={handleChange}
+                                                                            className={cn(
+                                                                                "w-full bg-transparent p-3 outline-none text-sm font-bold appearance-none cursor-pointer",
+                                                                                theme === 'dark' ? "text-white" : "text-slate-900"
+                                                                            )}
+                                                                        >
+                                                                            <option value="Active" className={theme === 'dark' ? 'bg-slate-800' : ''}>Active</option>
+                                                                            <option value="Inactive" className={theme === 'dark' ? 'bg-slate-800' : ''}>Inactive</option>
+                                                                        </select>
+                                                                        <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className={cn(
+                                                                        "p-4 rounded-2xl flex items-center gap-3 border transition-all duration-500",
+                                                                        ['inactive', 'former'].includes(formData.status?.toLowerCase())
+                                                                            ? (theme === 'dark' ? "bg-amber-500/10 border-amber-500/20 shadow-[0_0_20px_rgba(251,191,36,0.1)]" : "bg-amber-50 border-amber-200")
+                                                                            : (theme === 'dark' ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100")
+                                                                    )}>
+                                                                        <div className="relative flex h-2 w-2">
+                                                                            <span className={cn(
+                                                                                "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                                                                                ['inactive', 'former'].includes(formData.status?.toLowerCase()) ? "bg-amber-400" : "bg-emerald-400"
+                                                                            )}></span>
+                                                                            <span className={cn(
+                                                                                "relative inline-flex rounded-full h-2 w-2",
+                                                                                ['inactive', 'former'].includes(formData.status?.toLowerCase()) ? "bg-amber-500" : "bg-emerald-500"
+                                                                            )}></span>
+                                                                        </div>
+                                                                        <span className={cn(
+                                                                            "text-xs font-black uppercase tracking-[0.1em]",
+                                                                            ['inactive', 'former'].includes(formData.status?.toLowerCase())
+                                                                                ? (theme === 'dark' ? "text-amber-200" : "text-amber-700")
+                                                                                : (theme === 'dark' ? "text-emerald-400" : "text-emerald-600")
+                                                                        )}>
+                                                                            {formData.status || 'Active'}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                                {editMode && (formData.status?.toLowerCase() === 'inactive' || formData.status?.toLowerCase() === 'former') && (
+                                                                    <div className="mt-2 pl-4 border-l-2 border-amber-500/30">
+                                                                        <DetailItem
+                                                                            icon={Calendar}
+                                                                            label="Departure Date"
+                                                                            value={formData.retirementDate}
+                                                                            editMode={editMode}
+                                                                            name="retirementDate"
+                                                                            type="date"
+                                                                            onChange={handleChange}
+                                                                            theme={theme}
+                                                                            valueClass="text-amber-500"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                {!editMode && (formData.status?.toLowerCase() === 'inactive' || formData.status?.toLowerCase() === 'former') && formData.retirementDate && (
+                                                                    <div className="mt-2 pl-4 border-l-2 border-amber-500/30">
+                                                                        <DetailItem
+                                                                            icon={Calendar}
+                                                                            label="Departure Date"
+                                                                            value={formData.retirementDate}
+                                                                            theme={theme}
+                                                                            valueClass={theme === 'dark' ? "text-amber-200" : "text-amber-700"}
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             <DetailItem
                                                                 icon={Building2}
                                                                 label="Company"
@@ -1665,7 +1745,28 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         onAction={() => handleSpeak(formData.koreanName)}
                                                         highlighted={highlightedChanges?.koreanName}
                                                     />
-                                                    <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.otherNames} />
+                                                    <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} theme={theme} highlighted={highlightedChanges?.otherNames} />
+                                                    <DetailItem 
+                                                       icon={Heart} 
+                                                       label="Member Status" 
+                                                       value={
+                                                           <span className={cn(
+                                                               "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] border flex items-center gap-2 w-fit mt-1",
+                                                               formData.status === 'Inactive' 
+                                                                   ? "bg-red-500/10 text-red-500 border-red-500/20" 
+                                                                   : (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-100")
+                                                           )}>
+                                                               <div className={cn("w-1.5 h-1.5 rounded-full", formData.status === 'Inactive' ? "bg-red-500" : "bg-green-500 animate-pulse")} />
+                                                               {formData.status || 'Active'}
+                                                           </span>
+                                                       } 
+                                                       theme={theme} 
+                                                       highlighted={highlightedChanges?.status} 
+                                                       disableHoverEffect={true}
+                                                    />
+                                                    {formData.status === 'Inactive' && formData.retirementDate && (
+                                                        <DetailItem icon={Calendar} label="Retirement Date" value={formData.retirementDate} theme={theme} highlighted={highlightedChanges?.retirementDate} />
+                                                    )}
                                                     <DetailItem
                                                         icon={Building2}
                                                         label="Company"
@@ -2286,15 +2387,17 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
                                     {editMode && (
                                         <div className={cn(
-                                            "pt-8 flex justify-end gap-4 border-t",
-                                            theme === 'dark' ? "border-white/5" : "border-slate-100"
+                                            "sticky bottom-0 z-30 pt-6 pb-6 mt-8 flex justify-end gap-4 border-t backdrop-blur-xl -mx-6 md:-mx-10 px-6 md:px-10 transition-all duration-300",
+                                            theme === 'dark' 
+                                                ? "border-white/5 bg-slate-900/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.5)]" 
+                                                : "border-slate-100 bg-white/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)]"
                                         )}>
                                             <button
                                                 type="button"
                                                 onClick={() => mode === 'create' ? onClose() : handleDiscard()}
                                                 className={cn(
-                                                    "px-8 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all active:scale-95 shadow-sm flex items-center gap-2",
-                                                    theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                                    "px-6 md:px-8 py-3 rounded-2xl font-black uppercase text-[10px] md:text-xs tracking-[0.2em] transition-all active:scale-95 shadow-sm flex items-center gap-2",
+                                                    theme === 'dark' ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
                                                 )}
                                             >
                                                 {mode === 'create' ? <X size={16} /> : <RotateCcw size={16} />}
@@ -2302,9 +2405,10 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             </button>
                                             <button
                                                 type="submit"
-                                                className="px-10 py-3 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black uppercase text-xs tracking-[0.2em] hover:opacity-90 transition-all flex items-center gap-3 shadow-xl shadow-brand-pink/20 active:scale-95"
+                                                className="px-8 md:px-10 py-3 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black uppercase text-[10px] md:text-xs tracking-[0.2em] hover:opacity-90 hover:scale-[1.02] transition-all flex items-center gap-3 shadow-xl shadow-brand-pink/20 active:scale-95"
                                             >
-                                                <Save size={20} /> Save Changes
+                                                {loadingHistory ? <Loader2 size={18} className="animate-spin" /> : <Save size={20} />}
+                                                Save Changes
                                             </button>
                                         </div>
                                     )}

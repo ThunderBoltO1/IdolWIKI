@@ -750,7 +750,7 @@ export function CompanyDetailPage() {
                                         )}
                                     >
                                         <img
-                                            src={convertDriveLink(group.image)}
+                                            src={convertDriveLink(group.coverImage || group.image)}
                                             alt={group.name}
                                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                                         />

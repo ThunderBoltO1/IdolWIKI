@@ -2,13 +2,12 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw, Settings, Facebook, Youtube, Instagram } from 'lucide-react';
+import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw, Settings, Facebook, Youtube, Instagram, Star, Music } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
-import { ImageCropper } from './ImageCropper';
-import { isDataUrl } from '../lib/cropImage';
-import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { IdolCard } from './IdolCard';
 
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -22,7 +21,7 @@ const TiktokIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-export const ProfilePage = ({ onBack }) => {
+export const ProfilePage = ({ onBack, idols = [], onSelectIdol, onFavoriteIdol, onEditIdol }) => {
     const { user, updateUser } = useAuth();
     const { theme } = useTheme();
     const [formData, setFormData] = useState({
@@ -53,20 +52,12 @@ export const ProfilePage = ({ onBack }) => {
             });
         }
     }, [user]);
+    const [activeTab, setActiveTab] = useState('profile');
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
-    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 1 });
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const fileInputRef = useRef(null);
-
-    const startCropping = (url, callback, aspect = 1) => {
-        if (!url || isDataUrl(url)) {
-            callback(url);
-            return;
-        }
-        setCropState({ src: url, callback, aspect });
-    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -94,23 +85,18 @@ export const ProfilePage = ({ onBack }) => {
             return;
         }
 
-        const objectUrl = URL.createObjectURL(file);
-        startCropping(objectUrl, async (croppedUrl) => {
-            setIsUploading(true);
-            try {
-                const croppedFile = dataURLtoFile(croppedUrl, file.name);
-                const compressedFile = await compressImage(croppedFile);
-
-                const url = await uploadImage(compressedFile, 'avatars', (progress) => setUploadProgress(progress));
-                setFormData(prev => ({ ...prev, avatar: url }));
-            } catch (error) {
-                console.error("Upload failed", error);
-                alert("Failed to upload image");
-            } finally {
-                setIsUploading(false);
-                if (fileInputRef.current) fileInputRef.current.value = '';
-            }
-        }, 1);
+        setIsUploading(true);
+        try {
+            const compressedFile = await compressImage(file);
+            const url = await uploadImage(compressedFile, 'avatars', (progress) => setUploadProgress(progress));
+            setFormData(prev => ({ ...prev, avatar: url }));
+        } catch (error) {
+            console.error("Upload failed", error);
+            alert(error?.message || "Failed to upload image");
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     return (
@@ -145,6 +131,40 @@ export const ProfilePage = ({ onBack }) => {
                         )}>
                             Customize your presence in the K-Pop Universe
                         </p>
+
+                        {/* Tabs */}
+                        <div className="flex gap-2 mt-6">
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('profile')}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider transition-all",
+                                    activeTab === 'profile'
+                                        ? "bg-brand-pink text-white shadow-lg shadow-brand-pink/20"
+                                        : theme === 'dark'
+                                            ? "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5"
+                                            : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900 border border-slate-200"
+                                )}
+                            >
+                                <Settings size={14} className="inline mr-2" />
+                                Profile
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('idolFav')}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider transition-all flex items-center gap-2",
+                                    activeTab === 'idolFav'
+                                        ? "bg-brand-pink text-white shadow-lg shadow-brand-pink/20"
+                                        : theme === 'dark'
+                                            ? "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5"
+                                            : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-900 border border-slate-200"
+                                )}
+                            >
+                                <Star size={14} />
+                                Idol Fav
+                            </button>
+                        </div>
 
                         <div className="flex items-center gap-2 mt-4">
                             {formData.facebook && (
@@ -182,6 +202,40 @@ export const ProfilePage = ({ onBack }) => {
                 "rounded-[40px] border p-8 md:p-10",
                 theme === 'dark' ? 'bg-slate-900/40 border-white/10' : 'bg-white border-slate-200'
             )}>
+                {activeTab === 'idolFav' ? (
+                    /* Idol Fav Tab */
+                    <div>
+                        <h3 className={cn(
+                            "text-xs font-black uppercase tracking-[0.25em] mb-6 flex items-center gap-2",
+                            theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
+                        )}>
+                            <Star size={16} className="text-yellow-500" />
+                            Favorite Idols
+                        </h3>
+                        {(idols.filter(i => i.isFavorite)).length === 0 ? (
+                            <div className={cn(
+                                "text-center py-16 rounded-2xl border",
+                                theme === 'dark' ? 'border-white/5 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
+                            )}>
+                                <Star size={40} className={cn("mx-auto mb-4", theme === 'dark' ? "text-slate-600" : "text-slate-300")} />
+                                <p className={cn("font-bold", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>No favorite idols yet</p>
+                                <p className={cn("text-sm mt-1", theme === 'dark' ? "text-slate-600" : "text-slate-500")}>Click the star on any idol to add them here</p>
+                            </div>
+                        ) : (
+                            <div className="grid gap-6 md:gap-8" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 260px), 1fr))' }}>
+                                {idols.filter(i => i.isFavorite).map(idol => (
+                                    <IdolCard
+                                        key={idol.id}
+                                        idol={idol}
+                                        onClick={onSelectIdol}
+                                        onLike={onFavoriteIdol}
+                                        onEdit={onEditIdol}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <form onSubmit={handleSubmit} className="space-y-8">
                     {/* Avatar Section */}
                     <div className="flex flex-col md:flex-row gap-8 items-start">
@@ -256,11 +310,7 @@ export const ProfilePage = ({ onBack }) => {
                                 </div>
                                 <input
                                     value={formData.avatar}
-                                    onChange={e => {
-                                        startCropping(e.target.value, (newUrl) => {
-                                            setFormData(prev => ({ ...prev, avatar: newUrl }));
-                                        }, 1);
-                                    }}
+                                    onChange={e => setFormData(prev => ({ ...prev, avatar: e.target.value }))}
                                     className={cn(
                                         "w-full rounded-2xl py-3 px-4 focus:outline-none border-2 transition-all text-sm font-medium",
                                         theme === 'dark'
@@ -430,22 +480,9 @@ export const ProfilePage = ({ onBack }) => {
                         </AnimatePresence>
                     </div>
                 </form>
+                )}
             </div>
 
-            {cropState.src && (
-                <ImageCropper
-                    imageSrc={cropState.src}
-                    aspect={cropState.aspect}
-                    onCropComplete={(croppedUrl) => {
-                        cropState.callback(croppedUrl);
-                        setCropState({ src: null, callback: null, aspect: 1 });
-                    }}
-                    onCancel={() => {
-                        cropState.callback(cropState.src);
-                        setCropState({ src: null, callback: null, aspect: 1 });
-                    }}
-                />
-            )}
         </div>
     );
 };

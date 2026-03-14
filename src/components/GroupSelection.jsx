@@ -8,6 +8,7 @@ import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
 import { BackgroundShapes } from './BackgroundShapes';
 import { BackToTopButton } from './BackToTopButton';
+import { SectionErrorBoundary } from './SectionErrorBoundary';
 
 export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm, onSearchPosition, onEditIdol }) {
     const { theme } = useTheme();
@@ -432,6 +433,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     <>
                         {/* Groups Section */}
                         {(viewMode === 'all' || viewMode === 'groups') && visibleItems.some(i => i._type === 'group') && (
+                            <SectionErrorBoundary sectionName="รายการวง">
                             <section className="space-y-6">
                                 {viewMode === 'all' && (
                                     <motion.div
@@ -481,10 +483,12 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                     </AnimatePresence>
                                 </motion.div>
                             </section>
+                            </SectionErrorBoundary>
                         )}
 
                         {/* Solo Artists Section */}
                         {(viewMode === 'all' || viewMode === 'soloists') && visibleItems.some(i => i._type === 'idol') && (
+                            <SectionErrorBoundary sectionName="ศิลปินเดี่ยว">
                             <section className="space-y-6">
                                 {viewMode === 'all' && (
                                     <motion.div
@@ -535,6 +539,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                     </AnimatePresence>
                                 </motion.div>
                             </section>
+                            </SectionErrorBoundary>
                         )}
                     </>
                 )}

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, useAnimation } from 'framer-motion';
 import { Users, Star, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
@@ -7,10 +7,28 @@ import { useAuth } from '../context/AuthContext';
 import { Highlight } from './Highlight';
 import { convertDriveLink } from '../lib/storage';
 
+function usePrevious(value) {
+    const ref = useRef();
+    useEffect(() => { ref.current = value; });
+    return ref.current;
+}
+
 export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [imageLoaded, setImageLoaded] = useState(false);
+    const controls = useAnimation();
+    const prevIsFavorite = usePrevious(group.isFavorite);
+
+    useEffect(() => {
+        if (group.isFavorite && !prevIsFavorite) {
+            controls.start({
+                scale: [1, 1.4, 1.15],
+                rotate: [0, -8, 8, 0],
+                transition: { duration: 0.4, ease: "easeOut" }
+            });
+        }
+    }, [group.isFavorite, prevIsFavorite, controls]);
 
     return (
         <motion.div
@@ -46,16 +64,20 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
             </div>
 
             {user && (
-                <button
+                <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.9 }}
                     onClick={(e) => {
                         e.stopPropagation();
                         onFavorite();
                     }}
-                    className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 transition-colors active:scale-90"
+                    className="absolute top-5 right-5 z-20 p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 hover:border-yellow-400/30 transition-colors"
                     title={group.isFavorite ? "Unfavorite Group" : "Favorite Group"}
                 >
-                    <Star size={18} className={cn("transition-all", group.isFavorite && "fill-yellow-400 text-yellow-400")} />
-                </button>
+                    <motion.div animate={controls}>
+                        <Star size={18} className={cn("transition-colors duration-200", group.isFavorite && "fill-yellow-400 text-yellow-400")} />
+                    </motion.div>
+                </motion.button>
             )}
 
             {/* Main Image */}
@@ -63,7 +85,7 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: imageLoaded ? 1 : 0 }}
                 transition={{ duration: 0.5 }}
-                src={convertDriveLink(group.image, 600)}
+                src={convertDriveLink(group.coverImage || group.image, 600)}
                 alt={group.name}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                 loading="lazy"

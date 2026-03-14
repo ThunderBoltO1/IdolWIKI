@@ -1,16 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, Crop as CropIcon, GripVertical, Heart, Facebook, Music2 } from 'lucide-react';
+import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, GripVertical, Heart, Facebook, Music2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
-import { ImageCropper } from './ImageCropper';
-import { createImage, isDataUrl } from '../lib/cropImage';
 import { getDocs, query, where, collection } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { convertDriveLink } from '../lib/storage';
 import { useAwards } from '../hooks/useAwards.js';
-import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
 import { useToast } from './Toast';
 
 const XIcon = ({ size = 24, className }) => (
@@ -113,7 +111,6 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const { theme } = useTheme();
     const toast = useToast();
     const [loading, setLoading] = useState(false);
-    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4.2 });
     const [memberSearch, setMemberSearch] = useState('');
     const [selectedMembers, setSelectedMembers] = useState([]);
     const searchInputRef = useRef(null);
@@ -208,14 +205,6 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [memberSearch]);
 
-    const startCropping = (url, callback, aspect = 3 / 4.2) => {
-        if (!url || isDataUrl(url)) {
-            callback(url);
-            return;
-        }
-        setCropState({ src: url, callback, aspect });
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
@@ -246,24 +235,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     };
 
     const handleImageChange = (value) => {
-        startCropping(value, async (newUrl) => {
-            if (newUrl && newUrl.startsWith('data:')) {
-                // If it's a base64 string (from cropper), upload it
-                setIsUploading(true);
-                try {
-                    const file = dataURLtoFile(newUrl, `group_cropped_${Date.now()}.jpg`);
-                    const compressedFile = await compressImage(file);
-                    const uploadedUrl = await uploadImage(compressedFile, 'groups');
-                    setFormData(prev => ({ ...prev, image: uploadedUrl }));
-                } catch (error) {
-                    console.error("Failed to upload cropped image", error);
-                } finally {
-                    setIsUploading(false);
-                }
-            } else {
-                setFormData(prev => ({ ...prev, image: newUrl || '' }));
-            }
-        }, 3 / 4.2);
+        setFormData(prev => ({ ...prev, image: value || '' }));
     };
 
     const handleFileUpload = async (e) => {
@@ -277,10 +249,6 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
             return;
         }
 
-        // Preview
-        const objectUrl = URL.createObjectURL(file);
-        handleImageChange(objectUrl); // This sets formData.image and calls startCropping
-
         setIsUploading(true);
         setUploadProgress(0);
         try {
@@ -289,7 +257,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                 await deleteImage(formData.image);
             }
             const url = await uploadImage(compressedFile, 'groups', (progress) => setUploadProgress(progress));
-            handleImageChange(url);
+            setFormData(prev => ({ ...prev, image: url }));
         } catch (error) {
             console.error("Upload failed:", error);
             alert("Failed to upload image");
@@ -411,11 +379,6 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             <ImageIcon size={12} /> Image URL
                                         </label>
                                         <div className="flex gap-3">
-                                            {formData.image && (
-                                                <button type="button" onClick={() => handleImageChange(formData.image)} className="flex items-center gap-1 text-xs text-brand-purple font-black uppercase tracking-wider hover:underline">
-                                                    <CropIcon size={12} /> Re-frame
-                                                </button>
-                                            )}
                                             <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
                                             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
                                                 {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
@@ -764,20 +727,6 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                 </motion.div>
             </div>
 
-            {cropState.src && (
-                <ImageCropper
-                    imageSrc={cropState.src}
-                    aspect={cropState.aspect}
-                    onCropComplete={(croppedUrl) => {
-                        cropState.callback(croppedUrl);
-                        setCropState({ src: null, callback: null, aspect: 3 / 4.2 });
-                    }}
-                    onCancel={() => {
-                        cropState.callback(cropState.src);
-                        setCropState({ src: null, callback: null, aspect: 3 / 4.2 });
-                    }}
-                />
-            )}
         </AnimatePresence>,
         document.body
     );

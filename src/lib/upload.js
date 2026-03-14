@@ -67,13 +67,27 @@ export async function uploadImage(file, path = 'images', onProgress) {
   });
 }
 
+/**
+ * Extract storage path from Firebase Storage download URL
+ * Format: https://firebasestorage.googleapis.com/v0/b/BUCKET/o/PATH_ENCODED?alt=media&token=...
+ */
+function getStoragePathFromUrl(url) {
+    try {
+        const match = url.match(/\/o\/([^?]+)/);
+        if (match) return decodeURIComponent(match[1]);
+    } catch (e) { /* ignore */ }
+    return null;
+}
+
 export async function deleteImage(imageUrl) {
     if (!imageUrl || !imageUrl.includes('firebasestorage.googleapis.com')) {
         return;
     }
     const storage = getStorage();
+    const path = getStoragePathFromUrl(imageUrl);
+    if (!path) return;
     try {
-        const imageRef = ref(storage, imageUrl);
+        const imageRef = ref(storage, path);
         await deleteObject(imageRef);
     } catch (error) {
         if (error.code !== 'storage/object-not-found') {

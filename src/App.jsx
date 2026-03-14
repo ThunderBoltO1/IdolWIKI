@@ -8,12 +8,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
 import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
 import { logAudit } from './lib/audit';
 import { ToastProvider } from './components/Toast';
+import { HelmetProvider } from 'react-helmet-async';
 
 // Lazy load components for better performance (Code Splitting)
 const GroupPage = React.lazy(() => import('./components/GroupPage').then(module => ({ default: module.GroupPage })));
@@ -37,6 +38,7 @@ const CompanyDetailPage = React.lazy(() => import('./components/CompanyDetailPag
 const CompanyModal = React.lazy(() => import('./components/CompanyModal').then(module => ({ default: module.CompanyModal })));
 const CompanyManagement = React.lazy(() => import('./components/CompanyManagement').then(module => ({ default: module.CompanyManagement })));
 import { PageViewLogger } from './components/PageViewLogger';
+import { AIChatbot } from './components/AIChatbot';
 
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-[50vh]">
@@ -505,8 +507,16 @@ function AppContent() {
       });
       return;
     }
-    const idol = idols.find(i => i.id === id);
-    if (!idol) return;
+    let idol = idols.find(i => i.id === id);
+    if (!idol) {
+      try {
+        const snap = await getDoc(doc(db, 'idols', id));
+        if (!snap.exists()) return;
+        idol = { id: snap.id, ...snap.data() };
+      } catch {
+        return;
+      }
+    }
     try {
       const idolRef = doc(db, 'idols', id);
       const isCurrentlyFavorite = (idol.favoritedBy || []).includes(user.uid);
@@ -809,6 +819,10 @@ function AppContent() {
                 >
                   <ProfilePage
                     onBack={() => navigate(-1)}
+                    idols={idols}
+                    onSelectIdol={handleCardClick}
+                    onFavoriteIdol={handleFavoriteIdol}
+                    onEditIdol={handleEditIdol}
                   />
                 </motion.div>
               } />
@@ -998,6 +1012,7 @@ function AppContent() {
           isOpen={modalOpen}
           mode={modalMode}
           idol={selectedIdol}
+          idols={idols}
           onClose={handleCloseModal}
           onSave={handleSave}
           onDelete={handleDelete}
@@ -1050,6 +1065,8 @@ function AppContent() {
           </Suspense>
         )}
       </AnimatePresence>
+
+      <AIChatbot idols={idols} groups={groups} />
     </div>
   );
 }
@@ -1085,17 +1102,19 @@ function GroupRouteWrapper({ groups, idols, handleMemberClick, onUpdateGroup, on
 
 function App() {
   return (
-    <Router>
-      <ThemeProvider>
-        <AuthProvider>
-          <ToastProvider>
-            <ErrorBoundary>
-              <AppContent />
-            </ErrorBoundary>
-          </ToastProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </Router>
+    <HelmetProvider>
+      <Router>
+        <ThemeProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <ErrorBoundary>
+                <AppContent />
+              </ErrorBoundary>
+            </ToastProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </Router>
+    </HelmetProvider>
   );
 }
 

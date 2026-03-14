@@ -5,12 +5,13 @@ import { motion, AnimatePresence, useScroll, useTransform, Reorder } from 'frame
 import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Globe, Upload, Loader2, X, ChevronLeft, ChevronRight, Maximize2, PlayCircle, Search, Share2, Check, GripVertical, History } from 'lucide-react';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { cn } from '../lib/utils';
+import { cn, getYouTubeEmbedSrc } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { Helmet } from 'react-helmet-async';
 import { BackToTopButton } from './BackToTopButton';
 
 const XIcon = ({ size = 24, className }) => (
@@ -437,8 +438,19 @@ export function IdolDetailPage() {
 
   if (!idol) return null;
 
+  const metaTitle = `${idol.name}${idol.group ? ` (${idol.group})` : ''} | K-Pop Wiki`;
+  const metaDesc = idol.description ? (idol.description.slice(0, 160) + (idol.description.length > 160 ? '…' : '')) : `${idol.name}: ข้อมูลไอดอลเคป๊อป`;
+  const ogImage = idol.image ? convertDriveLink(idol.image) : '';
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 md:py-10 space-y-8 md:space-y-10">
+      <Helmet>
+        <title>{metaTitle}</title>
+        <meta name="description" content={metaDesc} />
+        {ogImage && <meta property="og:image" content={ogImage} />}
+        {ogImage && <meta property="og:title" content={metaTitle} />}
+        {ogImage && <meta property="og:description" content={metaDesc} />}
+      </Helmet>
       <BackgroundShapes image={idol.image} />
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
@@ -1151,7 +1163,7 @@ export function IdolDetailPage() {
                 <iframe
                   width="100%"
                   height="100%"
-                  src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedVideo.url)}?autoplay=1`}
+                  src={(() => { const s = getYouTubeEmbedSrc(selectedVideo.url); return s ? (s.includes('?') ? `${s}&autoplay=1` : `${s}?autoplay=1`) : ''; })()}
                   title={selectedVideo.title || "YouTube video player"}
                   frameBorder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

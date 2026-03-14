@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, useAnimation } from 'framer-motion';
 import { Music, Users, Star, ChevronRight, Edit2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
@@ -7,10 +7,28 @@ import { useAuth } from '../context/AuthContext';
 import { convertDriveLink } from '../lib/storage';
 import { Highlight } from './Highlight';
 
+function usePrevious(value) {
+    const ref = useRef();
+    useEffect(() => { ref.current = value; });
+    return ref.current;
+}
+
 export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [imageLoaded, setImageLoaded] = useState(false);
+    const controls = useAnimation();
+    const prevIsFavorite = usePrevious(idol.isFavorite);
+
+    useEffect(() => {
+        if (idol.isFavorite && !prevIsFavorite) {
+            controls.start({
+                scale: [1, 1.4, 1.15],
+                rotate: [0, -8, 8, 0],
+                transition: { duration: 0.4, ease: "easeOut" }
+            });
+        }
+    }, [idol.isFavorite, prevIsFavorite, controls]);
 
     return (
         <motion.div
@@ -53,39 +71,23 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
 
             {user && (
                 <div className="absolute top-5 right-5 z-20 flex flex-col gap-2">
-                    <button
+                    <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.9 }}
                         onClick={(e) => {
                             e.stopPropagation();
                             onLike(idol.id);
                         }}
-                        className="p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 transition-colors active:scale-90"
+                        className="p-2.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white hover:text-yellow-400 hover:border-yellow-400/30 transition-colors"
                         title={idol.isFavorite ? "Unfavorite Idol" : "Favorite Idol"}
                     >
-                        <Star size={18} className={cn("transition-all", idol.isFavorite && "fill-yellow-400 text-yellow-400")} />
-                    </button>
-                    {/* Animated Vertical Line */}
-                    <motion.div
-                        initial={{ height: 0 }}
-                        whileInView={{ height: "100%" }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 1.5, ease: "easeInOut" }}
-                        className="absolute left-4 md:left-1/2 top-0 w-0.5 -ml-px bg-gradient-to-b from-brand-pink via-brand-purple to-transparent shadow-[0_0_20px_rgba(236,72,153,0.3)]"
-                    >
-                        <motion.div
-                            animate={{
-                                top: ["0%", "100%"],
-                                opacity: [0, 1, 0]
-                            }}
-                            transition={{
-                                duration: 3,
-                                repeat: Infinity,
-                                ease: "linear"
-                            }}
-                            className="absolute top-0 left-0 w-full h-20 bg-gradient-to-b from-transparent via-white to-transparent"
-                        />
-                    </motion.div>
+                        <motion.div animate={controls}>
+                            <Star size={18} className={cn("transition-colors duration-200", idol.isFavorite && "fill-yellow-400 text-yellow-400")} />
+                        </motion.div>
+                    </motion.button>
                     {onEdit && (
                         <button
+                            type="button"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onEdit(idol);

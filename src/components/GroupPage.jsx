@@ -1,25 +1,28 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder, useAnimation } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, ZoomIn, ZoomOut, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, Crop as CropIcon, Maximize, Minimize, CheckSquare, Square, FileText, AlertCircle, ArrowUp, ImageIcon, Facebook } from 'lucide-react';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, CheckSquare, Square, FileText, AlertCircle, ImageIcon, Facebook } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '../lib/utils';
+import { cn, getRelativeTime, getYouTubeEmbedSrc } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, getDoc, writeBatch, orderBy } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, deleteField, getDocs, limit, getDoc, writeBatch, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { ImageCropper } from './ImageCropper';
-import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { GroupCard } from './GroupCard';
-import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
-import { deleteImage, uploadImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
+import { useToast } from './Toast';
 import { logAudit } from '../lib/audit';
 import { BackToTopButton } from './BackToTopButton';
 import { OptimizedImage } from './OptimizedImage';
+import { useGroupNews } from '../hooks/useGroupNews';
+import { GroupNewsSection } from './group/GroupNewsSection';
+import { MusicBrainzImportModal } from './MusicBrainzImportModal';
+import { Helmet } from 'react-helmet-async';
+import { YouTubeSearchModal } from './YouTubeSearchModal';
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -40,6 +43,7 @@ const SpotifyIcon = ({ size = 24, className }) => (
 
 export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup, onDeleteGroup, onUserClick, onSearch, onGroupClick, allIdols = [], onSearchPosition, onFavoriteMember, onEditMember }) {
     const { isAdmin, user } = useAuth();
+    const toast = useToast();
     const { theme } = useTheme();
     const navigate = useNavigate();
     const containerRef = useRef(null);
@@ -58,7 +62,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [activeImage, setActiveImage] = useState(group?.image || '');
     const [lightboxImage, setLightboxImage] = useState(null);
     const [selectedVideo, setSelectedVideo] = useState(null);
-    const [isEditing, setIsEditing] = useState(false);
+    const [isEditingGroupInfo, setIsEditingGroupInfo] = useState(false);
+    const [isEditingMembers, setIsEditingMembers] = useState(false);
+    const [isEditingGallery, setIsEditingGallery] = useState(false);
+    const [isEditingDiscography, setIsEditingDiscography] = useState(false);
+    const [isEditingVideos, setIsEditingVideos] = useState(false);
+    const isEditing = isEditingGroupInfo || isEditingMembers || isEditingGallery || isEditingDiscography || isEditingVideos;
     const [isReordering, setIsReordering] = useState(false);
     const [formData, setFormData] = useState(group || {});
     const [refreshing, setRefreshing] = useState(false);
@@ -67,7 +76,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [newComment, setNewComment] = useState('');
     const [selectedAlbum, setSelectedAlbum] = useState(null);
     const [visibleComments, setVisibleComments] = useState(5);
-    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 16 / 9 });
     const [loadingComments, setLoadingComments] = useState(true);
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
@@ -89,24 +97,23 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [similarGroups, setSimilarGroups] = useState([]);
     const [isCopied, setIsCopied] = useState(false);
 
-    const [heroCrop, setHeroCrop] = useState({ x: 0, y: 0 });
-    const [heroZoom, setHeroZoom] = useState(1);
-    const [heroCroppedArea, setHeroCroppedArea] = useState(null);
-    const [heroObjectFit, setHeroObjectFit] = useState('horizontal-cover');
-
     const [memberSearch, setMemberSearch] = useState('');
     const [editingMembers, setEditingMembers] = useState([]);
     const [selectedTimelineMember, setSelectedTimelineMember] = useState(null);
-    const [news, setNews] = useState([]);
-    const [loadingNews, setLoadingNews] = useState(false);
-    const [newsSourceFilter, setNewsSourceFilter] = useState('all');
+    const { filteredNews, loadingNews, newsSourceFilter, setNewsSourceFilter, fetchNews } = useGroupNews(displayGroup, members, activeTab);
     const [isDragging, setIsDragging] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [isHeroUploading, setIsHeroUploading] = useState(false);
+    const [isCoverUploading, setIsCoverUploading] = useState(false);
     const [heroUploadProgress, setHeroUploadProgress] = useState(0);
     const [galleryUploadProgress, setGalleryUploadProgress] = useState(0);
+    const [albumCoverUploadingIdx, setAlbumCoverUploadingIdx] = useState(null);
     const heroFileInputRef = useRef(null);
+    const coverFileInputRef = useRef(null);
     const galleryInputRef = useRef(null);
+    const galleryReplaceInputRef = useRef(null);
+    const galleryReplaceIdxRef = useRef(null);
+    const albumCoverInputRef = useRef(null);
     const [galleryItems, setGalleryItems] = useState([]);
     const [videoList, setVideoList] = useState([]);
     const [albumList, setAlbumList] = useState([]);
@@ -119,6 +126,9 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [selectedGalleryIndices, setSelectedGalleryIndices] = useState(new Set());
 
     const [showReasonModal, setShowReasonModal] = useState(false);
+    const [showMusicBrainzModal, setShowMusicBrainzModal] = useState(false);
+    const [showYouTubeSearchModal, setShowYouTubeSearchModal] = useState(false);
+    const [youtubeSearchAlbumIdx, setYoutubeSearchAlbumIdx] = useState(null);
     const [editReason, setEditReason] = useState('');
     const [groupChanges, setGroupChanges] = useState(null);
     const { awards: awardData } = useAwards();
@@ -165,7 +175,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
     const sortedMembers = useMemo(() => {
         if (!members) return [];
-        const currentMemberIds = isEditing ? (formData.members || []) : (displayGroup?.members || []);
+        const currentMemberIds = isEditingMembers ? (formData.members || []) : (displayGroup?.members || []);
 
         const memberMap = new Map(members.map(m => [m.id, m]));
         const ordered = currentMemberIds.map(id => memberMap.get(id)).filter(Boolean);
@@ -180,7 +190,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             const isBInactive = ['inactive', 'former'].includes(b.status?.toLowerCase());
             return (isAInactive ? 1 : 0) - (isBInactive ? 1 : 0);
         });
-    }, [members, isEditing, formData.members, displayGroup?.members]);
+    }, [members, isEditingMembers, formData.members, displayGroup?.members]);
 
     const timelineMembers = useMemo(() => {
         return [...(members || [])].sort((a, b) => {
@@ -263,160 +273,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         };
         fetchSimilar();
     }, [displayGroup?.company, displayGroup?.id]);
-
-    useEffect(() => {
-        const controller = new AbortController();
-        if (activeTab === 'news' && displayGroup?.name) {
-            fetchNews(controller.signal);
-        }
-        return () => controller.abort();
-    }, [activeTab, displayGroup?.name]);
-
-    const fetchNews = async (signal) => {
-        setLoadingNews(true);
-        setNews([]);
-        try {
-            const groupNameLower = displayGroup.name.toLowerCase();
-            const koreanNameLower = (displayGroup.koreanName || '').toLowerCase();
-            let mappedNews = [];
-
-            // 1. Try Koreaboo RSS via rss2json
-            try {
-                const rssUrl = 'https://www.koreaboo.com/feed/';
-                const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-
-                const response = await fetch(apiUrl, { signal });
-                const data = await response.json();
-
-                if (data.status === 'ok') {
-                    let filteredItems = data.items.filter(item => {
-                        const title = (item.title || '').toLowerCase();
-                        return title.includes(groupNameLower) || (koreanNameLower && title.includes(koreanNameLower));
-                    });
-
-                    // If no news found with group name, try searching by member names
-                    if (filteredItems.length > 0 && members.length > 0) {
-                        const memberNames = members.map(m => m.name.toLowerCase());
-                        filteredItems = data.items.filter(item => {
-                            const title = (item.title || '').toLowerCase();
-                            return memberNames.some(name => title.includes(name));
-                        });
-                    }
-
-                    if (filteredItems.length > 0) {
-                        const enrichedItems = filteredItems.map((item) => {
-                            let contentImg = null;
-                            const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
-                            if (imgMatch) contentImg = imgMatch[1];
-
-                            // Check for enclosure or media:content from rss2json structure
-                            const enclosureImg = item.enclosure?.link || item.thumbnail;
-                            const finalThumbnail = enclosureImg || contentImg || displayGroup.image;
-
-                            return {
-                                name: item.title,
-                                url: item.link,
-                                description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
-                                datePublished: item.pubDate,
-                                provider: [{ name: data.feed?.title || 'Koreaboo' }],
-                                image: {
-                                    thumbnail: {
-                                        contentUrl: finalThumbnail
-                                    }
-                                }
-                            };
-                        });
-                        mappedNews = enrichedItems
-                            .sort((a, b) => new Date(b.datePublished) - new Date(a.datePublished))
-                            .slice(0, 10);
-                    }
-                }
-            } catch (err) {
-                if (err.name !== 'AbortError') {
-                    console.warn("Koreaboo fetch failed, trying fallback...", err);
-                }
-            }
-
-            // 2. Fallback: Google News RSS via rss2json
-            if (mappedNews.length === 0) {
-                try {
-                    // Use a broader search query for Google News to get more results
-                    const googleRssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(displayGroup.name + ' kpop')}&hl=en-US&gl=US&ceid=US:en&when:7d`;
-                    const googleApiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(googleRssUrl)}`;
-
-                    let data = null;
-                    // Retry up to 4 times (max 6 seconds total wait) since rss2json queues new URLs
-                    for (let i = 0; i < 4; i++) {
-                        const response = await fetch(googleApiUrl, { signal });
-                        data = await response.json();
-                        if (data.status === 'ok') break;
-                        // wait 1.5s before retry
-                        await new Promise(r => setTimeout(r, 1500));
-                    }
-
-                    if (data && data.status === 'ok') {
-                        const googleNews = data.items.map(item => {
-                            // Try to find image in description if not in thumbnail/enclosure
-                            let contentImg = null;
-                            const imgMatch = item.description?.match(/<img[^>]+src="([^">]+)"/);
-                            if (imgMatch) contentImg = imgMatch[1];
-
-                            // Google News often puts images in description HTML but not as enclosure
-                            // We can try to extract it, or use a better fallback
-                            let thumbnail = item.enclosure?.link || item.thumbnail || contentImg;
-
-                            // If still no image, try to extract from content if available
-                            if (!thumbnail && item.content) {
-                                const contentMatch = item.content.match(/<img[^>]+src="([^">]+)"/);
-                                if (contentMatch) thumbnail = contentMatch[1];
-                            }
-                            
-                            // Fallback to group hero image if no image found in RSS at all
-                            if (!thumbnail) {
-                                thumbnail = displayGroup.image;
-                            }
-
-                            return {
-                                name: item.title,
-                                url: item.link,
-                                description: item.description?.replace(/<[^>]+>/g, '').substring(0, 200) + '...',
-                                datePublished: item.pubDate,
-                                provider: [{ name: 'Google News' }],
-                                image: {
-                                    thumbnail: {
-                                        contentUrl: thumbnail
-                                    }
-                                }
-                            }
-                        });
-                        // Google News results are already specific to the query, so we might not need strict filtering again.
-                        // But let's keep a loose filter just in case.
-                        mappedNews = googleNews
-                            .sort((a, b) => new Date(b.datePublished) - new Date(a.datePublished))
-                            .slice(0, 20); // Show up to 20 news items from Google
-                    }
-                } catch (err) {
-                    if (err.name !== 'AbortError') {
-                        console.error("Google News fallback failed", err);
-                    }
-                }
-            }
-
-            setNews(mappedNews);
-        } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error("Error fetching news:", error);
-            }
-        } finally {
-            setLoadingNews(false);
-        }
-    };
-
-    const filteredNews = useMemo(() => {
-        if (newsSourceFilter === 'all') return news;
-        return news.filter(item => item.provider?.[0]?.name.toLowerCase().includes(newsSourceFilter.toLowerCase()));
-    }, [news, newsSourceFilter]);
-
 
     const createMentions = async (text, commentId) => {
         const mentionRegex = /@([a-zA-Z0-9_]+)/g;
@@ -595,6 +451,25 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     // Utility function to generate stable IDs
     const generateId = (prefix, index) => `${prefix}-${index}-${Date.now()}`;
 
+    // Lock body scroll when album popup is open (prevent wheel/touch on backdrop only)
+    useEffect(() => {
+        if (!selectedAlbum) return;
+        const preventScroll = (e) => {
+            if (e.target.closest('[data-album-modal]')) return; // allow scroll inside modal
+            e.preventDefault();
+        };
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.addEventListener('wheel', preventScroll, { passive: false });
+        document.addEventListener('touchmove', preventScroll, { passive: false });
+        return () => {
+            document.body.style.overflow = '';
+            document.documentElement.style.overflow = '';
+            document.removeEventListener('wheel', preventScroll);
+            document.removeEventListener('touchmove', preventScroll);
+        };
+    }, [selectedAlbum]);
+
     // Sync activeImage when group data changes from Firestore
     useEffect(() => {
         if (group) {
@@ -671,7 +546,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         setLightboxImage(allImages[prevIndex]);
     };
 
-    const handleHeroFileUpload = (e) => {
+    const handleHeroFileUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -682,10 +557,73 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             return;
         }
 
-        const objectUrl = URL.createObjectURL(file);
-        setActiveImage(objectUrl);
-        setHeroZoom(1);
-        setHeroCrop({ x: 0, y: 0 });
+        setIsHeroUploading(true);
+        setHeroUploadProgress(0);
+        try {
+            const compressed = await compressImage(file);
+            if (displayGroup.image && displayGroup.image.includes('firebasestorage')) {
+                await deleteImage(displayGroup.image);
+            }
+            const url = await uploadImage(compressed, 'groups', (p) => setHeroUploadProgress(p));
+            setFormData(prev => ({ ...prev, image: url }));
+            setActiveImage(url);
+        } catch (err) {
+            console.error('Hero upload error', err);
+            alert('Upload failed. Please try again.');
+        } finally {
+            setIsHeroUploading(false);
+            setHeroUploadProgress(0);
+            if (heroFileInputRef.current) heroFileInputRef.current.value = '';
+        }
+    };
+
+    const handleDeleteBannerImage = async () => {
+        const url = formData.image || activeImage;
+        if (!url) return;
+        try {
+            if (url.includes('firebasestorage')) await deleteImage(url);
+            setFormData((prev) => ({ ...prev, image: '' }));
+            setActiveImage('');
+        } catch (err) {
+            console.error('Delete banner failed', err);
+            setModalConfig({ isOpen: true, title: 'ลบรูปไม่สำเร็จ', message: err?.message || 'เกิดข้อผิดพลาด', type: 'danger' });
+        }
+    };
+
+    const handleDeleteCoverImage = async () => {
+        const url = formData.coverImage;
+        if (!url) return;
+        try {
+            if (url.includes('firebasestorage')) await deleteImage(url);
+            setFormData((prev) => ({ ...prev, coverImage: '' }));
+        } catch (err) {
+            console.error('Delete cover failed', err);
+            setModalConfig({ isOpen: true, title: 'ลบรูปไม่สำเร็จ', message: err?.message || 'เกิดข้อผิดพลาด', type: 'danger' });
+        }
+    };
+
+    const handleCoverFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+            validateFile(file, 5);
+        } catch (err) {
+            alert(err.message);
+            if (coverFileInputRef.current) coverFileInputRef.current.value = '';
+            return;
+        }
+        setIsCoverUploading(true);
+        try {
+            const compressed = await compressImage(file);
+            const url = await uploadImage(compressed, 'groups/covers');
+            setFormData(prev => ({ ...prev, coverImage: url }));
+        } catch (err) {
+            console.error('Cover upload error', err);
+            alert('Cover upload failed. Please try again.');
+        } finally {
+            setIsCoverUploading(false);
+            if (coverFileInputRef.current) coverFileInputRef.current.value = '';
+        }
     };
 
     const handleGalleryUpload = async (e) => {
@@ -723,7 +661,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setGalleryItems(prev => [...prev, ...newItems]);
         } catch (error) {
             console.error("Gallery upload error", error);
-            alert("Failed to upload images");
+            alert("Failed to upload images. Please try again.");
         } finally {
             setIsUploading(false);
             setGalleryUploadProgress(0);
@@ -731,12 +669,34 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         }
     };
 
-    const startCropping = (url, callback, aspect = 16 / 9) => {
-        if (!url || isDataUrl(url)) {
-            callback(url);
+    const handleGalleryReplaceUpload = async (e) => {
+        const file = e.target.files?.[0];
+        const idx = galleryReplaceIdxRef.current;
+        if (!file || idx == null) return;
+        try {
+            validateFile(file, 5);
+        } catch (err) {
+            alert(err.message);
+            if (galleryReplaceInputRef.current) galleryReplaceInputRef.current.value = '';
             return;
         }
-        setCropState({ src: url, callback, aspect });
+        setIsUploading(true);
+        setGalleryUploadProgress(0);
+        try {
+            const compressed = await compressImage(file);
+            const url = await uploadImage(compressed, 'groups/gallery', setGalleryUploadProgress);
+            const newItems = [...galleryItems];
+            newItems[idx] = { ...newItems[idx], url };
+            setGalleryItems(newItems);
+            setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
+        } catch (err) {
+            console.error('Gallery replace upload error', err);
+            alert('Failed to replace image. Please try again.');
+        } finally {
+            setIsUploading(false);
+            setGalleryUploadProgress(0);
+            if (galleryReplaceInputRef.current) galleryReplaceInputRef.current.value = '';
+        }
     };
 
     useEffect(() => {
@@ -754,7 +714,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         if (!isAdmin) {
             // Calculate changes for User Suggestion
             const changes = {};
-            const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'fanclub', 'description', 'instagram', 'twitter', 'youtube', 'tiktok', 'appleMusic', 'spotify', 'image', 'status', 'disbandDate'];
+            const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'fanclub', 'description', 'instagram', 'twitter', 'youtube', 'tiktok', 'appleMusic', 'spotify', 'image', 'coverImage', 'status', 'disbandDate'];
 
             let hasChanges = false;
             fieldsToCheck.forEach(field => {
@@ -776,33 +736,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             return;
         }
 
-        let imageToSave = formData.image;
-        // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
-        if (heroCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
-            setIsHeroUploading(true);
-            setHeroUploadProgress(0);
-            try {
-                const croppedImage = await getCroppedImgDataUrl(activeImage, heroCroppedArea);
-
-                // Upload cropped image
-                const file = dataURLtoFile(croppedImage, `hero_${Date.now()}.jpg`);
-                const compressedFile = await compressImage(file);
-
-                // Delete old image if exists
-                if (displayGroup.image && displayGroup.image.includes('firebasestorage')) {
-                    await deleteImage(displayGroup.image);
-                }
-
-                const uploadedUrl = await uploadImage(compressedFile, 'groups', (progress) => setHeroUploadProgress(progress));
-                imageToSave = uploadedUrl;
-
-            } catch (e) {
-                console.error("Failed to crop hero image", e);
-            } finally {
-                setIsHeroUploading(false);
-                setHeroUploadProgress(0);
-            }
-        }
+        const imageToSave = formData.image;
+        const imagePositionToSave = displayGroup.imagePosition || null;
 
         // Handle Member Updates
         const currentMemberIds = members.map(m => m.id);
@@ -837,10 +772,46 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         // Strip out icon components before saving to Firestore
         const socialOrderToSave = socialLinksOrder.map(({ icon, ...rest }) => rest);
 
-        await onUpdateGroup(displayGroup.id, { ...formData, image: imageToSave, members: newMemberIds, socialOrder: socialOrderToSave });
-        setIsEditing(false);
+        const galleryUrls = galleryItems.map((i) => i.url).filter(Boolean);
+        const videosClean = videoList.map(({ internalId, ...rest }) => rest);
+        const albumsClean = albumList.map(({ internalId, ...rest }) => rest);
+        const updatePayload = {
+            ...formData,
+            image: imageToSave,
+            members: newMemberIds,
+            socialOrder: socialOrderToSave,
+            gallery: galleryUrls,
+            videos: videosClean,
+            albums: albumsClean
+        };
+        if (imagePositionToSave === null) updatePayload.imagePosition = deleteField();
+        else if (imagePositionToSave != null) updatePayload.imagePosition = imagePositionToSave;
+        await onUpdateGroup(displayGroup.id, updatePayload);
+        // Optimistic update: อัปเดตทันทีไม่ต้องรอ Firestore
+        const nextDisplay = {
+            ...displayGroup,
+            ...formData,
+            image: imageToSave,
+            members: newMemberIds,
+            socialOrder: socialOrderToSave,
+            gallery: galleryUrls,
+            videos: videosClean,
+            albums: albumsClean
+        };
+        if (imagePositionToSave === null) delete nextDisplay.imagePosition;
+        else if (imagePositionToSave != null) nextDisplay.imagePosition = imagePositionToSave;
+        setDisplayGroup(nextDisplay);
+        setGalleryItems(galleryUrls.map((url, i) => ({ id: `item-${i}-${Date.now()}`, url })));
+        setVideoList(videosClean.map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}` })));
+        setAlbumList(albumsClean.map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}` })));
+        setIsEditingGroupInfo(false);
+        setIsEditingMembers(false);
+        setIsEditingGallery(false);
+        setIsEditingDiscography(false);
+        setIsEditingVideos(false);
         setIsReordering(false);
         setActiveImage(imageToSave);
+        toast.success('บันทึกวงสำเร็จ');
     };
 
     const confirmSubmitEdit = async () => {
@@ -866,7 +837,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 details: { changes: groupChanges, reason: editReason, requestId: docRef.id }
             });
             setShowReasonModal(false);
-            setIsEditing(false);
+            setIsEditingGroupInfo(false);
+            setIsEditingMembers(false);
+            setIsEditingGallery(false);
+            setIsEditingDiscography(false);
+            setIsEditingVideos(false);
             setGroupChanges(null);
             setEditReason('');
             setModalConfig({
@@ -899,28 +874,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const handleGalleryChange = (index, value) => {
-        startCropping(value, async (newUrl) => {
-            let finalUrl = newUrl;
-            if (newUrl && newUrl.startsWith('data:')) {
-                setIsUploading(true);
-                setGalleryUploadProgress(0);
-                try {
-                    const file = dataURLtoFile(newUrl, `gallery_cropped_${Date.now()}.jpg`);
-                    const compressedFile = await compressImage(file);
-                    finalUrl = await uploadImage(compressedFile, 'groups/gallery', (progress) => setGalleryUploadProgress(progress));
-                } catch (error) {
-                    console.error("Failed to upload cropped gallery image", error);
-                } finally {
-                    setIsUploading(false);
-                    setGalleryUploadProgress(0);
-                }
-            }
-
-            const newItems = [...galleryItems];
-            newItems[index] = { ...newItems[index], url: finalUrl };
-            setGalleryItems(newItems);
-            setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
-        }, 1);
+        const newItems = [...galleryItems];
+        newItems[index] = { ...newItems[index], url: value };
+        setGalleryItems(newItems);
+        setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
     };
 
     const addGalleryImage = () => {
@@ -1022,6 +979,47 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
         const newAlbums = newList.map(({ internalId, ...rest }) => rest);
         setFormData(prev => ({ ...prev, albums: newAlbums }));
+    };
+
+    const handleMusicBrainzAdd = (albums) => {
+        const withIds = albums.map((a, i) => ({
+            ...a,
+            internalId: `alb-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`
+        }));
+        setAlbumList((prev) => [...prev, ...withIds]);
+        setFormData((prev) => ({
+            ...prev,
+            albums: [...(prev.albums || []), ...albums]
+        }));
+    };
+
+    const handleAlbumCoverUpload = async (e) => {
+        const idx = albumCoverUploadingIdx;
+        const file = e.target.files?.[0];
+        if (!file || idx == null) {
+            setAlbumCoverUploadingIdx(null);
+            return;
+        }
+        try {
+            validateFile(file, 5);
+        } catch (error) {
+            alert(`File ${file.name} is too large. Max 5MB.`);
+            setAlbumCoverUploadingIdx(null);
+            if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
+            return;
+        }
+        setAlbumCoverUploadingIdx(idx);
+        try {
+            const compressedFile = await compressImage(file);
+            const uploadedUrl = await uploadImage(compressedFile, 'groups/discography');
+            handleAlbumChange(idx, 'cover', uploadedUrl);
+        } catch (error) {
+            console.error('Album cover upload error', error);
+            alert('Failed to upload cover image');
+        } finally {
+            setAlbumCoverUploadingIdx(null);
+            if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
+        }
     };
 
     const handleVideoChange = (index, field, value) => {
@@ -1177,6 +1175,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         );
     }
 
+    const metaTitle = displayGroup?.name ? `${displayGroup.name} | K-Pop Wiki` : 'K-Pop Wiki';
+    const metaDesc = displayGroup?.description
+        ? (displayGroup.description.slice(0, 160) + (displayGroup.description.length > 160 ? '…' : ''))
+        : `${displayGroup?.name || 'กลุ่ม'}: ค้นหาข้อมูลวงเคป๊อป`;
+    const ogImage = displayGroup?.image ? convertDriveLink(displayGroup.image) : '';
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1184,6 +1188,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             transition={{ type: "spring", stiffness: 260, damping: 30 }}
             className="py-4 md:py-6 space-y-8 md:space-y-10"
         >
+            <Helmet>
+                <title>{metaTitle}</title>
+                <meta name="description" content={metaDesc} />
+                {ogImage && <meta property="og:image" content={ogImage} />}
+                {ogImage && <meta property="og:title" content={metaTitle} />}
+                {ogImage && <meta property="og:description" content={metaDesc} />}
+            </Helmet>
             <BackgroundShapes />
 
             {/* Header / Hero Section */}
@@ -1210,50 +1221,20 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             </div>
                         </div>
                     )}
-                    {isEditing && isAdmin ? (
-                        <div className="relative w-full h-full bg-slate-900">
-                            <Cropper
-                                image={activeImage}
-                                crop={heroCrop}
-                                zoom={heroZoom}
-                                aspect={16 / 9}
-                                onCropChange={setHeroCrop}
-                                onCropComplete={(_, pixels) => setHeroCroppedArea(pixels)}
-                                onZoomChange={setHeroZoom}
-                                cropShape="rect"
-                                restrictPosition={false}
-                                showGrid={false}
-                                objectFit={heroObjectFit}
-                            />
-                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
-                                <ZoomOut size={14} className="text-white/80" />
-                                <input
-                                    type="range"
-                                    min={1}
-                                    max={3}
-                                    step={0.1}
-                                    value={heroZoom}
-                                    onChange={(e) => setHeroZoom(Number(e.target.value))}
-                                    className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
-                                />
-                                <ZoomIn size={14} className="text-white/80" />
-                                <div className="w-px h-4 bg-white/20 mx-1" />
-                                <button
-                                    type="button"
-                                    onClick={() => setHeroObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
-                                    className="text-white/80 hover:text-white transition-colors"
-                                    title={heroObjectFit === 'contain' ? "Fill Frame" : "Fit Image"}
-                                >
-                                    {heroObjectFit === 'contain' ? <Maximize size={14} /> : <Minimize size={14} />}
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
+                    {isEditingGroupInfo && isAdmin ? (
                         <img
                             src={convertDriveLink(activeImage)}
                             alt={displayGroup.name}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.target.onerror = null; e.target.src = ''; }}
+                        />
+                    ) : (
+                        <img
+                            src={convertDriveLink(displayGroup?.image || activeImage)}
+                            alt={displayGroup.name}
                             loading="eager"
                             className="w-full h-full object-cover"
+                            style={displayGroup?.imagePosition ? { objectPosition: `${displayGroup.imagePosition.x}% ${displayGroup.imagePosition.y}%` } : undefined}
                             onError={(e) => {
                                 e.target.onerror = null;
                                 e.target.src = '';
@@ -1286,59 +1267,79 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         >
                             {isCopied ? <Check size={20} /> : <Share2 size={20} />}
                         </button>
+                        {user && isAdmin && (
+                            <button
+                                onClick={() => onDeleteGroup(displayGroup.id)}
+                                className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40 active:scale-95"
+                                title="Delete Group"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+                        )}
                         {user && (
-                            isEditing ? (
+                            isEditingGroupInfo ? (
                                 <>
                                     <button
                                         onClick={() => {
-                                            setIsEditing(false);
-                                            setFormData(displayGroup);
+                                            setIsEditingGroupInfo(false);
+                                            setFormData(prev => ({
+                                                ...prev,
+                                                name: displayGroup.name,
+                                                koreanName: displayGroup.koreanName,
+                                                image: displayGroup.image,
+                                                coverImage: displayGroup.coverImage,
+                                                fanclub: displayGroup.fanclub,
+                                                company: displayGroup.company,
+                                                debut: displayGroup.debut,
+                                                debutDate: displayGroup.debutDate,
+                                                status: displayGroup.status,
+                                                disbandDate: displayGroup.disbandDate,
+                                                description: displayGroup.description,
+                                                socialOrder: displayGroup.socialOrder,
+                                                awards: displayGroup.awards,
+                                                instagram: displayGroup.instagram,
+                                                facebook: displayGroup.facebook,
+                                                twitter: displayGroup.twitter,
+                                                youtube: displayGroup.youtube,
+                                                tiktok: displayGroup.tiktok,
+                                                appleMusic: displayGroup.appleMusic,
+                                                spotify: displayGroup.spotify
+                                            }));
                                             setActiveImage(displayGroup.image);
                                         }}
-                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40"
+                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95"
                                         title="Cancel"
                                     >
                                         <X size={20} />
                                     </button>
                                     <button
                                         onClick={handleSaveGroup}
-                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-green-500/20 border-green-500/50 text-white hover:bg-green-500/40"
-                                        title={isAdmin ? "Save Changes" : "Submit Request"}
+                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-green-500/20 border-green-500/50 text-white hover:bg-green-500/40 active:scale-95"
+                                        title={isAdmin ? "Save" : "Submit"}
                                     >
                                         <Save size={20} />
                                     </button>
                                 </>
                             ) : (
-                                <>
-                                    {isAdmin && (
-                                        <button
-                                            onClick={() => onDeleteGroup(displayGroup.id)}
-                                            className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-red-500/20 border-red-500/50 text-white hover:bg-red-500/40 active:scale-95"
-                                            title="Delete Group"
-                                        >
-                                            <Trash2 size={20} />
-                                        </button>
+                                <button
+                                    onClick={() => setIsEditingGroupInfo(true)}
+                                    className={cn(
+                                        "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center active:scale-95",
+                                        isAdmin
+                                            ? "bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50"
+                                            : "bg-brand-purple/20 border-brand-purple/50 text-white hover:bg-brand-purple/40"
                                     )}
-                                    <button
-                                        onClick={() => setIsEditing(true)}
-                                        className={cn(
-                                            "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center active:scale-95",
-                                            isAdmin
-                                                ? "bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50"
-                                                : "bg-brand-purple/20 border-brand-purple/50 text-white hover:bg-brand-purple/40"
-                                        )}
-                                        title={isAdmin ? "Edit Group Details" : "Suggest Edit"}
-                                    >
-                                        {isAdmin ? <Edit2 size={20} /> : <FileText size={20} />}
-                                    </button>
-                                </>
+                                    title={isAdmin ? "Edit Group Info" : "Suggest Edit"}
+                                >
+                                    <Edit2 size={20} />
+                                </button>
                             )
                         )}
                     </div>
                 </div>
 
                 <div className={cn(
-                    "absolute inset-0 bg-gradient-to-t via-slate-950/20 to-transparent transition-opacity duration-700",
+                    "absolute inset-0 bg-linear-to-t via-slate-950/20 to-transparent transition-opacity duration-700",
                     theme === 'dark' ? "from-slate-950 opacity-90" : "from-black/70 opacity-80"
                 )} />
 
@@ -1356,11 +1357,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                 <motion.div
                     style={{ y: y2, opacity }}
-                    className="absolute bottom-6 md:bottom-12 left-4 md:left-10 right-4 md:right-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 z-10"
+                    className="absolute bottom-6 md:bottom-12 left-4 md:left-10 right-4 md:right-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 z-10 min-h-0 pt-24 sm:pt-28 md:pt-24"
                 >
-                    <div className="max-w-3xl">
-                        {isEditing ? (
-                            <div className="space-y-4 bg-black/40 p-6 rounded-3xl backdrop-blur-md border border-white/10">
+                    <div className="max-w-3xl flex flex-col gap-3 shrink min-w-0 overflow-hidden">
+                        <AnimatePresence mode="wait">
+                        {isEditingGroupInfo ? (
+                            <motion.div
+                                key="edit-form"
+                                initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                                transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                className="space-y-4 bg-black/30 p-6 rounded-2xl backdrop-blur-xl border border-white/10 mt-4 max-h-[min(55vh,420px)] overflow-y-auto overscroll-contain"
+                            >
                                 <input
                                     value={formData.name || ''}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
@@ -1375,43 +1384,113 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 />
 
 
-                                <div className="space-y-2">
+                                <div className="space-y-3">
                                     {isAdmin && (
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs text-white/50 uppercase font-black tracking-widest flex items-center gap-2"><Globe size={14} /> Hero Image URL</label>
-                                            <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
-                                            <button type="button" onClick={() => heroFileInputRef.current?.click()} disabled={isHeroUploading} className="flex items-center gap-1 text-[10px] text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
-                                                {isHeroUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                                {isHeroUploading ? 'Uploading...' : 'Upload'}
-                                            </button>
-                                        </div>
+                                        <>
+                                            <div className="flex items-center gap-3">
+                                                <label className="text-xs text-white/60 uppercase font-black tracking-widest flex items-center gap-2 shrink-0"><ImageIcon size={12} /> Banner Image</label>
+                                                {activeImage && (
+                                                    <div className="rounded-lg overflow-hidden border border-white/20 w-16 h-10 shrink-0">
+                                                        <img src={convertDriveLink(activeImage)} alt="Preview" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    value={formData.image || ''}
+                                                    onChange={(e) => {
+                                                        const newUrl = e.target.value;
+                                                        setFormData({ ...formData, image: newUrl });
+                                                        setActiveImage(newUrl);
+                                                    }}
+                                                    className="flex-1 bg-white/10 text-sm font-medium text-white placeholder:text-white/40 border border-white/20 rounded-xl px-3 py-2 focus:border-brand-pink focus:ring-1 focus:ring-brand-pink focus:outline-none"
+                                                    placeholder="Paste URL or Upload"
+                                                />
+                                                <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => heroFileInputRef.current?.click()}
+                                                    disabled={isHeroUploading}
+                                                    className="shrink-0 px-4 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-wider hover:bg-brand-pink/90 active:scale-95 transition-all disabled:opacity-60 flex items-center gap-2"
+                                                >
+                                                    {isHeroUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                                    {isHeroUploading ? 'Uploading...' : 'Upload'}
+                                                </button>
+                                                {(formData.image || activeImage) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setModalConfig({
+                                                            isOpen: true, title: 'ลบรูป Banner', message: 'ลบรูป Banner จะลบจาก Firebase Storage ด้วย ยืนยันไหม?', type: 'danger',
+                                                            singleButton: false, confirmText: 'ลบ',
+                                                            onConfirm: () => handleDeleteBannerImage()
+                                                        })}
+                                                        className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-bold text-xs uppercase tracking-wider hover:bg-red-500/30 active:scale-95 transition-all flex items-center gap-1"
+                                                        title="ลบรูป"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="space-y-2 pt-2 border-t border-white/10">
+                                                <div className="flex items-center gap-3">
+                                                    <label className="text-xs text-white/60 uppercase font-black tracking-widest flex items-center gap-2 shrink-0"><ImageIcon size={12} /> Card Image (Home)</label>
+                                                    {formData.coverImage && (
+                                                        <div className="rounded-lg overflow-hidden border border-white/20 w-16 h-10 shrink-0">
+                                                            <img src={convertDriveLink(formData.coverImage)} alt="Cover" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-white/50">Shown in group list. Uses Banner if empty.</p>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        value={formData.coverImage || ''}
+                                                        onChange={e => setFormData({ ...formData, coverImage: e.target.value })}
+                                                        className="flex-1 bg-white/10 text-sm font-medium text-white placeholder:text-white/40 border border-white/20 rounded-xl px-3 py-2 focus:border-brand-pink focus:ring-1 focus:ring-brand-pink focus:outline-none"
+                                                        placeholder="Paste URL or Upload"
+                                                    />
+                                                    <input type="file" ref={coverFileInputRef} onChange={handleCoverFileUpload} className="hidden" accept="image/*" />
+                                                    <button type="button" onClick={() => coverFileInputRef.current?.click()} disabled={isCoverUploading} className="shrink-0 px-4 py-2 rounded-xl bg-white/20 text-white font-bold text-xs uppercase tracking-wider hover:bg-white/30 active:scale-95 transition-all disabled:opacity-60 flex items-center gap-2">
+                                                        {isCoverUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                                        Upload
+                                                    </button>
+                                                    {formData.coverImage && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setModalConfig({
+                                                                isOpen: true, title: 'ลบรูป Card', message: 'ลบรูป Card จะลบจาก Firebase Storage ด้วย ยืนยันไหม?', type: 'danger',
+                                                                singleButton: false, confirmText: 'ลบ',
+                                                                onConfirm: () => handleDeleteCoverImage()
+                                                            })}
+                                                            className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-bold text-xs uppercase tracking-wider hover:bg-red-500/30 active:scale-95 transition-all flex items-center gap-1"
+                                                            title="ลบรูป"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </>
                                     )}
-                                    <input
-                                        value={formData.image || ''}
-                                        onChange={(e) => {
-                                            const newUrl = e.target.value;
-                                            setFormData({ ...formData, image: newUrl });
-                                            setActiveImage(newUrl);
-                                            setHeroZoom(1);
-                                            setHeroCrop({ x: 0, y: 0 });
-                                        }}
-                                        className="w-full bg-transparent text-sm font-medium text-white/80 border-b border-white/20 focus:border-brand-pink focus:outline-none"
-                                        placeholder="Hero Image URL"
-                                    />
-
-
                                 </div>
-                            </div>
+                            </motion.div>
                         ) : (
-                            <>
-                                <h1 className="text-2xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] break-words">
+                            <motion.div
+                                key="group-name"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+                                className="min-w-0"
+                            >
+                                <h1 className="text-2xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-tight drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] line-clamp-2 break-words">
                                     {displayGroup.name}
                                 </h1>
-                                <p className="text-base sm:text-xl md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
+                                <p className="text-base sm:text-xl md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic truncate">
                                     {displayGroup.koreanName}
                                 </p>
-                            </>
+                            </motion.div>
                         )}
+                        </AnimatePresence>
                     </div>
 
                     <div className="flex gap-2 md:gap-4">
@@ -1421,7 +1500,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         </div>
                         <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
                             <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
-                            {isEditing ? (
+                            {isEditingGroupInfo ? (
                                 <input
                                     value={formData.fanclub || ''}
                                     onChange={e => setFormData({ ...formData, fanclub: e.target.value })}
@@ -1466,14 +1545,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <InfoRow
                                     icon={Building2}
                                     label="Foundation"
-                                    value={isEditing ? (
+                                    value={isEditingGroupInfo ? (
                                         <input
                                             value={formData.company || ''}
                                             onChange={e => setFormData({ ...formData, company: e.target.value })}
                                             className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                         />
                                     ) : (displayGroup.company || '-')}
-                                    onClick={(!isEditing && displayGroup.company) ? () => {
+                                    onClick={(!isEditingGroupInfo && displayGroup.company) ? () => {
                                         navigate(`/company/${encodeURIComponent(displayGroup.company)}`);
                                     } : undefined}
                                     theme={theme}
@@ -1481,10 +1560,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <InfoRow
                                     icon={Calendar}
                                     label="Debut Era"
-                                    value={isEditing ? (
+                                    value={isEditingGroupInfo ? (
                                         <input
                                             type="date"
-                                            value={formData.debutDate || ''}
+                                            value={formData.debutDate || formData.debut || ''}
                                             onChange={e => setFormData({ ...formData, debutDate: e.target.value })}
                                             className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
                                         />
@@ -1494,7 +1573,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <InfoRow
                                     icon={Heart}
                                     label="Status"
-                                    value={isEditing ? (
+                                    value={isEditingGroupInfo ? (
                                         <select
                                             value={formData.status || 'Active'}
                                             onChange={e => setFormData({ ...formData, status: e.target.value })}
@@ -1510,14 +1589,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     theme={theme}
                                     valueClass={cn(
                                         "font-black tracking-[0.2em] uppercase text-xs",
-                                        !isEditing && ((displayGroup.status === 'Inactive') ? "text-red-500" : "text-green-500")
+                                        !isEditingGroupInfo && ((displayGroup.status === 'Inactive') ? "text-red-500" : "text-green-500")
                                     )}
                                 />
-                                {(isEditing ? formData.status === 'Inactive' : displayGroup.status === 'Inactive') && (
+                                {(isEditingGroupInfo ? formData.status === 'Inactive' : displayGroup.status === 'Inactive') && (
                                     <InfoRow
                                         icon={Calendar}
                                         label="Disband Date"
-                                        value={isEditing ? (
+                                        value={isEditingGroupInfo ? (
                                             <input
                                                 type="date"
                                                 value={formData.disbandDate || ''}
@@ -1531,13 +1610,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 )}
 
                                 {/* Social Media Links */}
-                                {(isEditing || socialLinksOrder.some(link => displayGroup?.[link.id])) && (
+                                {(isEditingGroupInfo || socialLinksOrder.some(link => displayGroup?.[link.id])) && (
                                     <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
                                         <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
                                             <Globe size={12} /> Social Media
                                         </h4>
 
-                                        {isEditing ? (
+                                        {isEditingGroupInfo ? (
                                             <div className="grid grid-cols-1 gap-3">
                                                 {defaultOrder.map(link => (
                                                     <div key={link.id} className="relative group/input">
@@ -1563,7 +1642,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     let baseClass = "px-4 py-2 rounded-full transition-all duration-300 hover:scale-110 hover:-translate-y-1 shadow-sm flex items-center gap-2 font-bold text-xs uppercase tracking-widest border";
                                                     let colorClass = theme === 'dark' ? "bg-slate-800 text-slate-300 border-white/10 hover:bg-slate-700" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100";
                                                     
-                                                    if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-gradient-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-white/10 hover:border-transparent" : "bg-white text-pink-500 hover:bg-gradient-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-pink-100 hover:border-transparent";
+                                                    if (link.id === 'instagram') colorClass = theme === 'dark' ? "bg-slate-800 text-pink-500 hover:bg-linear-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-white/10 hover:border-transparent" : "bg-white text-pink-500 hover:bg-linear-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white border-pink-100 hover:border-transparent";
                                                     else if (link.id === 'facebook') colorClass = theme === 'dark' ? "bg-slate-800 text-blue-500 hover:bg-[#1877F2] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-blue-600 hover:bg-[#1877F2] hover:text-white border-blue-100 hover:border-transparent";
                                                     else if (link.id === 'twitter') colorClass = theme === 'dark' ? "bg-slate-800 text-sky-500 hover:bg-black hover:text-white border-white/10 hover:border-transparent" : "bg-white text-sky-500 hover:bg-black hover:text-white border-sky-100 hover:border-transparent";
                                                     else if (link.id === 'youtube') colorClass = theme === 'dark' ? "bg-slate-800 text-red-500 hover:bg-[#FF0000] hover:text-white border-white/10 hover:border-transparent" : "bg-white text-red-500 hover:bg-[#FF0000] hover:text-white border-red-100 hover:border-transparent";
@@ -1592,7 +1671,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <span className={cn('text-xs font-black uppercase tracking-widest block mb-4', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
                                 Biography
                             </span>
-                            {isEditing ? (
+                            {isEditingGroupInfo ? (
                                 <div className="space-y-2">
                                     <div className="flex gap-2">
                                         <button type="button" onClick={() => insertFormat('b')} className={cn("p-2 rounded-lg border transition-colors", theme === 'dark' ? "border-white/10 hover:bg-white/10 text-white" : "border-slate-200 hover:bg-slate-100 text-slate-700")} title="Bold"><Bold size={16} /></button>
@@ -1622,11 +1701,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     )}
                                 </div>
                             ) : (
-                                <div className={cn("text-base md:text-lg leading-[1.8] text-justify space-y-4", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>
+                                <div className={cn("text-base md:text-lg leading-relaxed text-left space-y-4 max-w-prose", theme === 'dark' ? "text-slate-200" : "text-slate-700")}>
                                     {(displayGroup.description || "No description available.").split('\n').map((paragraph, idx) => {
                                         if (!paragraph.trim()) return <div key={idx} className="h-4" />;
                                         const __html = paragraph.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/&lt;b&gt;/g, "<strong class='font-black text-brand-pink'>").replace(/&lt;\/b&gt;/g, "</strong>").replace(/&lt;i&gt;/g, "<em class='italic opacity-80'>").replace(/&lt;\/i&gt;/g, "</em>");
-                                        return <p key={idx} dangerouslySetInnerHTML={{ __html }} />;
+                                        return <p key={idx} dangerouslySetInnerHTML={{ __html }} className="mb-3 last:mb-0" />;
                                     })}
                                 </div>
                             )}
@@ -1680,25 +1759,33 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                     {activeTab === 'members' ? (
                         <>
-                            {isEditing && isAdmin && (
-                                <div className="flex justify-end mb-4">
-                                    <button
-                                        onClick={() => setIsReordering(!isReordering)}
-                                        className={cn(
-                                            "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-                                            isReordering
-                                                ? "bg-brand-pink text-white shadow-lg shadow-brand-pink/20"
-                                                : (theme === 'dark' ? "bg-slate-800 text-slate-400 hover:text-white" : "bg-white text-slate-500 hover:text-slate-900 border border-slate-200")
-                                        )}
-                                    >
-                                        {isReordering ? <Check size={16} /> : <ListOrdered size={16} />}
-                                        {isReordering ? "Done Reordering" : "Reorder Members"}
-                                    </button>
-                                </div>
-                            )}
-
                             {isReordering && isAdmin ? (
-                                <Reorder.Group
+                                <>
+                                    <div className="flex items-center justify-between gap-4 mb-4">
+                                        <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                            <div className="w-8 h-1 bg-brand-pink rounded-full" />
+                                            Reorder Members
+                                        </h3>
+                                        <div className={cn("inline-flex items-center gap-1.5 p-0.5 rounded-full", theme === 'dark' ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200")}>
+                                            <button
+                                                onClick={() => {
+                                                    setIsReordering(false);
+                                                    setFormData(prev => ({ ...prev, members: displayGroup.members }));
+                                                }}
+                                                className={cn("px-2.5 py-1 rounded-full text-xs font-semibold transition-all", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")}
+                                            >
+                                                <X size={12} /> Cancel
+                                            </button>
+                                            <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                            <button
+                                                onClick={() => { setIsReordering(false); handleSaveGroup(); }}
+                                                className="px-3 py-1 rounded-full bg-brand-pink/90 hover:bg-brand-pink text-white text-xs font-semibold shadow-lg shadow-brand-pink/20 transition-all"
+                                            >
+                                                <Save size={12} /> Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <Reorder.Group
                                     axis="y"
                                     values={sortedMembers}
                                     onReorder={(newOrder) => {
@@ -1727,6 +1814,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         </Reorder.Item>
                                     ))}
                                 </Reorder.Group>
+                                </>
                             ) : (
                                 <motion.div
                                     key="members-content"
@@ -1741,15 +1829,67 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     {(() => {
                                         return (
                                             <>
-                                                {/* Active Members Header - Only show if there's at least one active member */}
-                                                {activeMembers.length > 0 && (
-                                                    <div className="col-span-1 md:col-span-1 xl:col-span-2 mt-4 mb-2">
-                                                        <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
-                                                            <div className="w-8 h-1 bg-brand-pink rounded-full" />
-                                                            Active Members
-                                                        </h3>
-                                                    </div>
-                                                )}
+                                                {/* Section header: Active Members + Edit */}
+                                                <div className="col-span-1 md:col-span-1 xl:col-span-2 flex items-center justify-between gap-4 mt-4 mb-2">
+                                                    <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                                        <div className="w-8 h-1 bg-brand-pink rounded-full" />
+                                                        {activeMembers.length > 0 ? "Active Members" : "Members"}
+                                                    </h3>
+                                                    {user && isAdmin && (
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            {!isEditingMembers ? (
+                                                                <motion.button
+                                                                    whileHover={{ scale: 1.02 }}
+                                                                    whileTap={{ scale: 0.98 }}
+                                                                    onClick={() => setIsEditingMembers(true)}
+                                                                    className={cn(
+                                                                        "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200",
+                                                                        theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-brand-pink border border-slate-200"
+                                                                    )}
+                                                                >
+                                                                    <Edit2 size={12} /> Edit
+                                                                </motion.button>
+                                                            ) : (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                    className={cn("inline-flex items-center gap-1.5 p-0.5 rounded-full", theme === 'dark' ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200")}
+                                                                >
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setIsEditingMembers(false);
+                                                                            setIsReordering(false);
+                                                                            setFormData(prev => ({ ...prev, members: displayGroup.members }));
+                                                                            setEditingMembers(members);
+                                                                        }}
+                                                                        className={cn("px-2.5 py-1 rounded-full text-xs font-semibold transition-all", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")}
+                                                                    >
+                                                                        <X size={12} /> Cancel
+                                                                    </button>
+                                                                    <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                                                    <button
+                                                                        onClick={handleSaveGroup}
+                                                                        className="px-3 py-1 rounded-full bg-brand-pink/90 hover:bg-brand-pink text-white text-xs font-semibold shadow-lg shadow-brand-pink/20 transition-all"
+                                                                    >
+                                                                        <Save size={12} /> Save
+                                                                    </button>
+                                                                    <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                                                    <button
+                                                                        onClick={() => setIsReordering(!isReordering)}
+                                                                        className={cn(
+                                                                            "px-2.5 py-1 rounded-full text-xs font-semibold transition-all",
+                                                                            isReordering
+                                                                                ? "bg-brand-pink text-white"
+                                                                                : (theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")
+                                                                        )}
+                                                                    >
+                                                                        {isReordering ? <Check size={12} /> : <ListOrdered size={12} />} {isReordering ? "Done" : "Reorder"}
+                                                                    </button>
+                                                                </motion.div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
 
                                                 {activeMembers.map((member, idx) => (
                                                     <MemberCard
@@ -1810,17 +1950,62 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1, y: 0 }}
                             className="space-y-6"
                         >
-                            {isEditing && isAdmin ? (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h3 className={cn("text-xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>Edit Gallery</h3>
+                            {/* Section header: Gallery + Edit */}
+                            <div className="flex items-center justify-between gap-4 mb-2">
+                                <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                    <div className="w-8 h-1 bg-brand-blue rounded-full" />
+                                    Gallery
+                                </h3>
+                                {user && isAdmin && (
+                                    !isEditingGallery ? (
+                                        <motion.button
+                                            whileHover={{ scale: 1.02 }}
+                                            whileTap={{ scale: 0.98 }}
+                                            onClick={() => setIsEditingGallery(true)}
+                                            className={cn(
+                                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200",
+                                                theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-brand-blue border border-slate-200"
+                                            )}
+                                        >
+                                            <Edit2 size={12} /> Edit
+                                        </motion.button>
+                                    ) : (
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className={cn("inline-flex items-center gap-1.5 p-0.5 rounded-full", theme === 'dark' ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200")}
+                                        >
+                                            <button
+                                                onClick={() => {
+                                                    setIsEditingGallery(false);
+                                                    setFormData(prev => ({ ...prev, gallery: displayGroup.gallery }));
+                                                    setGalleryItems((displayGroup.gallery || []).map((url, i) => ({ id: `gal-${i}`, url })));
+                                                }}
+                                                className={cn("px-2.5 py-1 rounded-full text-xs font-semibold transition-all", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")}
+                                            >
+                                                <X size={12} /> Cancel
+                                            </button>
+                                            <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                            <button
+                                                onClick={handleSaveGroup}
+                                                className="px-3 py-1 rounded-full bg-brand-pink/90 hover:bg-brand-pink text-white text-xs font-semibold shadow-lg shadow-brand-pink/20 transition-all"
+                                            >
+                                                <Save size={12} /> Save
+                                            </button>
+                                        </motion.div>
+                                    )
+                                )}
+                            </div>
+                            {isEditingGallery && isAdmin ? (
+                                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div className="flex gap-2">
                                             {selectedGalleryIndices.size > 0 && (
-                                                <button onClick={deleteSelectedGalleryImages} className="px-3 py-1.5 rounded-xl bg-red-500/10 text-red-500 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                                <button onClick={deleteSelectedGalleryImages} className="px-3 py-1.5 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-semibold transition-all flex items-center gap-2">
                                                     <Trash2 size={14} /> Delete ({selectedGalleryIndices.size})
                                                 </button>
                                             )}
-                                            <button onClick={selectAllGalleryImages} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2">
+                                            <button onClick={selectAllGalleryImages} className={cn("px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-2", theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400" : "bg-slate-100 hover:bg-slate-200 text-slate-600")}>
                                                 {selectedGalleryIndices.size === galleryItems.length ? <CheckSquare size={14} /> : <Square size={14} />}
                                                 Select All
                                             </button>
@@ -1831,30 +2016,47 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         setFormData(prev => ({ ...prev, gallery: newOrder.map(i => i.url) }));
                                     }} className="space-y-3">
                                         {galleryItems.map((item, idx) => (
-                                            <Reorder.Item key={item.id} value={item} className={cn("p-3 rounded-2xl border flex items-center gap-3", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
-                                                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
-                                                    <GripVertical size={20} />
+                                            <Reorder.Item key={item.id} value={item} className={cn("p-4 rounded-2xl border flex flex-col sm:flex-row items-stretch sm:items-center gap-3", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                        <GripVertical size={20} />
+                                                    </div>
+                                                    <button type="button" onClick={() => toggleGallerySelection(idx)} className="p-1">
+                                                        {selectedGalleryIndices.has(idx) ? <CheckSquare size={20} className="text-brand-pink" /> : <Square size={20} className="text-slate-400" />}
+                                                    </button>
+                                                    <div className="w-20 h-20 rounded-xl overflow-hidden border bg-slate-100 dark:bg-slate-800 shrink-0">
+                                                        {item.url ? (
+                                                            <img src={convertDriveLink(item.url)} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-slate-400"><ImageIcon size={24} /></div>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <button type="button" onClick={() => toggleGallerySelection(idx)} className="p-1">
-                                                    {selectedGalleryIndices.has(idx) ? <CheckSquare size={20} className="text-brand-pink" /> : <Square size={20} className="text-slate-400" />}
-                                                </button>
-                                                <img src={convertDriveLink(item.url)} className="w-16 h-16 rounded-lg object-cover" alt="" />
-                                                <input
-                                                    value={item.url}
-                                                    onChange={e => handleGalleryChange(idx, e.target.value)}
-                                                    className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
-                                                    placeholder="Image URL"
-                                                />
-                                                <button type="button" onClick={() => removeGalleryImage(idx)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl"><Trash2 size={16} /></button>
+                                                <div className="flex-1 flex flex-col sm:flex-row gap-2 min-w-0">
+                                                    <input
+                                                        value={item.url}
+                                                        onChange={e => handleGalleryChange(idx, e.target.value)}
+                                                        className={cn("flex-1 p-3 rounded-xl border outline-none text-sm font-medium", theme === 'dark' ? "border-white/10 bg-slate-900/50 text-white placeholder:text-slate-500" : "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400")}
+                                                        placeholder="Paste image URL or upload"
+                                                    />
+                                                    <button type="button" onClick={() => { galleryReplaceIdxRef.current = idx; galleryReplaceInputRef.current?.click(); }} disabled={isUploading} className="shrink-0 px-3 py-2 rounded-xl bg-brand-pink/10 text-brand-pink hover:bg-brand-pink/20 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-60">
+                                                        {isUploading && galleryReplaceIdxRef.current === idx ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                                        Upload
+                                                    </button>
+                                                    <button type="button" onClick={() => removeGalleryImage(idx)} className="shrink-0 px-3 py-2 rounded-xl text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-2 self-start sm:self-auto">
+                                                        <Trash2 size={16} /> Delete
+                                                    </button>
+                                                </div>
                                             </Reorder.Item>
                                         ))}
                                     </Reorder.Group>
-                                    <div className="flex gap-2">
-                                        <button onClick={addGalleryImage} className="flex-1 py-3 rounded-xl border-2 border-dashed border-brand-blue/30 text-brand-blue font-black uppercase tracking-widest hover:bg-brand-blue/5 transition-colors flex items-center justify-center gap-2">
-                                            <Plus size={16} /> Add Image Field
+                                    <input type="file" ref={galleryReplaceInputRef} className="hidden" accept="image/*" onChange={handleGalleryReplaceUpload} />
+                                    <div className="flex gap-3">
+                                        <button onClick={addGalleryImage} className={cn("flex-1 py-3 rounded-2xl border-2 border-dashed transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm", theme === 'dark' ? "border-brand-blue/30 text-brand-blue hover:bg-brand-blue/10 hover:border-brand-blue/50" : "border-brand-blue/40 text-brand-blue hover:bg-brand-blue/5 hover:border-brand-blue/60")}>
+                                            <Plus size={18} /> Add Row
                                         </button>
                                         <input type="file" multiple ref={galleryInputRef} className="hidden" onChange={handleGalleryUpload} accept="image/*" />
-                                        <button onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className="flex-1 py-3 rounded-xl border-2 border-dashed border-brand-pink/30 text-brand-pink font-black uppercase tracking-widest hover:bg-brand-pink/5 transition-colors flex items-center justify-center gap-2 relative overflow-hidden">
+                                        <button onClick={() => galleryInputRef.current?.click()} disabled={isUploading} className={cn("flex-1 py-3 rounded-2xl border-2 border-dashed transition-all duration-200 flex items-center justify-center gap-2 font-semibold text-sm relative overflow-hidden", theme === 'dark' ? "border-brand-pink/30 text-brand-pink hover:bg-brand-pink/10 hover:border-brand-pink/50 disabled:opacity-60" : "border-brand-pink/40 text-brand-pink hover:bg-brand-pink/5 hover:border-brand-pink/60 disabled:opacity-60")}>
                                             {isUploading && (
                                                 <div className="absolute inset-0 bg-brand-pink/10">
                                                     <motion.div
@@ -1870,7 +2072,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             </div>
                                         </button>
                                     </div>
-                                </div>
+                                </motion.div>
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                                     {allImages.slice(1).map((img, idx) => (
@@ -1890,7 +2092,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     ))}
                                 </div>
                             )}
-                            {(allImages.length <= 1 && !isEditing) && (
+                            {(allImages.length <= 1 && !isEditingGallery) && (
                                 <div className="text-center py-20">
                                     <ImageIcon size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
                                     <p className="text-slate-500 font-medium">No gallery images yet.</p>
@@ -1916,7 +2118,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 whileInView={{ height: "100%" }}
                                 viewport={{ once: true }}
                                 transition={{ duration: 1.5, ease: "easeInOut" }}
-                                className="absolute left-4 md:left-1/2 top-0 w-0.5 -ml-px bg-gradient-to-b from-brand-pink via-brand-purple to-transparent shadow-[0_0_10px_rgba(236,72,153,0.5)]"
+                                className="absolute left-4 md:left-1/2 top-0 w-0.5 -ml-px bg-linear-to-b from-brand-pink via-brand-purple to-transparent shadow-[0_0_10px_rgba(236,72,153,0.5)]"
                             />
 
                             {timelineMembers.map((member, index) => {
@@ -1991,7 +2193,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                             alt={member.name}
                                                         />
                                                         {['inactive', 'former'].includes(member.status?.toLowerCase()) && (
-                                                            <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl skew-x-[-12deg]">
+                                                    <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl -skew-x-12">
                                                                 <div className="flex items-center gap-2 px-4 py-2 bg-white/10 dark:bg-black/40 backdrop-blur-xl text-white border-l-4 border-amber-400/80">
                                                                     <div className="relative flex h-2 w-2">
                                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -2142,30 +2344,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className={cn(
-                                                "block rounded-3xl border transition-all hover:scale-[1.02] group overflow-hidden flex flex-col h-full",
+                                                "flex flex-col rounded-3xl border transition-all hover:scale-[1.02] group overflow-hidden h-full",
                                                 theme === 'dark' ? "bg-slate-900/40 border-white/5 hover:border-brand-pink/30" : "bg-white border-slate-100 shadow-lg hover:shadow-xl"
                                             )}
                                         >
-                                            {item.image?.thumbnail?.contentUrl && (
-                                                <div className="h-48 w-full relative overflow-hidden shrink-0">
-                                                    <img
-                                                        src={item.image?.thumbnail?.contentUrl}
-                                                        alt={item.name}
-                                                        loading="lazy"
-                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                        onError={(e) => {
-                                                            e.target.style.display = 'none';
-                                                        }}
-                                                    />
-                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-60" />
-                                                    <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
-                                                        <span className="text-[10px] font-black uppercase tracking-widest text-white bg-brand-pink/90 px-2 py-1 rounded-lg backdrop-blur-md shadow-lg">
-                                                            {item.provider?.[0]?.name || 'News'}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            )}
-
                                             <div className="p-6 flex flex-col flex-1">
                                                 <div className="flex items-center gap-2 mb-3 text-xs text-slate-500 font-bold">
                                                     <Calendar size={12} />
@@ -2188,10 +2370,56 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             key="videos"
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="space-y-8"
+                            className="space-y-6"
                         >
-                            {isEditing && isAdmin ? (
-                                <div className="space-y-6">
+                            {/* Section header: Video Gallery + Edit */}
+                            <div className="flex items-center justify-between gap-4 mb-2">
+                                <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                    <div className="w-8 h-1 bg-red-500 rounded-full" />
+                                    Video Gallery
+                                </h3>
+                                {user && isAdmin && (
+                                    !isEditingVideos ? (
+                                        <motion.button
+                                            whileHover={{ scale: 1.02 }}
+                                            whileTap={{ scale: 0.98 }}
+                                            onClick={() => setIsEditingVideos(true)}
+                                            className={cn(
+                                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200",
+                                                theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-red-500 border border-slate-200"
+                                            )}
+                                        >
+                                            <Edit2 size={12} /> Edit
+                                        </motion.button>
+                                    ) : (
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className={cn("inline-flex items-center gap-1.5 p-0.5 rounded-full", theme === 'dark' ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200")}
+                                        >
+                                            <button
+                                                onClick={() => {
+                                                    setIsEditingVideos(false);
+                                                    setFormData(prev => ({ ...prev, videos: displayGroup.videos }));
+                                                    setVideoList((displayGroup.videos || []).map((v, i) => ({ ...v, internalId: `vid-${i}` })));
+                                                }}
+                                                className={cn("px-2.5 py-1 rounded-full text-xs font-semibold transition-all", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")}
+                                            >
+                                                <X size={12} /> Cancel
+                                            </button>
+                                            <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                            <button
+                                                onClick={handleSaveGroup}
+                                                className="px-3 py-1 rounded-full bg-brand-pink/90 hover:bg-brand-pink text-white text-xs font-semibold shadow-lg shadow-brand-pink/20 transition-all"
+                                            >
+                                                <Save size={12} /> Save
+                                            </button>
+                                        </motion.div>
+                                    )
+                                )}
+                            </div>
+                            {isEditingVideos && isAdmin ? (
+                                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                                     <Reorder.Group axis="y" values={videoList} onReorder={(newOrder) => {
                                         setVideoList(newOrder);
                                         setFormData(prev => ({ ...prev, videos: newOrder.map(({ internalId, ...rest }) => rest) }));
@@ -2222,30 +2450,59 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             </Reorder.Item>
                                         ))}
                                     </Reorder.Group>
-                                    <button onClick={addVideo} className="w-full py-4 rounded-2xl border-2 border-dashed border-red-500/30 text-red-500 font-black uppercase tracking-widest hover:bg-red-500/5 transition-colors flex items-center justify-center gap-2">
+                                    <button onClick={addVideo} className={cn("w-full py-4 rounded-2xl border-2 border-dashed transition-all duration-200 flex items-center justify-center gap-2 font-semibold", theme === 'dark' ? "border-red-500/30 text-red-500 hover:bg-red-500/10 hover:border-red-500/50" : "border-red-500/40 text-red-500 hover:bg-red-500/5 hover:border-red-500/60")}>
                                         <Plus size={20} /> Add Video
                                     </button>
-                                </div>
+                                </motion.div>
                             ) : (
                                 <>
-                                    <div className="relative max-w-lg mx-auto mb-8">
-                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                                        <input
+                                    <motion.div
+                                        className="relative max-w-lg mx-auto mb-8"
+                                        initial={{ opacity: 0, y: -8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                    >
+                                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-300" size={20} />
+                                        <motion.input
                                             type="text"
                                             placeholder="Search videos..."
                                             value={videoSearch}
                                             onChange={(e) => { setVideoSearch(e.target.value); setVideoPage(1); }}
                                             className={cn("w-full pl-12 pr-4 py-3 rounded-2xl border focus:outline-none transition-all font-medium shadow-sm", theme === 'dark' ? "bg-slate-900/50 border-white/10 focus:border-brand-pink/50 text-white placeholder:text-slate-600" : "bg-white border-slate-200 focus:border-brand-pink/50 text-slate-900")}
+                                            whileFocus={{ scale: 1.01 }}
+                                            transition={{ type: "spring", stiffness: 400, damping: 25 }}
                                         />
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    </motion.div>
+                                    <motion.div
+                                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+                                        variants={{
+                                            hidden: { opacity: 0 },
+                                            show: {
+                                                opacity: 1,
+                                                transition: { staggerChildren: 0.08, delayChildren: 0.05 }
+                                            }
+                                        }}
+                                        initial="hidden"
+                                        animate="show"
+                                        key={videoSearch}
+                                    >
+                                        <AnimatePresence mode="popLayout">
                                         {currentVideos.length > 0 ? (
                                             currentVideos.map((video, idx) => {
                                                 const videoId = getYouTubeVideoId(video.url);
                                                 const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : null;
 
                                                 return (
-                                                    <div key={`${videoPage}-${idx}`} className="group cursor-pointer space-y-3">
+                                                    <motion.div
+                                                        key={video.url || `video-${idx}`}
+                                                        layout
+                                                        variants={{
+                                                            hidden: { opacity: 0, y: 24, scale: 0.96 },
+                                                            show: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 400, damping: 30 } }
+                                                        }}
+                                                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                                                        className="group cursor-pointer space-y-3"
+                                                    >
                                                         <div
                                                             className="rounded-2xl overflow-hidden aspect-video bg-black relative shadow-md transition-all duration-300 group-hover:shadow-xl group-hover:-translate-y-1"
                                                             onClick={() => setSelectedVideo(video)}
@@ -2269,15 +2526,22 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                                 <p className={cn("text-[10px] font-bold uppercase tracking-widest mt-1", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>{video.date}</p>
                                                             )}
                                                         </div>
-                                                    </div>
+                                                    </motion.div>
                                                 )
                                             })
                                         ) : (
-                                            <div className="col-span-full text-center py-20">
+                                            <motion.div
+                                                key="no-results"
+                                                initial={{ opacity: 0, y: 20 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0 }}
+                                                className="col-span-full text-center py-20"
+                                            >
                                                 <Youtube size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
                                                 <p className="text-slate-500 font-medium">No videos found.</p>
-                                            </div>
+                                            </motion.div>
                                         )}
+                                        </AnimatePresence>
 
                                         {totalVideoPages > 1 && (
                                             <div className="col-span-full flex justify-center items-center gap-4 mt-8 pt-6 border-t border-dashed border-slate-200 dark:border-white/10">
@@ -2306,7 +2570,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 </button>
                                             </div>
                                         )}
-                                    </div>
+                                    </motion.div>
                                 </>
                             )}
                         </motion.div>
@@ -2381,7 +2645,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     navigate(`/u/${u}`);
                                                 }}
                                                 className={cn(
-                                                    "w-14 h-14 rounded-full bg-gradient-to-tr from-brand-blue/20 to-brand-purple/20 p-0.5 shrink-0 shadow-lg",
+                                                    "w-14 h-14 rounded-full bg-linear-to-tr from-brand-blue/20 to-brand-purple/20 p-0.5 shrink-0 shadow-lg",
                                                     !(comment.username || '').trim() && "pointer-events-none"
                                                 )}
                                                 title={comment.username ? `View @${comment.username}` : ''}
@@ -2586,10 +2850,57 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             key="discography"
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="space-y-8"
+                            className="space-y-6"
                         >
-                            {isEditing && isAdmin ? (
-                                <div className="space-y-6">
+                            {/* Section header: Discography + Edit */}
+                            <div className="flex items-center justify-between gap-4 mb-2">
+                                <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
+                                    <div className="w-8 h-1 bg-brand-purple rounded-full" />
+                                    Discography
+                                </h3>
+                                {user && isAdmin && (
+                                    !isEditingDiscography ? (
+                                        <motion.button
+                                            whileHover={{ scale: 1.02 }}
+                                            whileTap={{ scale: 0.98 }}
+                                            onClick={() => setIsEditingDiscography(true)}
+                                            className={cn(
+                                                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-200",
+                                                theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-brand-purple border border-slate-200"
+                                            )}
+                                        >
+                                            <Edit2 size={12} /> Edit
+                                        </motion.button>
+                                    ) : (
+                                        <motion.div
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            className={cn("inline-flex items-center gap-1.5 p-0.5 rounded-full", theme === 'dark' ? "bg-white/5 border border-white/5" : "bg-slate-100 border border-slate-200")}
+                                        >
+                                            <button
+                                                onClick={() => {
+                                                    setIsEditingDiscography(false);
+                                                    setFormData(prev => ({ ...prev, albums: displayGroup.albums }));
+                                                    setAlbumList((displayGroup.albums || []).map((a, i) => ({ ...a, internalId: `alb-${i}` })));
+                                                }}
+                                                className={cn("px-2.5 py-1 rounded-full text-xs font-semibold transition-all", theme === 'dark' ? "text-slate-400 hover:text-white hover:bg-white/10" : "text-slate-500 hover:text-slate-800 hover:bg-slate-200")}
+                                            >
+                                                <X size={12} /> Cancel
+                                            </button>
+                                            <div className={cn("w-px h-3.5", theme === 'dark' ? "bg-white/10" : "bg-slate-300")} />
+                                            <button
+                                                onClick={handleSaveGroup}
+                                                className="px-3 py-1 rounded-full bg-brand-pink/90 hover:bg-brand-pink text-white text-xs font-semibold shadow-lg shadow-brand-pink/20 transition-all"
+                                            >
+                                                <Save size={12} /> Save
+                                            </button>
+                                        </motion.div>
+                                    )
+                                )}
+                            </div>
+                            {isEditingDiscography && isAdmin ? (
+                                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                                    <input type="file" ref={albumCoverInputRef} className="hidden" accept="image/*" onChange={handleAlbumCoverUpload} />
                                     <Reorder.Group axis="y" values={albumList} onReorder={(newOrder) => {
                                         setAlbumList(newOrder);
                                         setFormData(prev => ({ ...prev, albums: newOrder.map(({ internalId, ...rest }) => rest) }));
@@ -2608,8 +2919,44 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <input placeholder="Album Title" value={album.title || ''} onChange={e => handleAlbumChange(idx, 'title', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
                                                     <input type="date" value={album.date || ''} onChange={e => handleAlbumChange(idx, 'date', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                    <input placeholder="Cover Image URL" value={album.cover || ''} onChange={e => handleAlbumChange(idx, 'cover', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                    <input placeholder="YouTube Playlist/Video URL" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                    <div className="md:col-span-2 flex flex-col sm:flex-row gap-3">
+                                                        <div className="flex gap-3 items-start flex-1 min-w-0">
+                                                            <div className="w-20 h-20 rounded-xl overflow-hidden border bg-slate-100 dark:bg-slate-800 shrink-0 flex items-center justify-center">
+                                                                {album.cover ? (
+                                                                    <img src={convertDriveLink(album.cover)} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
+                                                                ) : (
+                                                                    <ImageIcon size={28} className="text-slate-400" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 flex flex-col gap-2 min-w-0">
+                                                                <input
+                                                                    placeholder="Paste cover URL or upload"
+                                                                    value={album.cover || ''}
+                                                                    onChange={e => handleAlbumChange(idx, 'cover', e.target.value)}
+                                                                    className={cn("flex-1 p-3 rounded-xl border outline-none font-medium text-sm", theme === 'dark' ? "border-white/10 bg-slate-900/50 text-white placeholder:text-slate-500" : "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400")}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => { setAlbumCoverUploadingIdx(idx); setTimeout(() => albumCoverInputRef.current?.click(), 0); }}
+                                                                    disabled={albumCoverUploadingIdx === idx}
+                                                                    className={cn("self-start px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all", theme === 'dark' ? "bg-brand-pink/20 text-brand-pink hover:bg-brand-pink/30" : "bg-brand-pink/10 text-brand-pink hover:bg-brand-pink/20", albumCoverUploadingIdx === idx && "opacity-60 cursor-not-allowed")}
+                                                                >
+                                                                    {albumCoverUploadingIdx === idx ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                                                                    {albumCoverUploadingIdx === idx ? 'Uploading...' : 'Upload File'}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="md:col-span-2 flex gap-2">
+                                                        <input placeholder="YouTube Playlist/Video URL" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("flex-1 p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setYoutubeSearchAlbumIdx(idx); setShowYouTubeSearchModal(true); }}
+                                                            className={cn("shrink-0 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}
+                                                        >
+                                                            <Youtube size={18} /> Search
+                                                        </button>
+                                                    </div>
                                                     <div className="md:col-span-2">
                                                         <textarea
                                                             placeholder="Tracklist (one song per line)"
@@ -2622,10 +2969,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             </Reorder.Item>
                                         ))}
                                     </Reorder.Group>
-                                    <button onClick={addAlbum} className="w-full py-4 rounded-2xl border-2 border-dashed border-brand-pink/30 text-brand-pink font-black uppercase tracking-widest hover:bg-brand-pink/5 transition-colors flex items-center justify-center gap-2">
-                                        <Plus size={20} /> Add Album
-                                    </button>
-                                </div>
+                                    <div className="flex flex-col sm:flex-row gap-3">
+                                        <button
+                                            onClick={() => setShowMusicBrainzModal(true)}
+                                            className={cn("flex-1 py-4 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-2 font-semibold", theme === 'dark' ? "border-brand-purple/50 text-brand-purple hover:bg-brand-purple/10" : "border-brand-purple/40 text-brand-purple hover:bg-brand-purple/5")}
+                                        >
+                                            <Disc size={20} /> Import from MusicBrainz
+                                        </button>
+                                        <button onClick={addAlbum} className={cn("flex-1 py-4 rounded-2xl border-2 border-dashed transition-all duration-200 flex items-center justify-center gap-2 font-semibold", theme === 'dark' ? "border-brand-pink/30 text-brand-pink hover:bg-brand-pink/10 hover:border-brand-pink/50" : "border-brand-pink/40 text-brand-pink hover:bg-brand-pink/5 hover:border-brand-pink/60")}>
+                                            <Plus size={20} /> Add Album
+                                        </button>
+                                    </div>
+                                </motion.div>
                             ) : (
                                 <motion.div
                                     variants={{
@@ -2643,13 +2998,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 variants={{ hidden: { opacity: 0, y: 20, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
                                                 key={idx}
                                                 whileHover={{ y: -8 }}
-                                                onClick={() => {
-                                                    if (album.youtube) {
-                                                        setSelectedVideo({ title: album.title, url: album.youtube });
-                                                    } else {
-                                                        setSelectedAlbum(album);
-                                                    }
-                                                }}
+                                                onClick={() => setSelectedAlbum(album)}
                                                 className={cn(
                                                     "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
                                                     theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
@@ -2662,7 +3011,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2"
                                                         loading="lazy"
                                                     />
-                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
                                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-50 group-hover:scale-100">
                                                         <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl">
@@ -2735,7 +3084,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setLightboxImage(null)}
-                            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+                            className="fixed inset-0 z-100 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
                         >
                             <button
                                 onClick={() => setLightboxImage(null)}
@@ -2787,7 +3136,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setSelectedVideo(null)}
-                            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+                            className="fixed inset-0 z-100 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
                         >
                             <button
                                 onClick={() => setSelectedVideo(null)}
@@ -2806,7 +3155,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <iframe
                                     width="100%"
                                     height="100%"
-                                    src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedVideo.url)}?autoplay=1`}
+                                    src={(() => { const s = getYouTubeEmbedSrc(selectedVideo.url); return s ? (s.includes('?') ? `${s}&autoplay=1` : `${s}?autoplay=1`) : ''; })()}
                                     title={selectedVideo.title || "YouTube video player"}
                                     frameBorder="0"
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -2823,21 +3172,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 document.body
             )}
 
-            {cropState.src && (
-                <ImageCropper
-                    imageSrc={cropState.src}
-                    aspect={cropState.aspect}
-                    onCropComplete={(croppedUrl) => {
-                        cropState.callback(croppedUrl);
-                        setCropState({ src: null, callback: null, aspect: 16 / 9 });
-                    }}
-                    onCancel={() => {
-                        cropState.callback(cropState.src);
-                        setCropState({ src: null, callback: null, aspect: 16 / 9 });
-                    }}
-                />
-            )}
-
             {/* Album Detail Modal */}
             <AnimatePresence>
                 {selectedAlbum && (
@@ -2846,9 +3180,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={() => setSelectedAlbum(null)}
-                        className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+                        className="fixed inset-0 z-100 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
                     >
                         <motion.div
+                            data-album-modal
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
@@ -2857,7 +3192,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         >
                             <div className="w-full md:w-1/2 aspect-square md:aspect-auto relative">
                                 <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title || 'Album Cover'} loading="lazy" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent md:hidden" />
+                                <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent md:hidden" />
                                 <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
                             </div>
                             <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col overflow-y-auto custom-scrollbar">
@@ -2883,21 +3218,21 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
                                 {selectedAlbum.youtube && (
                                     <div className="space-y-2">
-                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-2 block flex items-center gap-2">
-                                            <Youtube size={12} /> Album Preview
+                                        <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-2 flex items-center gap-2">
+                                            <Youtube size={12} /> Listen on YouTube
                                         </label>
-                                        <div className="rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
-                                            <iframe
-                                                width="100%"
-                                                height="100%"
-                                                src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedAlbum.youtube)}`}
-                                                title="YouTube video player"
-                                                frameBorder="0"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                                allowFullScreen
-                                                className="absolute inset-0"
-                                            />
-                                        </div>
+                                        <a
+                                            href={selectedAlbum.youtube}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className={cn(
+                                                "flex items-center justify-center gap-2 w-full py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all",
+                                                "bg-red-600 hover:bg-red-500 text-white"
+                                            )}
+                                        >
+                                            <Youtube size={20} />
+                                            Watch on YouTube
+                                        </a>
                                     </div>
                                 )}
                             </div>
@@ -2911,10 +3246,26 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
 
+            <MusicBrainzImportModal
+                isOpen={showMusicBrainzModal}
+                onClose={() => setShowMusicBrainzModal(false)}
+                defaultArtist={displayGroup?.name || displayGroup?.koreanName}
+                onAdd={handleMusicBrainzAdd}
+            />
+
+            <YouTubeSearchModal
+                isOpen={showYouTubeSearchModal}
+                onClose={() => { setShowYouTubeSearchModal(false); setYoutubeSearchAlbumIdx(null); }}
+                defaultQuery={youtubeSearchAlbumIdx != null && albumList[youtubeSearchAlbumIdx] ? `${displayGroup?.name || ''} ${albumList[youtubeSearchAlbumIdx]?.title || ''} playlist`.trim() : ''}
+                onSelect={(url) => {
+                    if (youtubeSearchAlbumIdx != null) handleAlbumChange(youtubeSearchAlbumIdx, 'youtube', url);
+                }}
+            />
+
             {/* Reason Modal */}
             <AnimatePresence>
                 {showReasonModal && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
@@ -2963,19 +3314,6 @@ function renderWithMentions(text, onMentionClick) {
         }
         return part;
     });
-}
-
-function getRelativeTime(timestamp) {
-    if (!timestamp) return 'Just now';
-    const diff = Date.now() - timestamp;
-    const seconds = Math.floor(diff / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    if (minutes > 0) return `${minutes}m ago`;
-    return 'Just now';
 }
 
 function usePrevious(value) {
@@ -3111,7 +3449,7 @@ const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onIm
                             )}
                         />
                         {['inactive', 'former'].includes(member.status?.toLowerCase()) && (
-                            <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl skew-x-[-12deg]">
+                            <div className="absolute top-4 left-4 z-20 overflow-hidden ring-1 ring-white/20 dark:ring-white/10 rounded-xl shadow-2xl -skew-x-12">
                                 <div className="flex items-center gap-2 px-4 py-2 bg-white/10 dark:bg-black/40 backdrop-blur-xl text-white border-l-4 border-amber-400/80">
                                     <div className="relative flex h-2 w-2">
                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -3123,27 +3461,28 @@ const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onIm
                         )}
                     </motion.div>
                     {user && (
-                        <div className="absolute -top-2 -right-2 z-20 flex flex-col gap-2">
+                        <div className="absolute top-2 right-2 z-20 flex flex-col gap-2">
                             <motion.button
-                                whileHover={{ scale: 1.1 }}
+                                type="button"
+                                whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.9 }}
                                 onClick={handleFavoriteClick}
                                 className={cn(
-                                    "p-3 rounded-full border-4 transition-all duration-300",
+                                    "p-2.5 rounded-full bg-black/40 backdrop-blur-md border transition-all duration-300",
                                     member.isFavorite
-                                        ? "bg-brand-pink text-white shadow-[0_10px_30px_rgba(255,51,153,0.5)] border-slate-950"
-                                        : "bg-black/20 backdrop-blur-sm border-transparent text-white/70 hover:bg-brand-pink/50 hover:text-white"
+                                        ? "border-yellow-400/50 text-yellow-400"
+                                        : "border-white/10 text-white hover:text-yellow-400 hover:border-yellow-400/30"
                                 )}
                                 title={member.isFavorite ? "Unfavorite" : "Favorite"}
                             >
                                 <motion.div animate={controls}>
                                     <Star
-                                        size={16}
+                                        size={18}
                                         className={cn(
-                                            "transition-all duration-200",
+                                            "transition-colors duration-200",
                                             member.isFavorite
-                                                ? "fill-white stroke-white"
-                                                : "fill-transparent stroke-white"
+                                                ? "fill-yellow-400 text-yellow-400"
+                                                : "fill-transparent stroke-current"
                                         )}
                                     />
                                 </motion.div>

@@ -55,8 +55,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         youtube: '',
         tiktok: '',
         image: '',
-        parentCompanies: [], // New field for Parent Company
-        subsidiaries: [], // New field for Subsidiary Companies
+        parentCompanyIds: [], // Changed to store IDs
+        subsidiaryIds: [], // Changed to store IDs
         instagram: '',
         twitter: ''
     });
@@ -100,9 +100,9 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     youtube: initialData.youtube || '',
                     tiktok: initialData.tiktok || '',
                     image: initialData.image || '',
-                    // Support multiple parent companies, backward compatible with single string
-                    parentCompanies: initialData.parentCompanies || (initialData.parentCompany ? [initialData.parentCompany] : []),
-                    subsidiaries: [],
+                    // This would now be populated with IDs instead of names
+                    parentCompanyIds: initialData.parentCompanyIds || [],
+                    subsidiaryIds: [], // This would also be populated by IDs
                     instagram: initialData.instagram || '',
                     twitter: initialData.twitter || ''
                 });
@@ -198,18 +198,18 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
     const handleAddParent = (e) => {
         const value = e.target.value;
-        if (value && !formData.parentCompanies?.includes(value)) {
+        if (value && !formData.parentCompanyIds?.includes(value)) {
             setFormData(prev => ({
                 ...prev,
-                parentCompanies: [...(prev.parentCompanies || []), value]
+                parentCompanyIds: [...(prev.parentCompanyIds || []), value]
             }));
         }
     };
 
-    const handleRemoveParent = (companyToRemove) => {
+    const handleRemoveParent = (companyIdToRemove) => {
         setFormData(prev => ({
             ...prev,
-            parentCompanies: (prev.parentCompanies || []).filter(c => c !== companyToRemove)
+            parentCompanyIds: (prev.parentCompanyIds || []).filter(id => id !== companyIdToRemove)
         }));
     };
 
@@ -243,10 +243,10 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
             const companyData = {
                 ...formData,
-                parentCompany: formData.parentCompanies?.[0] || null, // Primary parent (legacy support)
+                parentCompanyIds: formData.parentCompanyIds || [], // Save IDs
                 updatedAt: serverTimestamp()
             };
-
+            delete companyData.parentCompany; // Remove legacy field if it exists
             let companyId;
 
             if (initialData?.id && !initialData.isNew) {
@@ -288,8 +288,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
             // Handle Subsidiaries Updates
             if (formData.name) {
-                const newSubs = formData.subsidiaries || [];
-                const oldSubs = initialSubs || [];
+                const newSubs = formData.subsidiaryIds || [];
+                const oldSubs = initialSubs.map(sub => allCompanies.find(c => c.name === sub)?.id).filter(Boolean) || [];
 
                 const addedSubs = newSubs.filter(s => !oldSubs.includes(s));
                 const removedSubs = oldSubs.filter(s => !newSubs.includes(s));
@@ -297,10 +297,10 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                 // Add relations
                 for (const subName of addedSubs) {
                     const sub = allCompanies.find(c => c.name === subName);
-                    if (sub) {
+                    if (sub?.id) {
                         const subRef = doc(db, 'companies', sub.id);
                         await updateDoc(subRef, {
-                            parentCompanies: arrayUnion(formData.name)
+                            parentCompanyIds: arrayUnion(company.id)
                         });
                         // Log
                         await logAudit({
@@ -316,10 +316,10 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                 // Remove relations
                 for (const subName of removedSubs) {
                     const sub = allCompanies.find(c => c.name === subName);
-                    if (sub) {
+                    if (sub?.id) {
                         const subRef = doc(db, 'companies', sub.id);
                         await updateDoc(subRef, {
-                            parentCompanies: arrayRemove(formData.name)
+                            parentCompanyIds: arrayRemove(company.id)
                         });
                         // Log
                         await logAudit({
@@ -591,7 +591,7 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                     <div className="relative">
                                         <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                         <select
-                                            value=""
+                                            value="" // Reset after selection
                                             onChange={handleAddParent}
                                             className={cn(
                                                 "w-full pl-10 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none cursor-pointer",
@@ -600,9 +600,9 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                         >
                                             <option value="" disabled>Select parent companies...</option>
                                             {allCompanies
-                                                .filter(c => c.name !== formData.name && !formData.parentCompanies?.includes(c.name))
+                                                .filter(c => c.id !== initialData?.id && !formData.parentCompanyIds?.includes(c.id))
                                                 .map(company => (
-                                                    <option key={company.id} value={company.name}>
+                                                    <option key={company.id} value={company.id}>
                                                         {company.name}
                                                     </option>
                                                 ))}
@@ -610,23 +610,25 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                     </div>
 
                                     {/* Selected Parents Tags */}
-                                    {formData.parentCompanies?.length > 0 && (
+                                    {formData.parentCompanyIds?.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mt-2">
-                                            {formData.parentCompanies.map(parent => (
-                                                <div key={parent} className={cn(
+                                            {formData.parentCompanyIds.map(parentId => {
+                                                const parentCompany = allCompanies.find(c => c.id === parentId);
+                                                if (!parentCompany) return null;
+                                                return (<div key={parentId} className={cn(
                                                     "flex items-center gap-2 pl-3 pr-2 py-1 rounded-full text-xs font-bold border",
                                                     theme === 'dark' ? "bg-brand-purple/10 border-brand-purple/20 text-brand-purple" : "bg-brand-purple/5 border-brand-purple/20 text-brand-purple"
                                                 )}>
-                                                    <span>{parent}</span>
+                                                    <span>{parentCompany.name}</span>
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleRemoveParent(parent)}
+                                                        onClick={() => handleRemoveParent(parentId)}
                                                         className="p-1 hover:bg-black/10 rounded-full transition-colors"
                                                     >
                                                         <X size={12} />
                                                     </button>
                                                 </div>
-                                            ))}
+                                            )})}
                                         </div>
                                     )}
                                 </div>

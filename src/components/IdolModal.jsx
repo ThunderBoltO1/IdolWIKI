@@ -3,19 +3,16 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
 import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText, Facebook } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn } from '../lib/utils';
+import { cn, getYouTubeEmbedSrc } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { convertDriveLink } from '../lib/storage';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { ImageCropper } from './ImageCropper';
-import getCroppedImgDataUrl, { createImage, isDataUrl } from '../lib/cropImage';
 import { ConfirmationModal } from './ConfirmationModal';
 import { IdolCard } from './IdolCard';
-import Cropper from 'react-easy-crop';
 import { useAwards } from '../hooks/useAwards.js';
-import { uploadImage, deleteImage, validateFile, compressImage, dataURLtoFile } from '../lib/upload';
+import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
 import { useToast } from './Toast';
 
 const TiktokIcon = ({ size = 24, className }) => (
@@ -72,7 +69,7 @@ const defaultIdolData = {
     status: 'Active'
 };
 
-export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
+export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
     const toast = useToast();
@@ -92,7 +89,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [replyingTo, setReplyingTo] = useState(null);
     const [replyText, setReplyText] = useState('');
     const [selectedAlbum, setSelectedAlbum] = useState(null);
-    const [cropState, setCropState] = useState({ src: null, callback: null, aspect: 3 / 4 });
     const heartIdCounter = useRef(0);
     const [newAward, setNewAward] = useState({
         year: new Date().getFullYear(),
@@ -107,10 +103,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
     const [awardSearch, setAwardSearch] = useState('');
     const [selectedAward, setSelectedAward] = useState(null);
 
-    const [imageCrop, setImageCrop] = useState({ x: 0, y: 0 });
-    const [imageZoom, setImageZoom] = useState(1);
-    const [imageCroppedArea, setImageCroppedArea] = useState(null);
-    const [imageObjectFit, setImageObjectFit] = useState('horizontal-cover');
     const [history, setHistory] = useState([]);
     const isBackRef = useRef(false);
 
@@ -209,6 +201,21 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         };
     }, [isOpen]);
 
+    // Lock scroll when album popup is open (prevent wheel/touch on backdrop)
+    useEffect(() => {
+        if (!selectedAlbum) return;
+        const preventScroll = (e) => {
+            if (e.target.closest('[data-album-modal]')) return;
+            e.preventDefault();
+        };
+        document.addEventListener('wheel', preventScroll, { passive: false });
+        document.addEventListener('touchmove', preventScroll, { passive: false });
+        return () => {
+            document.removeEventListener('wheel', preventScroll);
+            document.removeEventListener('touchmove', preventScroll);
+        };
+    }, [selectedAlbum]);
+
     useEffect(() => {
         if (isOpen) {
             const shouldReset = (mode === 'create' && !formData.id) || (idol && idol.id !== formData.id);
@@ -299,7 +306,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     snapCompany.docs.forEach(d => {
                         if (!seenIds.has(d.id)) {
                             seenIds.add(d.id);
-                            candidates.push({ id: d.id, ...d.data() });
+                            candidates.push({ ...d.data(), id: d.id });
                         }
                     });
                 }
@@ -316,7 +323,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     snapPos.docs.forEach(d => {
                         if (candidates.length < 4 && !seenIds.has(d.id)) {
                             seenIds.add(d.id);
-                            candidates.push({ id: d.id, ...d.data() });
+                            candidates.push({ ...d.data(), id: d.id });
                         }
                     });
                 }
@@ -329,51 +336,22 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         fetchSimilar();
     }, [idol?.company, idol?.id, idol?.positions]);
 
-    const startCropping = (url, callback, aspect = 3 / 4) => {
-        if (!url || isDataUrl(url)) {
-            callback(url);
-            return;
-        }
-        setCropState({ src: url, callback, aspect });
-    };
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'image') {
             const processedValue = value ? convertDriveLink(value) : value;
             setFormData(prev => ({ ...prev, image: processedValue }));
             setActiveImage(processedValue);
-            setImageZoom(1);
-            setImageCrop({ x: 0, y: 0 });
         } else {
             setFormData(prev => ({ ...prev, [name]: value }));
         }
     };
 
     const handleGalleryChange = (index, value) => {
-        startCropping(value, async (newUrl) => {
-            let finalUrl = newUrl;
-            if (newUrl && newUrl.startsWith('data:')) {
-                setIsUploading(true);
-                setUploadProgress(0);
-                try {
-                    const file = dataURLtoFile(newUrl, `gallery_cropped_${Date.now()}.jpg`);
-                    const compressedFile = await compressImage(file);
-                    finalUrl = await uploadImage(compressedFile, 'idols/gallery', (progress) => setUploadProgress(progress));
-                } catch (error) {
-                    console.error("Failed to upload cropped gallery image", error);
-                } finally {
-                    setIsUploading(false);
-                    setUploadProgress(0);
-                }
-            } else if (newUrl) {
-                finalUrl = convertDriveLink(newUrl);
-            }
-
-            const newGallery = [...(formData.gallery || [])];
-            newGallery[index] = finalUrl;
-            setFormData(prev => ({ ...prev, gallery: newGallery }));
-        }, 1 / 1);
+        const finalUrl = value ? convertDriveLink(value) : value;
+        const newGallery = [...(formData.gallery || [])];
+        newGallery[index] = finalUrl;
+        setFormData(prev => ({ ...prev, gallery: newGallery }));
     };
 
     const addGalleryImage = () => {
@@ -552,7 +530,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
             return;
         }
 
-        // 2. Preview Immediately (ใช้ Object URL ชั่วคราว)
+        // 2. Preview Immediately (using a temporary Object URL)
         const objectUrl = URL.createObjectURL(file);
         setActiveImage(objectUrl);
         setFormData(prev => ({ ...prev, image: objectUrl }));
@@ -563,7 +541,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
             // 3. Compress Image
             const compressedFile = await compressImage(file);
 
-            // ลบรูปเก่าถ้ามี (เช็คว่าเป็นรูปจาก firebase จริงๆ ไม่ใช่ blob url ชั่วคราว)
+            // Delete old image if it exists (only for real Firebase URLs, not temporary blob URLs)
             if (formData.image && formData.image.includes('firebasestorage')) {
                 await deleteImage(formData.image);
             }
@@ -573,8 +551,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
 
             setFormData(prev => ({ ...prev, image: url }));
             setActiveImage(url);
-            setImageZoom(1);
-            setImageCrop({ x: 0, y: 0 });
         } catch (error) {
             console.error("Upload failed:", error);
             alert("Failed to upload image");
@@ -621,7 +597,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         setFormData(idol);
         setEditMode(false);
         setActiveImage(idol.image);
-        setImageCroppedArea(null);
     };
 
     const handleFetchHistory = async () => {
@@ -649,34 +624,12 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
         e.preventDefault();
         setLoadingHistory(true); // Reuse loading state or create a new one for saving
 
-        let imageToSave = formData.image;
-        // Only crop if it's a local file (blob) or data URL to avoid CORS issues with remote images
-        if (imageCroppedArea && activeImage && (activeImage.startsWith('blob:') || activeImage.startsWith('data:'))) {
-            try {
-                const croppedImage = await getCroppedImgDataUrl(activeImage, imageCroppedArea);
-                // Convert Base64 to File and Upload
-                const file = dataURLtoFile(croppedImage, `cropped_${Date.now()}.jpg`);
-                const compressedFile = await compressImage(file);
-
-                // Delete old image if it exists and is different
-                if (formData.image && formData.image.includes('firebasestorage') && formData.image !== activeImage) {
-                    await deleteImage(formData.image);
-                }
-
-                const uploadedUrl = await uploadImage(compressedFile, 'idols');
-                imageToSave = uploadedUrl;
-            } catch (e) {
-                console.error("Failed to crop image", e);
-            }
-        }
-
-        const updatedData = { ...formData, image: imageToSave };
+        const updatedData = { ...formData };
         onSave(updatedData);
 
         // Update local state to reflect saved data immediately
         setFormData(updatedData);
-        setActiveImage(imageToSave);
-        setImageCroppedArea(null);
+        setActiveImage(updatedData.image);
 
         setEditMode(false);
         setLoadingHistory(false);
@@ -909,7 +862,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                 <div className="p-1.5 bg-white/20 rounded-full shrink-0">
                                     <Check size={14} strokeWidth={4} />
                                 </div>
-                                <span className="truncate">บันทึกสำเร็จ</span>
+                                <span className="truncate">Saved successfully</span>
                             </div>
                             <button onClick={handleCloseSuccess} className="p-1.5 -mr-1 rounded-full hover:bg-white/20 transition-colors active:scale-90 shrink-0">
                                 <X size={16} strokeWidth={3} />
@@ -975,57 +928,19 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                             )}>
                                 <div className="relative flex-1 overflow-hidden">
                                     <AnimatePresence mode="wait">
-                                        {editMode ? (
-                                            <div className="relative w-full h-full bg-slate-900">
-                                                <Cropper
-                                                    image={activeImage}
-                                                    crop={imageCrop}
-                                                    zoom={imageZoom}
-                                                    aspect={3 / 4}
-                                                    onCropChange={setImageCrop}
-                                                    onCropComplete={(_, pixels) => setImageCroppedArea(pixels)}
-                                                    onZoomChange={setImageZoom}
-                                                    showGrid={false}
-                                                    objectFit={imageObjectFit}
-                                                />
-                                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full z-50">
-                                                    <ZoomOut size={14} className="text-white/80" />
-                                                    <input
-                                                        type="range"
-                                                        min={1}
-                                                        max={3}
-                                                        step={0.1}
-                                                        value={imageZoom}
-                                                        onChange={(e) => setImageZoom(Number(e.target.value))}
-                                                        className="w-24 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-brand-pink"
-                                                    />
-                                                    <ZoomIn size={14} className="text-white/80" />
-                                                    <div className="w-px h-4 bg-white/20 mx-1" />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setImageObjectFit(prev => prev === 'contain' ? 'horizontal-cover' : 'contain')}
-                                                        className="text-white/80 hover:text-white transition-colors"
-                                                        title={imageObjectFit === 'contain' ? "Fill Frame" : "Fit Image"}
-                                                    >
-                                                        {imageObjectFit === 'contain' ? <Maximize size={14} /> : <Minimize size={14} />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <motion.img
-                                                key={activeImage}
-                                                initial={{ opacity: 0, scale: 1.15 }}
-                                                animate={{ opacity: 1, scale: 1 }}
-                                                exit={{ opacity: 0 }}
-                                                src={convertDriveLink(activeImage) || null}
-                                                alt={formData.name}
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => {
-                                                    e.target.onerror = null;
-                                                    e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
-                                                }}
-                                            />
-                                        )}
+                                        <motion.img
+                                            key={activeImage}
+                                            initial={{ opacity: 0, scale: 1.15 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0 }}
+                                            src={convertDriveLink(activeImage) || null}
+                                            alt={formData.name}
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                                e.target.onerror = null;
+                                                e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
+                                            }}
+                                        />
                                     </AnimatePresence>
                                     <div className={cn(
                                         "absolute inset-0 bg-gradient-to-t via-transparent to-transparent opacity-80",
@@ -1384,7 +1299,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                             <option value="Inactive" className={theme === 'dark' ? 'bg-slate-800' : ''}>Inactive</option>
                                                                         </select>
                                                                         <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
                                                                         </div>
                                                                     </div>
                                                                 ) : (
@@ -1596,7 +1511,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                     />
                                                                 </div>
                                                                 <p className="text-xs text-slate-500 font-medium pl-1">
-                                                                    💡 Tip: คุณสามารถใช้ลิงก์จากเว็บฝากรูป เช่น <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a> ได้ครับ
+                                                                    💡 Tip: You can use image hosting links such as <a href="https://postimages.org/" target="_blank" className="text-brand-pink hover:underline">postimages.org</a>.
                                                                 </p>
                                                             </div>
 
@@ -1746,23 +1661,23 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                         highlighted={highlightedChanges?.koreanName}
                                                     />
                                                     <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} theme={theme} highlighted={highlightedChanges?.otherNames} />
-                                                    <DetailItem 
-                                                       icon={Heart} 
-                                                       label="Member Status" 
-                                                       value={
-                                                           <span className={cn(
-                                                               "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] border flex items-center gap-2 w-fit mt-1",
-                                                               formData.status === 'Inactive' 
-                                                                   ? "bg-red-500/10 text-red-500 border-red-500/20" 
-                                                                   : (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-100")
-                                                           )}>
-                                                               <div className={cn("w-1.5 h-1.5 rounded-full", formData.status === 'Inactive' ? "bg-red-500" : "bg-green-500 animate-pulse")} />
-                                                               {formData.status || 'Active'}
-                                                           </span>
-                                                       } 
-                                                       theme={theme} 
-                                                       highlighted={highlightedChanges?.status} 
-                                                       disableHoverEffect={true}
+                                                    <DetailItem
+                                                        icon={Heart}
+                                                        label="Status"
+                                                        value={
+                                                            <span className={cn(
+                                                                "px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] border flex items-center gap-2 w-fit mt-1",
+                                                                formData.status === 'Inactive'
+                                                                    ? "bg-red-500/10 text-red-500 border-red-500/20"
+                                                                    : (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-100")
+                                                            )}>
+                                                                <div className={cn("w-1.5 h-1.5 rounded-full", formData.status === 'Inactive' ? "bg-red-500" : "bg-green-500 animate-pulse")} />
+                                                                {formData.status || 'Active'}
+                                                            </span>
+                                                        }
+                                                        theme={theme}
+                                                        highlighted={highlightedChanges?.status}
+                                                        disableHoverEffect={true}
                                                     />
                                                     {formData.status === 'Inactive' && formData.retirementDate && (
                                                         <DetailItem icon={Calendar} label="Retirement Date" value={formData.retirementDate} theme={theme} highlighted={highlightedChanges?.retirementDate} />
@@ -1929,7 +1844,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                             <iframe
                                                                                 width="100%"
                                                                                 height="100%"
-                                                                                src={`https://www.youtube.com/embed/${getYouTubeVideoId(video.url)}`}
+                                                                                src={getYouTubeEmbedSrc(video.url) || ''}
                                                                                 title="YouTube video player"
                                                                                 frameBorder="0"
                                                                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -2038,11 +1953,15 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                 Similar Artists
                                                             </h3>
                                                             <div className="grid grid-cols-2 gap-4">
-                                                                {similarIdols.map(simIdol => (
+                                                                {similarIdols.map((simIdol, idx) => {
+                                                                    const mergedIdol = idols.find(i => i.id === simIdol.id)
+                                                                        ? { ...simIdol, ...idols.find(i => i.id === simIdol.id) }
+                                                                        : { ...simIdol, isFavorite: user ? (simIdol.favoritedBy || []).includes(user.uid || user.id) : false };
+                                                                    return (
                                                                     <IdolCard
-                                                                        key={simIdol.id}
-                                                                        idol={simIdol}
-                                                                        onLike={onLike}
+                                                                        key={simIdol.id || `similar-${idx}`}
+                                                                        idol={mergedIdol}
+                                                                        onLike={() => onLike(simIdol.id)}
                                                                         onClick={(clickedIdol) => {
                                                                             if (onIdolClick) {
                                                                                 onIdolClick(clickedIdol);
@@ -2053,7 +1972,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                                                         }}
                                                                         searchTerm=""
                                                                     />
-                                                                ))}
+                                                                ); })}
                                                             </div>
                                                         </div>
                                                     )}
@@ -2388,8 +2307,8 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                     {editMode && (
                                         <div className={cn(
                                             "sticky bottom-0 z-30 pt-6 pb-6 mt-8 flex justify-end gap-4 border-t backdrop-blur-xl -mx-6 md:-mx-10 px-6 md:px-10 transition-all duration-300",
-                                            theme === 'dark' 
-                                                ? "border-white/5 bg-slate-900/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.5)]" 
+                                            theme === 'dark'
+                                                ? "border-white/5 bg-slate-900/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.5)]"
                                                 : "border-slate-100 bg-white/90 shadow-[0_-20px_40px_-15px_rgba(0,0,0,0.1)]"
                                         )}>
                                             <button
@@ -2405,10 +2324,11 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                             </button>
                                             <button
                                                 type="submit"
-                                                className="px-8 md:px-10 py-3 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black uppercase text-[10px] md:text-xs tracking-[0.2em] hover:opacity-90 hover:scale-[1.02] transition-all flex items-center gap-3 shadow-xl shadow-brand-pink/20 active:scale-95"
+                                                disabled={loadingHistory || isUploading}
+                                                className="px-8 md:px-10 py-3 rounded-2xl bg-gradient-to-r from-brand-pink to-brand-purple text-white font-black uppercase text-[10px] md:text-xs tracking-[0.2em] hover:opacity-90 hover:scale-[1.02] transition-all flex items-center gap-3 shadow-xl shadow-brand-pink/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                {loadingHistory ? <Loader2 size={18} className="animate-spin" /> : <Save size={20} />}
-                                                Save Changes
+                                                {loadingHistory || isUploading ? <Loader2 size={18} className="animate-spin" /> : <Save size={20} />}
+                                                {isUploading ? 'Uploading...' : 'Save Changes'}
                                             </button>
                                         </div>
                                     )}
@@ -2430,6 +2350,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                         className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
                     >
                         <motion.div
+                            data-album-modal
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
@@ -2469,7 +2390,7 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                                         <iframe
                                             width="100%"
                                             height="100%"
-                                            src={`https://www.youtube.com/embed/${getYouTubeVideoId(selectedAlbum.youtube)}`}
+                                            src={getYouTubeEmbedSrc(selectedAlbum.youtube) || ''}
                                             title="YouTube video player"
                                             frameBorder="0"
                                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -2526,21 +2447,6 @@ export function IdolModal({ isOpen, mode, idol, onClose, onSave, onDelete, onLik
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {cropState.src && (
-                <ImageCropper
-                    imageSrc={cropState.src}
-                    aspect={cropState.aspect}
-                    onCropComplete={(croppedUrl) => {
-                        cropState.callback(croppedUrl);
-                        setCropState({ src: null, callback: null, aspect: 3 / 4 });
-                    }}
-                    onCancel={() => {
-                        cropState.callback(cropState.src);
-                        setCropState({ src: null, callback: null, aspect: 3 / 4 });
-                    }}
-                />
-            )}
 
             {/* History Modal */}
             <AnimatePresence>

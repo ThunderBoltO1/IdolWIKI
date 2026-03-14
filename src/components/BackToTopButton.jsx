@@ -31,7 +31,7 @@ export function BackToTopButton() {
                     whileTap={{ scale: 0.9 }}
                     onClick={scrollToTop}
                     className={cn(
-                        "fixed bottom-6 right-6 md:bottom-10 md:right-10 z-50 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center",
+                        "fixed bottom-6 right-20 sm:right-24 z-50 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center",
                         "bg-brand-pink text-white shadow-brand-pink/30 border-2 border-white/20 backdrop-blur-md"
                     )}
                     title="Back to Top"

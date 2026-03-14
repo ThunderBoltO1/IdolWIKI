@@ -11,7 +11,7 @@ export function ThemeProvider({ children }) {
         return 'auto';
     });
 
-    // theme: 'light' | 'dark' (ค่าที่แสดงผลจริง)
+    // theme: 'light' | 'dark' (actual theme being applied)
     const [theme, setTheme] = useState('light');
 
     useEffect(() => {
@@ -38,7 +38,7 @@ export function ThemeProvider({ children }) {
 
         let interval;
         if (themeMode === 'auto') {
-            // ตรวจสอบเวลาทุกๆ 1 นาที
+            // Re-check time every 1 minute
             interval = setInterval(updateTheme, 60000);
         }
 

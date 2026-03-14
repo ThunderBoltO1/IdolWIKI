@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { collection, getDocs, getCountFromServer, query, where, orderBy, limit, writeBatch, onSnapshot, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw, History } from 'lucide-react';
+import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw, History, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { BackgroundShapes } from './BackgroundShapes';
@@ -407,7 +407,7 @@ export function AdminDashboard({ onBack }) {
                                     >
                                         <div className="font-black text-slate-300 w-6 text-center">{index + 1}</div>
                                         <img
-                                            src={convertDriveLink(group.image)}
+                                            src={convertDriveLink(group.coverImage || group.image)}
                                             alt={group.name}
                                             className="w-10 h-10 rounded-xl object-cover bg-slate-200"
                                             onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}
@@ -490,7 +490,7 @@ export function AdminDashboard({ onBack }) {
                                             index === 0 ? "bg-yellow-400" : index === 1 ? "bg-slate-300" : index === 2 ? "bg-amber-600" : "bg-transparent"
                                         )} />
                                         <img
-                                            src={convertDriveLink(group.image)}
+                                            src={convertDriveLink(group.coverImage || group.image)}
                                             alt={group.name}
                                             className="w-14 h-14 rounded-full object-cover border-2 border-white/10"
                                             onError={(e) => e.target.src = `https://ui-avatars.com/api/?name=${group.name}&background=random`}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { collection, getDocs, doc, updateDoc, deleteDoc, query, orderBy, addDoc, serverTimestamp, where, writeBatch, Timestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from '../lib/firebase';
@@ -13,6 +14,7 @@ import { BackgroundShapes } from './BackgroundShapes';
 export function AdminUserManagement({ onBack }) {
     const { user, isAdmin } = useAuth();
     const { theme } = useTheme();
+    const { confirm } = useConfirm();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -99,9 +101,12 @@ export function AdminUserManagement({ onBack }) {
     };
 
     const handleDeleteUser = async (userId) => {
-        if (!window.confirm("Are you sure you want to delete this user? This user will be scheduled for permanent deletion in 7 days.")) return;
-
-        setActionLoading(`${userId}-delete`);
+        confirm({
+            title: 'Delete User',
+            message: 'Are you sure you want to delete this user? This user will be scheduled for permanent deletion in 7 days.',
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                setActionLoading(`${userId}-delete`);
         try {
             // Soft delete: mark as deleted and set expiration date (7 days from now)
             const expireDate = new Date();
@@ -113,29 +118,36 @@ export function AdminUserManagement({ onBack }) {
                 expireAt: Timestamp.fromDate(expireDate)
             });
 
-            setUsers(users.filter(u => u.id !== userId));
-            showSuccess('User scheduled for deletion in 7 days');
-        } catch (error) {
-            console.error("Error deleting user:", error);
-            alert("Failed to delete user");
-        } finally {
-            setActionLoading(null);
-        }
+                setUsers(users.filter(u => u.id !== userId));
+                showSuccess('User scheduled for deletion in 7 days');
+            } catch (error) {
+                console.error("Error deleting user:", error);
+                alert("Failed to delete user");
+            } finally {
+                setActionLoading(null);
+            }
+            }
+        });
     };
 
     const handleResetPassword = async (userItem) => {
-        if (!window.confirm(`Are you sure you want to send a password reset email to ${userItem.email}?`)) return;
-
-        setActionLoading(`${userItem.id}-reset-password`);
+        confirm({
+            title: 'Send Password Reset',
+            message: `Are you sure you want to send a password reset email to ${userItem.email}?`,
+            confirmText: 'Send',
+            onConfirm: async () => {
+                setActionLoading(`${userItem.id}-reset-password`);
         try {
             await sendPasswordResetEmail(auth, userItem.email);
-            showSuccess(`Password reset email sent to ${userItem.email}`);
-        } catch (error) {
-            console.error("Error sending reset password email:", error);
-            alert("Failed to send password reset email: " + error.message);
-        } finally {
-            setActionLoading(null);
-        }
+                showSuccess(`Password reset email sent to ${userItem.email}`);
+            } catch (error) {
+                console.error("Error sending reset password email:", error);
+                alert("Failed to send password reset email: " + error.message);
+            } finally {
+                setActionLoading(null);
+            }
+            }
+        });
     };
 
     const fetchBanHistory = async (userItem) => {

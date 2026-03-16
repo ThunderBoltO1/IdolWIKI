@@ -3,10 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { ArrowLeft, Plus, Trash2, Save, ChevronDown, ChevronRight, Loader2, RotateCcw, X, Search } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronDown, ChevronRight, Loader2, RotateCcw, X, Search, Trophy } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAwards } from '../hooks/useAwards.js';
 import { BackgroundShapes } from './BackgroundShapes';
+import { useToast } from './Toast';
+import { ConfirmationModal } from './ConfirmationModal';
 
 const DEFAULT_AWARD_DATA = {
     "K-Pop & Music Awards": {
@@ -65,6 +67,7 @@ const DEFAULT_AWARD_DATA = {
 
 export function AdminAwardManagement({ onBack }) {
     const { theme } = useTheme();
+    const toast = useToast();
     const { awards, loading } = useAwards();
     const [expandedCategory, setExpandedCategory] = useState(null);
     const [expandedShow, setExpandedShow] = useState(null);
@@ -73,24 +76,35 @@ export function AdminAwardManagement({ onBack }) {
     const [newAward, setNewAward] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [processing, setProcessing] = useState(false);
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false });
 
     const handleSeedData = async () => {
-        if (!window.confirm("This will overwrite existing award categories with default data. Continue?")) return;
-        setProcessing(true);
-        try {
-            const batch = writeBatch(db);
-            for (const [category, shows] of Object.entries(DEFAULT_AWARD_DATA)) {
-                const docRef = doc(db, 'award_categories', category.toLowerCase().replace(/[^a-z0-9]/g, '_'));
-                batch.set(docRef, { name: category, shows: shows });
+        setConfirmModal({
+            isOpen: true,
+            title: 'Seed Default Data',
+            message: 'This will overwrite existing award categories with default K-Pop & acting awards. Continue?',
+            confirmText: 'Seed Data',
+            type: 'info',
+            singleButton: false,
+            onConfirm: async () => {
+                setConfirmModal({ isOpen: false });
+                setProcessing(true);
+                try {
+                    const batch = writeBatch(db);
+                    for (const [category, shows] of Object.entries(DEFAULT_AWARD_DATA)) {
+                        const docRef = doc(db, 'award_categories', category.toLowerCase().replace(/[^a-z0-9]/g, '_'));
+                        batch.set(docRef, { name: category, shows: shows });
+                    }
+                    await batch.commit();
+                    toast.success('Data seeded successfully!');
+                } catch (error) {
+                    console.error("Error seeding data:", error);
+                    toast.error("Failed to seed data: " + error.message);
+                } finally {
+                    setProcessing(false);
+                }
             }
-            await batch.commit();
-            alert("Data seeded successfully!");
-        } catch (error) {
-            console.error("Error seeding data:", error);
-            alert("Failed to seed data: " + error.message);
-        } finally {
-            setProcessing(false);
-        }
+        });
     };
 
     const handleAddCategory = async () => {
@@ -103,26 +117,38 @@ export function AdminAwardManagement({ onBack }) {
                 shows: {}
             });
             setNewCategory('');
+            toast.success('Category added');
         } catch (error) {
             console.error("Error adding category:", error);
-            alert("Error adding category: " + error.message);
+            toast.error("Error adding category: " + error.message);
         } finally {
             setProcessing(false);
         }
     };
 
     const handleDeleteCategory = async (catName) => {
-        if (!window.confirm(`Delete category "${catName}"?`)) return;
-        setProcessing(true);
-        try {
-            const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-            await deleteDoc(doc(db, 'award_categories', id));
-        } catch (error) {
-            console.error("Error deleting category:", error);
-            alert("Error deleting category: " + error.message);
-        } finally {
-            setProcessing(false);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Category',
+            message: `Delete "${catName}" and all its shows/awards? This cannot be undone.`,
+            confirmText: 'Delete',
+            type: 'danger',
+            singleButton: false,
+            onConfirm: async () => {
+                setConfirmModal({ isOpen: false });
+                setProcessing(true);
+                try {
+                    const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                    await deleteDoc(doc(db, 'award_categories', id));
+                    toast.success('Category deleted');
+                } catch (error) {
+                    console.error("Error deleting category:", error);
+                    toast.error("Error deleting category: " + error.message);
+                } finally {
+                    setProcessing(false);
+                }
+            }
+        });
     };
 
     const handleAddShow = async (catName) => {
@@ -135,28 +161,40 @@ export function AdminAwardManagement({ onBack }) {
                 shows: { ...currentShows, [newShow.trim()]: [] }
             });
             setNewShow('');
+            toast.success('Show added');
         } catch (error) {
             console.error("Error adding show:", error);
-            alert("Error adding show: " + error.message);
+            toast.error("Error adding show: " + error.message);
         } finally {
             setProcessing(false);
         }
     };
 
     const handleDeleteShow = async (catName, showName) => {
-        if (!window.confirm(`Delete show "${showName}"?`)) return;
-        setProcessing(true);
-        try {
-            const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-            const currentShows = { ...awards[catName] };
-            delete currentShows[showName];
-            await updateDoc(doc(db, 'award_categories', id), { shows: currentShows });
-        } catch (error) {
-            console.error("Error deleting show:", error);
-            alert("Error deleting show: " + error.message);
-        } finally {
-            setProcessing(false);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Show',
+            message: `Delete "${showName}" and all its awards?`,
+            confirmText: 'Delete',
+            type: 'danger',
+            singleButton: false,
+            onConfirm: async () => {
+                setConfirmModal({ isOpen: false });
+                setProcessing(true);
+                try {
+                    const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                    const currentShows = { ...awards[catName] };
+                    delete currentShows[showName];
+                    await updateDoc(doc(db, 'award_categories', id), { shows: currentShows });
+                    toast.success('Show deleted');
+                } catch (error) {
+                    console.error("Error deleting show:", error);
+                    toast.error("Error deleting show: " + error.message);
+                } finally {
+                    setProcessing(false);
+                }
+            }
+        });
     };
 
     const handleAddAward = async (catName, showName) => {
@@ -169,28 +207,40 @@ export function AdminAwardManagement({ onBack }) {
             currentShows[showName] = [...currentAwards, newAward.trim()];
             await updateDoc(doc(db, 'award_categories', id), { shows: currentShows });
             setNewAward('');
+            toast.success('Award added');
         } catch (error) {
             console.error("Error adding award:", error);
-            alert("Error adding award: " + error.message);
+            toast.error("Error adding award: " + error.message);
         } finally {
             setProcessing(false);
         }
     };
 
     const handleDeleteAward = async (catName, showName, awardName) => {
-        if (!window.confirm(`Delete award "${awardName}"?`)) return;
-        setProcessing(true);
-        try {
-            const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-            const currentShows = { ...awards[catName] };
-            currentShows[showName] = currentShows[showName].filter(a => a !== awardName);
-            await updateDoc(doc(db, 'award_categories', id), { shows: currentShows });
-        } catch (error) {
-            console.error("Error deleting award:", error);
-            alert("Error deleting award: " + error.message);
-        } finally {
-            setProcessing(false);
-        }
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Award',
+            message: `Delete "${awardName}"?`,
+            confirmText: 'Delete',
+            type: 'danger',
+            singleButton: false,
+            onConfirm: async () => {
+                setConfirmModal({ isOpen: false });
+                setProcessing(true);
+                try {
+                    const id = catName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                    const currentShows = { ...awards[catName] };
+                    currentShows[showName] = currentShows[showName].filter(a => a !== awardName);
+                    await updateDoc(doc(db, 'award_categories', id), { shows: currentShows });
+                    toast.success('Award deleted');
+                } catch (error) {
+                    console.error("Error deleting award:", error);
+                    toast.error("Error deleting award: " + error.message);
+                } finally {
+                    setProcessing(false);
+                }
+            }
+        });
     };
 
     const filteredAwards = useMemo(() => {
@@ -221,59 +271,132 @@ export function AdminAwardManagement({ onBack }) {
         return result;
     }, [awards, searchTerm]);
 
+    const getCategoryStats = (shows) => {
+        const showCount = Object.keys(shows || {}).length;
+        const awardCount = Object.values(shows || {}).reduce((acc, arr) => acc + (Array.isArray(arr) ? arr.length : 0), 0);
+        return { showCount, awardCount };
+    };
+
     return (
-        <div className="container mx-auto px-4 py-8 min-h-screen max-w-4xl">
+        <div className={cn("container mx-auto px-4 pt-24 pb-12 min-h-screen max-w-4xl", theme === 'dark' ? "text-white" : "text-slate-900")}>
             <BackgroundShapes />
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className={cn("p-2 rounded-full transition-colors", theme === 'dark' ? "hover:bg-white/10" : "hover:bg-slate-100")}>
-                        <ArrowLeft size={24} />
+                    <button onClick={onBack} className={cn("p-2.5 rounded-xl border transition-all shrink-0", theme === 'dark' ? "border-white/10 hover:bg-white/10" : "border-slate-200 hover:bg-slate-100")}>
+                        <ArrowLeft size={22} />
                     </button>
-                    <h1 className={cn("text-2xl md:text-3xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                        Manage Awards
-                    </h1>
+                    <div>
+                        <h1 className={cn("text-2xl md:text-3xl font-black", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            Manage Awards
+                        </h1>
+                        <p className="text-sm text-slate-500 mt-0.5">Manage award categories, shows, and individual awards</p>
+                    </div>
                 </div>
-                <button onClick={handleSeedData} disabled={processing} className={cn("px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-colors", theme === 'dark' ? "bg-slate-800 hover:bg-slate-700" : "bg-slate-100 hover:bg-slate-200")}>
-                    <RotateCcw size={14} /> Seed Defaults
-                </button>
+                <div className="flex flex-col gap-1">
+                    <button 
+                        onClick={handleSeedData} 
+                        disabled={processing} 
+                        className={cn(
+                            "px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest flex items-center gap-2 transition-all",
+                            theme === 'dark' ? "bg-slate-800 hover:bg-slate-700 border border-white/10" : "bg-slate-100 hover:bg-slate-200 border border-slate-200"
+                        )}
+                        title="Load K-Pop & Acting awards"
+                    >
+                        {processing ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                        Seed Defaults
+                    </button>
+                    <span className="text-[10px] text-slate-500 font-medium">Load default categories</span>
+                </div>
             </div>
 
             <div className="space-y-6">
-                <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                    <input 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)} 
-                        placeholder="Search awards, shows, or categories..." 
-                        className={cn("w-full pl-12 pr-4 py-3 rounded-xl border outline-none transition-all", theme === 'dark' ? "bg-slate-900 border-white/10 focus:border-brand-pink" : "bg-white border-slate-200 focus:border-brand-pink")}
-                    />
+                <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Search</label>
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input 
+                            value={searchTerm} 
+                            onChange={e => setSearchTerm(e.target.value)} 
+                            placeholder="Search awards, shows, or categories..." 
+                            className={cn("w-full pl-11 pr-4 py-3 rounded-xl border outline-none transition-all font-medium", theme === 'dark' ? "bg-slate-900 border-white/10 focus:border-brand-pink" : "bg-white border-slate-200 focus:border-brand-pink")}
+                        />
+                    </div>
                 </div>
 
-                <div className="flex gap-2">
-                    <input 
-                        value={newCategory} 
-                        onChange={e => setNewCategory(e.target.value)} 
-                        placeholder="New Category Name" 
-                        className={cn("flex-1 p-3 rounded-xl border outline-none", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200")}
-                    />
-                    <button onClick={handleAddCategory} disabled={processing || !newCategory.trim()} className="p-3 bg-brand-pink text-white rounded-xl"><Plus size={20} /></button>
+                <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Add New Category</label>
+                    <div className="flex gap-2">
+                        <input 
+                            value={newCategory} 
+                            onChange={e => setNewCategory(e.target.value)} 
+                            placeholder="e.g. Sports Awards" 
+                            className={cn("flex-1 p-3 rounded-xl border outline-none font-medium transition-all focus:border-brand-pink", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200")}
+                            onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+                        />
+                        <button 
+                            onClick={handleAddCategory} 
+                            disabled={processing || !newCategory.trim()} 
+                            className={cn(
+                                "p-3 rounded-xl transition-all flex items-center gap-2 font-bold text-sm",
+                                newCategory.trim() ? "bg-brand-pink text-white hover:scale-105 active:scale-95 shadow-lg shadow-brand-pink/20" : (theme === 'dark' ? "bg-slate-800 text-slate-500" : "bg-slate-100 text-slate-400")
+                            )}
+                        >
+                            <Plus size={20} />
+                            Add
+                        </button>
+                    </div>
                 </div>
 
                 {loading ? (
-                    <div className="flex justify-center py-10"><Loader2 className="animate-spin" /></div>
+                    <div className="flex flex-col items-center justify-center py-20 gap-4">
+                        <Loader2 className="animate-spin text-brand-pink" size={40} />
+                        <p className="text-sm text-slate-500 font-medium">Loading awards...</p>
+                    </div>
                 ) : Object.keys(filteredAwards).length === 0 ? (
-                    <div className="text-center py-10 text-slate-500">
-                        {searchTerm ? "No matching awards found." : "No awards found. Use \"Seed Defaults\" to initialize."}
+                    <div className={cn(
+                        "text-center py-16 px-8 rounded-2xl border",
+                        theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200"
+                    )}>
+                        <Trophy size={48} className="mx-auto mb-4 text-slate-400" />
+                        <h3 className={cn("font-bold text-lg mb-2", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            {searchTerm ? 'No matching awards' : 'No awards yet'}
+                        </h3>
+                        <p className="text-sm text-slate-500 max-w-sm mx-auto mb-6">
+                            {searchTerm ? 'Try a different search term.' : 'Click "Seed Defaults" to load K-Pop & acting awards, or add a category above.'}
+                        </p>
+                        {!searchTerm && (
+                            <button onClick={handleSeedData} disabled={processing} className="px-6 py-3 rounded-xl bg-brand-pink text-white font-bold text-sm hover:scale-105 active:scale-95 transition-all">
+                                Seed Default Data
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    Object.entries(filteredAwards).map(([catName, shows]) => (
-                        <div key={catName} className={cn("rounded-2xl border overflow-hidden", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}>
-                            <div className={cn("p-4 flex items-center justify-between cursor-pointer", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")} onClick={() => setExpandedCategory(expandedCategory === catName ? null : catName)}>
-                                <div className="flex items-center gap-3 font-bold text-lg">
-                                    {expandedCategory === catName || searchTerm ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                                    {catName}
+                    Object.entries(filteredAwards).map(([catName, shows]) => {
+                        const { showCount, awardCount } = getCategoryStats(shows);
+                        return (
+                        <motion.div 
+                            key={catName} 
+                            layout
+                            className={cn("rounded-2xl border overflow-hidden transition-shadow", theme === 'dark' ? "bg-slate-900/40 border-white/10" : "bg-white border-slate-200")}
+                        >
+                            <div 
+                                className={cn("p-4 flex items-center justify-between cursor-pointer transition-colors", theme === 'dark' ? "hover:bg-white/5" : "hover:bg-slate-50")} 
+                                onClick={() => setExpandedCategory(expandedCategory === catName ? null : catName)}
+                            >
+                                <div className="flex items-center gap-3 font-bold text-lg min-w-0">
+                                    {expandedCategory === catName || searchTerm ? <ChevronDown size={20} className="shrink-0" /> : <ChevronRight size={20} className="shrink-0" />}
+                                    <span className="truncate">{catName}</span>
+                                    <span className={cn("shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full", theme === 'dark' ? "bg-white/10 text-slate-400" : "bg-slate-100 text-slate-500")}>
+                                        {showCount} shows · {awardCount} awards
+                                    </span>
                                 </div>
-                                <button onClick={(e) => { e.stopPropagation(); handleDeleteCategory(catName); }} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg"><Trash2 size={16} /></button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteCategory(catName); }} 
+                                    className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                                    title="Delete category"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
                             </div>
 
                             {(expandedCategory === catName || searchTerm) && (
@@ -283,12 +406,17 @@ export function AdminAwardManagement({ onBack }) {
                                         <button onClick={() => handleAddShow(catName)} disabled={processing || !newShow.trim()} className="p-2 bg-brand-purple text-white rounded-lg"><Plus size={16} /></button>
                                     </div>
                                     
-                                    {Object.entries(shows).map(([showName, awardList]) => (
+                                    {Object.entries(shows).map(([showName, awardList]) => {
+                                        const awards = Array.isArray(awardList) ? awardList : [];
+                                        return (
                                         <div key={showName} className={cn("rounded-xl border p-3", theme === 'dark' ? "bg-slate-800/50 border-white/5" : "bg-white border-slate-100")}>
                                             <div className="flex items-center justify-between mb-2 cursor-pointer" onClick={() => setExpandedShow(expandedShow === showName ? null : showName)}>
-                                                <div className="flex items-center gap-2 font-bold text-sm">
-                                                    {expandedShow === showName || searchTerm ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                                    {showName}
+                                                <div className="flex items-center gap-2 font-bold text-sm min-w-0">
+                                                    {expandedShow === showName || searchTerm ? <ChevronDown size={16} className="shrink-0" /> : <ChevronRight size={16} className="shrink-0" />}
+                                                    <span className="truncate">{showName}</span>
+                                                    <span className={cn("shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded", theme === 'dark' ? "bg-white/10 text-slate-500" : "bg-slate-100 text-slate-500")}>
+                                                        {awards.length} award{awards.length !== 1 ? 's' : ''}
+                                                    </span>
                                                 </div>
                                                 <button onClick={(e) => { e.stopPropagation(); handleDeleteShow(catName, showName); }} className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-md"><Trash2 size={14} /></button>
                                             </div>
@@ -296,11 +424,11 @@ export function AdminAwardManagement({ onBack }) {
                                             {(expandedShow === showName || searchTerm) && (
                                                 <div className="pl-6 space-y-2">
                                                     <div className="flex gap-2">
-                                                        <input value={newAward} onChange={e => setNewAward(e.target.value)} placeholder={`Add Award to ${showName}`} className={cn("flex-1 p-2 rounded-lg border outline-none text-xs", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-slate-50 border-slate-200")} />
-                                                        <button onClick={() => handleAddAward(catName, showName)} disabled={processing || !newAward.trim()} className="p-2 bg-brand-blue text-white rounded-lg"><Plus size={14} /></button>
+                                                        <input value={newAward} onChange={e => setNewAward(e.target.value)} placeholder={`Add award to ${showName}`} className={cn("flex-1 p-2 rounded-lg border outline-none text-xs font-medium", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-slate-50 border-slate-200")} onKeyDown={e => e.key === 'Enter' && handleAddAward(catName, showName)} />
+                                                        <button onClick={() => handleAddAward(catName, showName)} disabled={processing || !newAward.trim()} className="p-2 bg-brand-blue text-white rounded-lg hover:opacity-90 transition-opacity"><Plus size={14} /></button>
                                                     </div>
                                                     <div className="flex flex-wrap gap-2">
-                                                        {awardList.map((award, idx) => (
+                                                        {awards.map((award, idx) => (
                                                             <div key={idx} className={cn("px-3 py-1 rounded-lg text-xs border flex items-center gap-2", theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200")}>
                                                                 {award}
                                                                 <button onClick={() => handleDeleteAward(catName, showName, award)} className="text-red-500 hover:text-red-600"><X size={12} /></button>
@@ -310,13 +438,26 @@ export function AdminAwardManagement({ onBack }) {
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
-                        </div>
-                    ))
+                        </motion.div>
+                        );
+                    })
                 )}
             </div>
+
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ isOpen: false })}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                type={confirmModal.type}
+                confirmText={confirmModal.confirmText}
+                singleButton={confirmModal.singleButton}
+            />
         </div>
     );
 }

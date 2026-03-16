@@ -2,11 +2,28 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, restorePageScroll } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 
-export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, confirmText = 'Confirm', confirmButtonClass, singleButton = false, type = 'danger' }) {
+export function ConfirmationModal({
+    isOpen,
+    onClose,
+    onConfirm,
+    title,
+    message,
+    confirmText = 'Confirm',
+    confirmButtonClass,
+    singleButton = false,
+    type = 'danger',
+    showReasonInput = false,
+    reasonValue = '',
+    onReasonChange,
+    reasonPlaceholder
+}) {
     const { theme } = useTheme();
+    const t = useTranslation();
+    const resolvedReasonPlaceholder = reasonPlaceholder ?? t('deleteRequest.reasonPlaceholder');
 
     if (!isOpen) return null;
 
@@ -34,14 +51,15 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
             document.body.style.overflow = 'hidden';
             document.documentElement.style.overflow = 'hidden';
         } else {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
+            restorePageScroll();
         }
-        return () => {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
-        };
+        return () => restorePageScroll();
     }, [isOpen]);
+
+    const handleConfirm = async () => {
+        if (onConfirm) await Promise.resolve(onConfirm(showReasonInput ? reasonValue : undefined));
+        onClose();
+    };
 
     return createPortal(
         <AnimatePresence>
@@ -58,6 +76,7 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
                     transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
+                    onClick={(e) => e.stopPropagation()}
                     className={cn(
                         "relative w-full max-w-md p-6 rounded-3xl shadow-2xl border overflow-hidden",
                         theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
@@ -73,7 +92,20 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
                         <p className={cn("text-sm font-medium", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
                             {message}
                         </p>
-                        
+                        {showReasonInput && (
+                            <div className="w-full text-left">
+                                <textarea
+                                    value={reasonValue}
+                                    onChange={(e) => onReasonChange?.(e.target.value)}
+                                    placeholder={resolvedReasonPlaceholder}
+                                    rows={3}
+                                    className={cn(
+                                        "w-full p-3 rounded-xl border text-sm resize-none",
+                                        theme === 'dark' ? "bg-slate-800 border-white/10 text-white placeholder:text-slate-500" : "bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400"
+                                    )}
+                                />
+                            </div>
+                        )}
                         <div className="flex gap-3 w-full mt-4">
                             {!singleButton && (
                                 <button
@@ -87,7 +119,7 @@ export function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, 
                                 </button>
                             )}
                             <button
-                                onClick={() => { if (onConfirm) onConfirm(); onClose(); }}
+                                onClick={handleConfirm}
                                 className={cn(
                                     "flex-1 py-3 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors",
                                     confirmButtonClass || (type === 'danger' ? "bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20" : "bg-brand-pink text-white hover:bg-brand-pink/90 shadow-lg shadow-brand-pink/20")

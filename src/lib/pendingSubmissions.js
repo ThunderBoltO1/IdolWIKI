@@ -1,6 +1,8 @@
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, writeBatch, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, serverTimestamp, writeBatch, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { logAudit } from './audit';
+
+const COLLECTION_DELETE_REQUESTS = 'deleteRequests';
 
 async function notifyAdmins(title, message, type, targetId) {
     try {
@@ -26,6 +28,25 @@ async function notifyAdmins(title, message, type, targetId) {
         await batch.commit();
     } catch (error) {
         console.error("Error notifying admins:", error);
+    }
+}
+
+/**
+ * ส่งการแจ้งเตือนไปยังผู้ใช้คนเดียว (ใช้เมื่อแอดมิน reply ไปหาผู้ส่งคำขอ)
+ */
+export async function notifyUser(recipientId, title, message) {
+    if (!recipientId) return;
+    try {
+        await addDoc(collection(db, 'notifications'), {
+            recipientId,
+            type: 'admin_reply',
+            title,
+            message,
+            read: false,
+            createdAt: serverTimestamp()
+        });
+    } catch (error) {
+        console.error('Error notifying user:', error);
     }
 }
 
@@ -151,6 +172,8 @@ export async function approvePendingIdol(pendingId, adminUser, reviewNotes = '')
         // Add to main idols collection
         await setDoc(doc(db, 'idols', idolId), {
             ...idolData,
+            companyLower: (idolData.company || '').trim().toLowerCase(),
+            soloCompanyLower: (idolData.soloCompany || '').trim().toLowerCase(),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             approvedBy: adminUser.uid || adminUser.id,
@@ -206,6 +229,7 @@ export async function approvePendingGroup(pendingId, adminUser, reviewNotes = ''
         // Add to main groups collection
         await setDoc(doc(db, 'groups', groupId), {
             ...groupData,
+            companyLower: (groupData.company || '').trim().toLowerCase(),
             createdAt: serverTimestamp(),
             approvedBy: adminUser.uid || adminUser.id,
             originalSubmitter: submittedBy
@@ -275,6 +299,142 @@ export async function rejectPendingSubmission(collectionName, pendingId, adminUs
         return { success: true };
     } catch (error) {
         console.error('Error rejecting submission:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ส่งคำขอลบ (idol / group / company) — ไม่ลบทันที รอการอนุมัติ
+ * ตั้ง pendingDeletion บนเอกสารเป้าหมาย เพื่อให้รายการหายจากหน้ารายการ
+ * @param {string} [reason] - เหตุผลที่ผู้ขอระบุ
+ */
+export async function submitDeleteRequest(targetType, targetId, targetName, submittedBy, reason = '') {
+    try {
+        const col = targetType === 'idol' ? 'idols' : targetType === 'group' ? 'groups' : 'companies';
+        const targetRef = doc(db, col, targetId);
+
+        let targetImage = null;
+        try {
+            const targetSnap = await getDoc(targetRef);
+            if (targetSnap.exists()) {
+                const d = targetSnap.data();
+                targetImage = d.image || d.coverImage || d.profileImage || d.logo || null;
+            }
+        } catch (_) {}
+
+        const docRef = await addDoc(collection(db, COLLECTION_DELETE_REQUESTS), {
+            targetType,
+            targetId,
+            targetName,
+            targetImage,
+            reason: reason || '',
+            submittedBy: submittedBy?.uid || submittedBy?.id,
+            submitterName: submittedBy?.name || submittedBy?.email,
+            submitterEmail: submittedBy?.email,
+            submitterAvatar: submittedBy?.avatar || '',
+            status: 'pending',
+            submittedAt: serverTimestamp(),
+            reviewedAt: null,
+            reviewedBy: null,
+            reviewNotes: ''
+        });
+
+        await updateDoc(targetRef, { pendingDeletion: true });
+
+        notifyAdmins('คำขอลบ', `มีคำขอลบ${targetType === 'idol' ? 'ศิลปิน' : targetType === 'group' ? 'กลุ่ม' : 'บริษัท'} "${targetName}" รอการอนุมัติ`, 'delete_request', docRef.id);
+        await logAudit({
+            action: 'submit_delete',
+            targetType,
+            targetId,
+            user: submittedBy,
+            details: { targetName, requestId: docRef.id, reason: reason || undefined }
+        });
+        return { success: true, id: docRef.id };
+    } catch (error) {
+        console.error('Error submitting delete request:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * อนุมัติคำขอลบ (หลังแอดมินยืนยันรหัสผ่านแล้ว) — ทำ soft delete จริง
+ */
+export async function approveDeleteRequest(requestId, adminUser, reviewNotes = '') {
+    try {
+        const requestRef = doc(db, COLLECTION_DELETE_REQUESTS, requestId);
+        const requestSnap = await getDoc(requestRef);
+        if (!requestSnap.exists()) throw new Error('คำขอลบไม่พบ');
+
+        const { targetType, targetId, targetName, submittedBy } = requestSnap.data();
+        const col = targetType === 'idol' ? 'idols' : targetType === 'group' ? 'groups' : 'companies';
+        const targetRef = doc(db, col, targetId);
+
+        const expireDate = new Date();
+        expireDate.setDate(expireDate.getDate() + 7);
+
+        await updateDoc(targetRef, {
+            deleted: true,
+            deletedAt: serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireDate),
+            pendingDeletion: false
+        });
+
+        await updateDoc(requestRef, {
+            status: 'approved',
+            reviewedAt: serverTimestamp(),
+            reviewedBy: adminUser?.uid || adminUser?.id,
+            reviewerName: adminUser?.name || adminUser?.email,
+            reviewNotes
+        });
+
+        await logAudit({
+            action: 'approve_delete_request',
+            targetType,
+            targetId,
+            user: adminUser,
+            details: { requestId, targetName },
+            originalSubmitter: submittedBy
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Error approving delete request:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * ปฏิเสธคำขอลบ — เอา pendingDeletion ออกจากเอกสาร
+ */
+export async function rejectDeleteRequest(requestId, adminUser, reviewNotes = '') {
+    try {
+        const requestRef = doc(db, COLLECTION_DELETE_REQUESTS, requestId);
+        const requestSnap = await getDoc(requestRef);
+        if (!requestSnap.exists()) throw new Error('คำขอลบไม่พบ');
+
+        const { targetType, targetId, submittedBy } = requestSnap.data();
+        const col = targetType === 'idol' ? 'idols' : targetType === 'group' ? 'groups' : 'companies';
+        const targetRef = doc(db, col, targetId);
+        await updateDoc(targetRef, { pendingDeletion: false });
+
+        await updateDoc(requestRef, {
+            status: 'rejected',
+            reviewedAt: serverTimestamp(),
+            reviewedBy: adminUser?.uid || adminUser?.id,
+            reviewerName: adminUser?.name || adminUser?.email,
+            reviewNotes
+        });
+
+        await logAudit({
+            action: 'reject_delete_request',
+            targetType,
+            targetId,
+            user: adminUser,
+            details: { requestId, reviewNotes },
+            originalSubmitter: submittedBy
+        });
+        return { success: true };
+    } catch (error) {
+        console.error('Error rejecting delete request:', error);
         return { success: false, error: error.message };
     }
 }

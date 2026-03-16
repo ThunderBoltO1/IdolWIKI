@@ -13,7 +13,7 @@ function usePrevious(value) {
     return ref.current;
 }
 
-export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
+export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm, groups = [] }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [imageLoaded, setImageLoaded] = useState(false);
@@ -128,7 +128,16 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm }) {
                     )}>
                         <div className="space-y-2">
                             <motion.p className="text-brand-pink font-black text-xs tracking-[0.3em] uppercase mb-1 truncate">
-                                <Highlight text={idol.company} highlight={searchTerm} />
+                                {(() => {
+                                    const groupCo = idol.company || (idol.groupId && groups.find(g => g.id === idol.groupId)?.company);
+                                    const soloCo = idol.soloCompany;
+                                    const subs = (idol.subUnits || []).map(s => typeof s === 'string' ? s : (s.group || s)).filter(Boolean);
+                                    const parts = [];
+                                    if (groupCo) parts.push(<Highlight key="g" text={groupCo} highlight={searchTerm} />);
+                                    if (soloCo) parts.push(<span key="solo" className="opacity-80">| </span>, <Highlight key="sc" text={soloCo} highlight={searchTerm} />);
+                                    if (subs.length) parts.push(<span key="su" className="opacity-80"> | </span>, <Highlight key="sub" text={subs.join(', ')} highlight={searchTerm} />);
+                                    return parts.length ? <>{parts}</> : <Highlight text="-" highlight={searchTerm} />;
+                                })()}
                             </motion.p>
                             <h3 className="text-2xl md:text-4xl font-black text-white group-hover:text-brand-pink mb-1 transition-colors tracking-tight line-clamp-2 break-words">
                                 <Highlight text={idol.name} highlight={searchTerm} />

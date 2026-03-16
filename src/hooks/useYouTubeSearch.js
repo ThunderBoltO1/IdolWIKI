@@ -12,7 +12,7 @@ const BASE = 'https://www.googleapis.com/youtube/v3';
 export async function searchYouTube(query, opts = {}) {
   const { type = 'video,playlist', maxResults = 10 } = opts;
   if (!API_KEY) {
-    throw new Error('YouTube API key ไม่ได้ตั้งค่า (VITE_YOUTUBE_API_KEY)');
+    throw new Error('YouTube API key is not configured (VITE_YOUTUBE_API_KEY)');
   }
   const params = new URLSearchParams({
     part: 'snippet',
@@ -31,6 +31,8 @@ export async function searchYouTube(query, opts = {}) {
   (data.items || []).forEach((item) => {
     const id = item.id?.videoId || item.id?.playlistId;
     const thumb = item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url;
+    const publishedAt = item.snippet?.publishedAt;
+    const dateStr = publishedAt ? new Date(publishedAt).toISOString().split('T')[0] : '';
     if (item.id?.videoId) {
       videos.push({
         id,
@@ -38,6 +40,8 @@ export async function searchYouTube(query, opts = {}) {
         title: item.snippet?.title || '',
         url: `https://www.youtube.com/watch?v=${id}`,
         thumbnail: thumb,
+        publishedAt,
+        date: dateStr,
       });
     } else if (item.id?.playlistId) {
       playlists.push({
@@ -46,6 +50,8 @@ export async function searchYouTube(query, opts = {}) {
         title: item.snippet?.title || '',
         url: `https://www.youtube.com/playlist?list=${id}`,
         thumbnail: thumb,
+        publishedAt,
+        date: dateStr,
       });
     }
   });
@@ -60,7 +66,7 @@ export function useYouTubeSearch() {
   const search = useCallback(async (query) => {
     if (!query?.trim()) {
       setResults({ videos: [], playlists: [] });
-      setError('กรุณาใส่คำค้น');
+      setError('Please enter a search term');
       return;
     }
     setLoading(true);
@@ -70,10 +76,10 @@ export function useYouTubeSearch() {
       const data = await searchYouTube(query, { maxResults: 8 });
       setResults(data);
       if (data.videos.length === 0 && data.playlists.length === 0) {
-        setError('ไม่พบผลลัพธ์');
+        setError('No results found');
       }
     } catch (e) {
-      setError(e.message || 'ค้นหาไม่สำเร็จ');
+      setError(e.message || 'Search failed');
       setResults({ videos: [], playlists: [] });
     } finally {
       setLoading(false);

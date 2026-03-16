@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Sparkles, Sun, Moon, Clock, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { convertDriveLink } from '../lib/storage';
 import { cn } from '../lib/utils';
@@ -14,6 +15,7 @@ import { UserDropdown } from './UserDropdown';
 export function Navbar({ onAddClick, onAddGroupClick, onAddCompanyClick, onLoginClick, onProfileClick, onEditProfileClick, onHomeClick, onFavoritesClick, onNotificationClick, onManageUsersClick, onManageReportsClick, onManageCompaniesClick, onDashboardClick, searchTerm, onSearchChange, onLogoutRequest }) {
     const { user, isAdmin } = useAuth();
     const { theme, themeMode, toggleTheme } = useTheme();
+    const t = useTranslation();
     const navigate = useNavigate();
 
     return (
@@ -45,7 +47,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onAddCompanyClick, onLogin
                         <Search className={cn("absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors", theme === 'dark' ? "text-slate-500" : "text-slate-400")} />
                         <input
                             type="text"
-                            placeholder="Search idols..."
+                            placeholder={t('nav.searchPlaceholder')}
                             value={searchTerm}
                             onChange={(e) => onSearchChange(e.target.value)}
                             className={cn(
@@ -127,7 +129,7 @@ export function Navbar({ onAddClick, onAddGroupClick, onAddCompanyClick, onLogin
                             onClick={onLoginClick}
                             className="px-4 sm:px-6 py-1.5 sm:py-2 rounded-full bg-linear-to-tr from-brand-pink to-brand-purple text-white font-bold hover:opacity-90 transition-all text-xs sm:text-sm shadow-lg shadow-brand-purple/20 active:scale-95 whitespace-nowrap"
                         >
-                            Log In
+                            {t('nav.logIn')}
                         </button>
                     )}
                 </div>

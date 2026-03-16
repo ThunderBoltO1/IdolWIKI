@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../context/LanguageContext';
 import { convertDriveLink } from '../../lib/storage';
 import { ArrowLeft, RefreshCw, Share2, Check, X, Save, Edit2, FileText, Trash2, Globe, Upload, Loader2 } from 'lucide-react';
 
@@ -13,6 +14,7 @@ export function GroupHero({
     handleSaveGroup, onDeleteGroup, setIsEditing
 }) {
     const { isAdmin, user } = useAuth();
+    const t = useTranslation();
     const navigate = useNavigate();
 
     const { scrollY } = useScroll();
@@ -84,7 +86,7 @@ export function GroupHero({
 
             <motion.button initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} whileHover={{ scale: 1.05, x: 10 }} whileTap={{ scale: 0.95 }} onClick={() => navigate('/')} className="absolute top-4 left-4 md:top-8 md:left-8 flex items-center gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-3 rounded-2xl bg-white/10 backdrop-blur-2xl text-white hover:bg-white/20 transition-all z-20 font-black text-[10px] md:text-xs uppercase tracking-[0.2em] border border-white/20 shadow-2xl">
                 <ArrowLeft size={16} />
-                <span>Back to Discovery</span>
+                <span>{t('home.backToDiscovery')}</span>
             </motion.button>
 
             <motion.div style={{ y: y2, opacity }} className="absolute bottom-6 md:bottom-12 left-4 md:left-10 right-4 md:right-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 z-10">
@@ -109,10 +111,10 @@ export function GroupHero({
                         </div>
                     ) : (
                         <>
-                            <h1 className="text-2xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] break-words">
+                            <h1 className="text-2xl sm:text-4xl md:text-6xl lg:text-7xl font-black text-white mb-1 md:mb-2 tracking-tighter leading-none break-words">
                                 {displayGroup.name}
                             </h1>
-                            <p className="text-base sm:text-xl md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic">
+                            <p className="text-base sm:text-xl md:text-2xl lg:text-3xl text-brand-pink/90 font-black tracking-widest italic">
                                 {displayGroup.koreanName}
                             </p>
                         </>

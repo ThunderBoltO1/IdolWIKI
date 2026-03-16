@@ -3,17 +3,21 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
 import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText, Facebook } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn, getYouTubeEmbedSrc } from '../lib/utils';
+import { cn, getYouTubeEmbedSrc, groupAlbumsByType, restorePageScroll } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { convertDriveLink } from '../lib/storage';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, getDocs, getDoc, limit, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ConfirmationModal } from './ConfirmationModal';
 import { IdolCard } from './IdolCard';
 import { useAwards } from '../hooks/useAwards.js';
 import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
 import { useToast } from './Toast';
+import { YouTubeSearchModal } from './YouTubeSearchModal';
+import { ensureCompanyExists, findCompanyByName } from '../lib/companyUtils';
+import { DateSelect, DateSelectField } from './DateSelect';
 
 const TiktokIcon = ({ size = 24, className }) => (
     <svg
@@ -44,16 +48,20 @@ const defaultIdolData = {
     fullEnglishName: '',
     group: '',
     groupId: '',
+    subUnits: [],
     positions: [],
     company: '',
+    soloCompany: '',
     nationality: '',
     debutDate: '',
+    soloDebutDate: '',
     birthDate: '',
     height: '',
     bloodType: '',
     gender: 'F',
     otherNames: '',
     birthPlace: '',
+    description: '',
     awards: [],
     image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500&auto=format&fit=crop&q=60',
     gallery: [],
@@ -66,17 +74,20 @@ const defaultIdolData = {
     likes: 0,
     albums: [],
     formerCompanies: [],
+    soloFormerCompanies: [],
     status: 'Active'
 };
 
-export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
+export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose, onSave, onDelete, onLike, onGroupClick, onUserClick, onSearch, onIdolClick, highlightedChanges }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const { confirm } = useConfirm();
     const toast = useToast();
     const navigate = useNavigate();
     const [formData, setFormData] = useState(idol || {});
     const [editMode, setEditMode] = useState(mode === 'create');
     const [activeImage, setActiveImage] = useState('');
+    const [imageObjectFit, setImageObjectFit] = useState('horizontal-cover');
     const [floatingHearts, setFloatingHearts] = useState([]);
     const [showSuccess, setShowSuccess] = useState(false);
     const successTimeoutRef = useRef(null);
@@ -116,6 +127,16 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
 
     const { awards: awardData } = useAwards();
     const [isYTCopied, setIsYTCopied] = useState(false);
+    const [showYouTubeSearchVideoIdx, setShowYouTubeSearchVideoIdx] = useState(null);
+    const [companies, setCompanies] = useState([]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        getDocs(query(collection(db, 'companies'), orderBy('name')))
+            .then(snap => setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => setCompanies([]));
+    }, [isOpen]);
+
     const [modalConfig, setModalConfig] = useState({
         isOpen: false,
         title: '',
@@ -125,6 +146,14 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
         onConfirm: null,
         confirmText: 'OK'
     });
+
+    const voicesRef = useRef([]);
+    useEffect(() => {
+        const load = () => { voicesRef.current = window.speechSynthesis?.getVoices() || []; };
+        load();
+        window.speechSynthesis?.addEventListener?.('voiceschanged', load);
+        return () => { window.speechSynthesis?.removeEventListener?.('voiceschanged', load); };
+    }, []);
 
     function getYouTubeVideoId(url) {
         if (!url) return null;
@@ -192,13 +221,9 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
             document.body.style.overflow = 'hidden';
             document.documentElement.style.overflow = 'hidden';
         } else {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
+            restorePageScroll();
         }
-        return () => {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
-        };
+        return () => restorePageScroll();
     }, [isOpen]);
 
     // Lock scroll when album popup is open (prevent wheel/touch on backdrop)
@@ -218,7 +243,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
 
     useEffect(() => {
         if (isOpen) {
-            const shouldReset = (mode === 'create' && !formData.id) || (idol && idol.id !== formData.id);
+            const shouldReset = (mode === 'create') || (idol && idol.id !== formData.id);
 
             if (shouldReset) {
                 if (idol && formData.id && idol.id !== formData.id) {
@@ -240,10 +265,10 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                         typeof c === 'string' ? { company: c, duration: '' } : c
                     );
                 }
-
-                // Migrate legacy single youtube link to videos array if needed
-                if (initialData.youtube && (!initialData.videos || initialData.videos.length === 0)) {
-                    initialData.videos = [{ title: 'Latest Video', url: initialData.youtube }];
+                if (initialData.soloFormerCompanies && initialData.soloFormerCompanies.length > 0) {
+                    initialData.soloFormerCompanies = initialData.soloFormerCompanies.map(c =>
+                        typeof c === 'string' ? { company: c, duration: '' } : c
+                    );
                 }
 
                 setFormData(initialData);
@@ -271,6 +296,23 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
         }
     }, [isOpen, mode, idol, formData.id]);
 
+    // โหลดข้อมูลล่าสุดจาก Firestore ตอนเปิด Modal (เฉพาะ likes, albums — ไม่ดึง image/gallery เพื่อแยกจากหน้ารายละเอียด)
+    useEffect(() => {
+        if (!isOpen || !idol?.id) return;
+        let cancelled = false;
+        getDoc(doc(db, 'idols', idol.id)).then((docSnap) => {
+            if (cancelled || !docSnap.exists()) return;
+            const data = docSnap.data();
+            setFormData(prev => ({
+                ...prev,
+                likes: data.likes ?? prev.likes,
+                albums: Array.isArray(data.albums) ? data.albums : (prev.albums ?? [])
+                // ไม่ merge image, gallery — ให้หน้ารายละเอียดจัดการรูปแยกต่างหาก จะได้ไม่ซ้ำ
+            }));
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [isOpen, idol?.id]);
+
     useEffect(() => {
         if (!idol?.id) return;
 
@@ -279,7 +321,9 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                 const data = docSnap.data();
                 setFormData(prev => ({
                     ...prev,
-                    likes: data.likes || 0
+                    likes: data.likes ?? prev.likes,
+                    albums: Array.isArray(data.albums) ? data.albums : (prev.albums ?? [])
+                    // ไม่ merge image, gallery — แยกการแสดงผลจากหน้ารายละเอียด
                 }));
             }
         });
@@ -336,6 +380,19 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
         fetchSimilar();
     }, [idol?.company, idol?.id, idol?.positions]);
 
+    useEffect(() => {
+        const groupName = (formData.group || '').trim();
+        if (!groupName || !groups?.length) return;
+        const match = groups.find(g => (g.name || '').toLowerCase() === groupName.toLowerCase());
+        if (match) {
+            setFormData(prev => {
+                const updates = { groupId: match.id };
+                if (!prev.company && match.company) updates.company = match.company;
+                return { ...prev, ...updates };
+            });
+        }
+    }, [formData.group, groups]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'image') {
@@ -376,6 +433,29 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
         });
     };
 
+    const handleDeleteProfileImage = () => {
+        setModalConfig({
+            isOpen: true,
+            title: 'Delete Profile Image',
+            message: 'Are you sure you want to delete this image? Changes will be saved when you click Save.',
+            type: 'danger',
+            singleButton: false,
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                const urlToRemove = formData.image;
+                if (urlToRemove && urlToRemove.includes('firebasestorage')) {
+                    try {
+                        await deleteImage(urlToRemove);
+                    } catch (e) {
+                        console.warn('Failed to delete from storage:', e);
+                    }
+                }
+                setFormData(prev => ({ ...prev, image: '' }));
+                setActiveImage(defaultIdolData.image);
+            }
+        });
+    };
+
     const handlePositionsChange = (e) => {
         const val = e.target.value;
         setFormData(prev => ({ ...prev, positions: val.split(',').map(s => s.trim()) }));
@@ -400,10 +480,83 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
     };
 
     const handleRemoveFormerCompany = (index) => {
+        const item = (formData.formerCompanies || [])[index];
+        const name = typeof item === 'object' ? item.company : item;
+        confirm({
+            title: 'Remove Former Company',
+            message: `Remove "${name || 'this entry'}" from former companies (Group)?`,
+            confirmText: 'Remove',
+            onConfirm: () => setFormData(prev => ({
+                ...prev,
+                formerCompanies: (prev.formerCompanies || []).filter((_, i) => i !== index)
+            }))
+        });
+    };
+
+    const handleAddFormerCompanySolo = () => {
         setFormData(prev => ({
             ...prev,
-            formerCompanies: (prev.formerCompanies || []).filter((_, i) => i !== index)
+            soloFormerCompanies: [...(prev.soloFormerCompanies || []), { company: '', duration: '' }]
         }));
+    };
+
+    const handleUpdateFormerCompanySolo = (index, field, value) => {
+        setFormData(prev => {
+            const updated = [...(prev.soloFormerCompanies || [])];
+            const current = updated[index];
+            const item = typeof current === 'string' ? { company: current, duration: '' } : { ...current };
+            item[field] = value;
+            updated[index] = item;
+            return { ...prev, soloFormerCompanies: updated };
+        });
+    };
+
+    const handleRemoveFormerCompanySolo = (index) => {
+        const item = (formData.soloFormerCompanies || [])[index];
+        const name = typeof item === 'object' ? item.company : item;
+        confirm({
+            title: 'Remove Former Company',
+            message: `Remove "${name || 'this entry'}" from former companies?`,
+            confirmText: 'Remove',
+            onConfirm: () => setFormData(prev => ({
+                ...prev,
+                soloFormerCompanies: (prev.soloFormerCompanies || []).filter((_, i) => i !== index)
+            }))
+        });
+    };
+
+    const handleAddSubUnit = () => {
+        setFormData(prev => ({
+            ...prev,
+            subUnits: [...(prev.subUnits || []), { group: '', groupId: '' }]
+        }));
+    };
+
+    const handleUpdateSubUnit = (index, field, value) => {
+        setFormData(prev => {
+            const updated = [...(prev.subUnits || [])];
+            const item = updated[index] || {};
+            updated[index] = { ...item, [field]: value };
+            if (field === 'group') {
+                const slug = value.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                updated[index].groupId = slug;
+            }
+            return { ...prev, subUnits: updated };
+        });
+    };
+
+    const handleRemoveSubUnit = (index) => {
+        const item = (formData.subUnits || [])[index];
+        const name = typeof item === 'object' ? item.group : item;
+        confirm({
+            title: 'Remove Sub-unit',
+            message: `Remove "${name || 'this sub-unit'}"?`,
+            confirmText: 'Remove',
+            onConfirm: () => setFormData(prev => ({
+                ...prev,
+                subUnits: (prev.subUnits || []).filter((_, i) => i !== index)
+            }))
+        });
     };
 
     const handleAddAward = () => {
@@ -446,11 +599,18 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
     };
 
     const handleRemoveAward = (index) => {
-        setFormData(prev => ({ ...prev, awards: (prev.awards || []).filter((_, i) => i !== index) }));
-        if (editingAwardIndex === index) {
-            setEditingAwardIndex(null);
-            setNewAward(prev => ({ ...prev, award: '' }));
-        }
+        confirm({
+            title: 'Remove Award',
+            message: 'Remove this award?',
+            confirmText: 'Remove',
+            onConfirm: () => {
+                setFormData(prev => ({ ...prev, awards: (prev.awards || []).filter((_, i) => i !== index) }));
+                if (editingAwardIndex === index) {
+                    setEditingAwardIndex(null);
+                    setNewAward(prev => ({ ...prev, award: '' }));
+                }
+            }
+        });
     };
 
     const handleCancelEdit = () => {
@@ -488,8 +648,17 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
     };
 
     const removeAlbum = (index) => {
-        const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
-        setFormData(prev => ({ ...prev, albums: newAlbums }));
+        const album = (formData.albums || [])[index];
+        const title = album?.title || `Album #${index + 1}`;
+        confirm({
+            title: 'Remove Album',
+            message: `Remove "${title}"?`,
+            confirmText: 'Remove',
+            onConfirm: () => {
+                const newAlbums = (formData.albums || []).filter((_, i) => i !== index);
+                setFormData(prev => ({ ...prev, albums: newAlbums }));
+            }
+        });
     };
 
     const handleVideoChange = (index, field, value) => {
@@ -504,7 +673,14 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
     };
 
     const removeVideo = (index) => {
-        setFormData(prev => ({ ...prev, videos: (prev.videos || []).filter((_, i) => i !== index) }));
+        const video = (formData.videos || [])[index];
+        const title = video?.title || `Video #${index + 1}`;
+        confirm({
+            title: 'Remove Video',
+            message: `Remove "${title}"?`,
+            confirmText: 'Remove',
+            onConfirm: () => setFormData(prev => ({ ...prev, videos: (prev.videos || []).filter((_, i) => i !== index) }))
+        });
     };
 
     const handleBack = () => {
@@ -524,9 +700,9 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
 
         // 1. Validate Size
         try {
-            validateFile(file, 5); // Limit 5MB
+            validateFile(file, 5);
         } catch (error) {
-            alert(error.message);
+            toast.error(error.message);
             return;
         }
 
@@ -553,11 +729,12 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
             setActiveImage(url);
         } catch (error) {
             console.error("Upload failed:", error);
-            alert("Failed to upload image");
+            toast.error("Failed to upload image");
         } finally {
             setIsUploading(false);
             setUploadProgress(0);
             if (fileInputRef.current) fileInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -570,7 +747,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
             try {
                 validateFile(file, 5);
             } catch (error) {
-                alert(`File ${file.name} is too large. Max 5MB.`);
+                toast.error(error.message || `Invalid file: ${file.name}`);
                 return;
             }
         }
@@ -583,20 +760,30 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
             setFormData(prev => ({ ...prev, gallery: [...(prev.gallery || []), ...urls] }));
         } catch (error) {
             console.error("Gallery upload error", error);
-            alert("Failed to upload gallery images");
+            toast.error("Failed to upload gallery images");
         } finally {
             setIsUploading(false);
             if (galleryInputRef.current) galleryInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
     const handleDiscard = () => {
+        const doDiscard = () => {
+            setFormData(idol);
+            setEditMode(false);
+            setActiveImage(idol.image);
+        };
         if (JSON.stringify(formData) !== JSON.stringify(idol)) {
-            if (!window.confirm("Discard unsaved changes?")) return;
+            confirm({
+                title: 'Discard Changes',
+                message: 'Discard unsaved changes?',
+                confirmText: 'Discard',
+                onConfirm: doDiscard
+            });
+        } else {
+            doDiscard();
         }
-        setFormData(idol);
-        setEditMode(false);
-        setActiveImage(idol.image);
     };
 
     const handleFetchHistory = async () => {
@@ -622,9 +809,58 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoadingHistory(true); // Reuse loading state or create a new one for saving
+        if (loadingHistory) return;
+        setLoadingHistory(true);
 
         const updatedData = { ...formData };
+        const norm = (v) => (v === '__other__' ? '' : v);
+        updatedData.company = norm(updatedData.company);
+        updatedData.soloCompany = norm(updatedData.soloCompany);
+        (updatedData.formerCompanies || []).forEach((c, i) => {
+            const name = typeof c === 'string' ? c : c.company;
+            if (typeof c === 'string') updatedData.formerCompanies[i] = norm(name);
+            else updatedData.formerCompanies[i] = { ...c, company: norm(name) };
+        });
+        (updatedData.soloFormerCompanies || []).forEach((c, i) => {
+            const name = typeof c === 'string' ? c : c.company;
+            if (typeof c === 'string') updatedData.soloFormerCompanies[i] = norm(name);
+            else updatedData.soloFormerCompanies[i] = { ...c, company: norm(name) };
+        });
+        try {
+            await ensureCompanyExists(updatedData.company);
+            await ensureCompanyExists(updatedData.soloCompany);
+            for (const c of updatedData.formerCompanies || []) {
+                const name = typeof c === 'string' ? c : c.company;
+                if (name) await ensureCompanyExists(name);
+            }
+            for (const c of updatedData.soloFormerCompanies || []) {
+                const name = typeof c === 'string' ? c : c.company;
+                if (name) await ensureCompanyExists(name);
+            }
+            const resolveCanonical = async (name) => {
+                if (!name) return name;
+                const doc = await findCompanyByName(name);
+                return doc ? doc.data().name : name;
+            };
+            updatedData.company = await resolveCanonical(updatedData.company);
+            updatedData.soloCompany = await resolveCanonical(updatedData.soloCompany);
+            for (let i = 0; i < (updatedData.formerCompanies || []).length; i++) {
+                const c = updatedData.formerCompanies[i];
+                const name = typeof c === 'string' ? c : c.company;
+                const canonical = await resolveCanonical(name);
+                if (typeof c === 'string') updatedData.formerCompanies[i] = canonical;
+                else updatedData.formerCompanies[i] = { ...c, company: canonical };
+            }
+            for (let i = 0; i < (updatedData.soloFormerCompanies || []).length; i++) {
+                const c = updatedData.soloFormerCompanies[i];
+                const name = typeof c === 'string' ? c : c.company;
+                const canonical = await resolveCanonical(name);
+                if (typeof c === 'string') updatedData.soloFormerCompanies[i] = canonical;
+                else updatedData.soloFormerCompanies[i] = { ...c, company: canonical };
+            }
+        } catch (err) {
+            console.warn('ensureCompanyExists / resolveCanonical:', err);
+        }
         onSave(updatedData);
 
         // Update local state to reflect saved data immediately
@@ -659,6 +895,15 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = lang;
         utterance.rate = 0.9;
+        const voices = (window.speechSynthesis.getVoices() || []).length ? window.speechSynthesis.getVoices() : voicesRef.current;
+        const langPrefix = lang.split('-')[0];
+        const female = voices.find(v => {
+            const match = v.lang.startsWith(langPrefix) || v.lang.startsWith(lang);
+            const name = (v.name || '').toLowerCase();
+            return match && (name.includes('female') || name.includes('woman') || name.includes('여성') || name.includes('หญิง') || name.includes('jiyeon') || name.includes('sora') || name.includes('yuna') || name.includes('pattara'));
+        });
+        const anyForLang = voices.find(v => v.lang.startsWith(langPrefix) || v.lang.startsWith(lang));
+        utterance.voice = female || anyForLang || null;
         window.speechSynthesis.speak(utterance);
     };
 
@@ -1039,8 +1284,22 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                 )}
                             </div>
 
-                            {/* Right Column: Details or Form */}
-                            <div ref={scrollContainerRef} className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col overscroll-contain">
+                            {/* Right Column: Details or Form — เมื่อโฟกัสที่ input (เช่นวางลิงก์รูป) ให้ wheel เลื่อนพื้นที่นี้ได้ */}
+                            <div
+                                ref={scrollContainerRef}
+                                className="w-full md:w-7/12 p-6 md:p-10 overflow-y-auto custom-scrollbar flex flex-col overscroll-contain"
+                                onWheel={(e) => {
+                                    const el = scrollContainerRef.current;
+                                    const target = e.target;
+                                    if (!el || !target?.closest?.('input, textarea, select')) return;
+                                    const canScrollUp = el.scrollTop > 0 && e.deltaY < 0;
+                                    const canScrollDown = el.scrollTop < el.scrollHeight - el.clientHeight - 1 && e.deltaY > 0;
+                                    if (canScrollUp || canScrollDown) {
+                                        el.scrollTop += e.deltaY;
+                                        e.preventDefault();
+                                    }
+                                }}
+                            >
                                 <div className="flex justify-between items-start mb-10">
                                     <div className="flex-1 mr-4">
                                         {editMode ? (
@@ -1244,7 +1503,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                 onAction={() => handleSpeak(formData.thaiName, 'th-TH')}
                                                                 highlighted={highlightedChanges?.thaiName}
                                                             />
-                                                            <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.otherNames} />
+                                                            <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} editMode={editMode} name="otherNames" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.otherNames} hideWhenEmpty />
                                                             {!editMode && (
                                                                 <DetailItem
                                                                     icon={Users}
@@ -1258,9 +1517,9 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                     highlighted={highlightedChanges?.group}
                                                                 />
                                                             )}
-                                                            <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} />
-                                                            <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} />
-                                                            <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthDate} />
+                                                            <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} hideWhenEmpty />
+                                                            <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} hideWhenEmpty />
+                                                            <DateSelectField icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'birthDate', value: val } })} theme={theme} highlighted={highlightedChanges?.birthDate} />
                                                         </div>
                                                     </div>
 
@@ -1268,22 +1527,23 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                     <div className="space-y-4">
                                                         <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Physical Stats</h3>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                                            <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} />
-                                                            <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} />
+                                                            <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} hideWhenEmpty />
+                                                            <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} hideWhenEmpty />
                                                         </div>
                                                     </div>
 
-                                                    {/* Section 3: Career */}
+                                                    {/* Section 3: Career — UX: Status full width, then Group | Solo columns */}
                                                     <div className="space-y-4">
                                                         <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Career</h3>
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                        <div className="space-y-5">
+                                                            {/* Status + Departure: full width */}
                                                             <div className="space-y-2">
                                                                 <label className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em] ml-2 flex items-center gap-2">
                                                                     <Activity size={12} className="text-brand-pink" /> Status
                                                                 </label>
                                                                 {editMode ? (
                                                                     <div className={cn(
-                                                                        "relative rounded-2xl overflow-hidden border-2 transition-all p-1",
+                                                                        "relative rounded-2xl overflow-hidden border-2 transition-all p-1 max-w-xs",
                                                                         theme === 'dark' ? "bg-slate-900/50 border-white/5" : "bg-white border-slate-100"
                                                                     )}>
                                                                         <select
@@ -1304,7 +1564,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                     </div>
                                                                 ) : (
                                                                     <div className={cn(
-                                                                        "p-4 rounded-2xl flex items-center gap-3 border transition-all duration-500",
+                                                                        "p-4 rounded-2xl flex items-center gap-3 border transition-all duration-500 w-fit",
                                                                         ['inactive', 'former'].includes(formData.status?.toLowerCase())
                                                                             ? (theme === 'dark' ? "bg-amber-500/10 border-amber-500/20 shadow-[0_0_20px_rgba(251,191,36,0.1)]" : "bg-amber-50 border-amber-200")
                                                                             : (theme === 'dark' ? "bg-emerald-500/10 border-emerald-500/20" : "bg-emerald-50 border-emerald-100")
@@ -1320,7 +1580,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                             )}></span>
                                                                         </div>
                                                                         <span className={cn(
-                                                                            "text-xs font-black uppercase tracking-[0.1em]",
+                                                                            "text-xs font-black uppercase tracking-widest",
                                                                             ['inactive', 'former'].includes(formData.status?.toLowerCase())
                                                                                 ? (theme === 'dark' ? "text-amber-200" : "text-amber-700")
                                                                                 : (theme === 'dark' ? "text-emerald-400" : "text-emerald-600")
@@ -1331,14 +1591,12 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                 )}
                                                                 {editMode && (formData.status?.toLowerCase() === 'inactive' || formData.status?.toLowerCase() === 'former') && (
                                                                     <div className="mt-2 pl-4 border-l-2 border-amber-500/30">
-                                                                        <DetailItem
+                                                                        <DateSelectField
                                                                             icon={Calendar}
                                                                             label="Departure Date"
                                                                             value={formData.retirementDate}
                                                                             editMode={editMode}
-                                                                            name="retirementDate"
-                                                                            type="date"
-                                                                            onChange={handleChange}
+                                                                            onChange={val => handleChange({ target: { name: 'retirementDate', value: val } })}
                                                                             theme={theme}
                                                                             valueClass="text-amber-500"
                                                                         />
@@ -1346,48 +1604,127 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                 )}
                                                                 {!editMode && (formData.status?.toLowerCase() === 'inactive' || formData.status?.toLowerCase() === 'former') && formData.retirementDate && (
                                                                     <div className="mt-2 pl-4 border-l-2 border-amber-500/30">
-                                                                        <DetailItem
+                                                                        <DateSelectField
                                                                             icon={Calendar}
                                                                             label="Departure Date"
                                                                             value={formData.retirementDate}
+                                                                            editMode={false}
                                                                             theme={theme}
                                                                             valueClass={theme === 'dark' ? "text-amber-200" : "text-amber-700"}
                                                                         />
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                            <DetailItem
-                                                                icon={Building2}
-                                                                label="Company"
-                                                                value={formData.company}
-                                                                editMode={editMode}
-                                                                name="company"
-                                                                onChange={handleChange}
-                                                                theme={theme}
-                                                                onClick={(!editMode && onSearch && formData.company) ? () => {
-                                                                    onSearch(formData.company);
-                                                                    onClose();
-                                                                } : undefined}
-                                                                highlighted={highlightedChanges?.company}
-                                                            />
-                                                            <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.debutDate} />
-                                                            <div className="sm:col-span-2 space-y-2">
-                                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Former Companies</label>
+                                                            {/* Group | Solo: two columns */}
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                                                <div className="space-y-4">
+                                                                    <p className={cn("text-[10px] font-black uppercase tracking-widest", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Group</p>
+                                                                    <CompanySelect
+                                                                        label="Company (Group)"
+                                                                        value={formData.company}
+                                                                        name="company"
+                                                                        onChange={handleChange}
+                                                                        companies={companies}
+                                                                        editMode={editMode}
+                                                                        theme={theme}
+                                                                        onClick={(!editMode && onSearch && formData.company) ? () => { onSearch(formData.company); onClose(); } : undefined}
+                                                                        highlighted={highlightedChanges?.company}
+                                                                        hideWhenEmpty
+                                                                    />
+                                                                    <DateSelectField icon={Activity} label="Debut Date (Group)" value={formData.debutDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'debutDate', value: val } })} theme={theme} highlighted={highlightedChanges?.debutDate} />
+                                                                </div>
+                                                                <div className="space-y-4">
+                                                                    <p className={cn("text-[10px] font-black uppercase tracking-widest", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>Solo</p>
+                                                                    {(editMode || formData.soloCompany) && (
+                                                                        <CompanySelect
+                                                                            label="Company"
+                                                                            value={formData.soloCompany}
+                                                                            name="soloCompany"
+                                                                            onChange={handleChange}
+                                                                            companies={companies}
+                                                                            editMode={editMode}
+                                                                            theme={theme}
+                                                                            onClick={(!editMode && formData.soloCompany) ? () => { onSearch && onSearch(formData.soloCompany); onClose(); } : undefined}
+                                                                            highlighted={highlightedChanges?.soloCompany}
+                                                                        />
+                                                                    )}
+                                                                    {(editMode || formData.soloDebutDate) && (
+                                                                        <DateSelectField icon={Activity} label="Debut Date" value={formData.soloDebutDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'soloDebutDate', value: val } })} theme={theme} highlighted={highlightedChanges?.soloDebutDate} />
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Sub-units</label>
                                                                 <div className="space-y-2">
-                                                                    {(formData.formerCompanies || []).map((item, index) => (
+                                                                    {(formData.subUnits || []).map((item, index) => (
                                                                         <div key={index} className="flex gap-2">
                                                                             <input
-                                                                                value={typeof item === 'string' ? item : item.company}
-                                                                                onChange={(e) => handleUpdateFormerCompany(index, 'company', e.target.value)}
-                                                                                placeholder="Company Name"
+                                                                                value={typeof item === 'object' ? (item.group || '') : String(item)}
+                                                                                onChange={(e) => handleUpdateSubUnit(index, 'group', e.target.value)}
+                                                                                placeholder="Sub-unit / Group Name"
                                                                                 className={cn(
                                                                                     "flex-1 rounded-2xl p-3 transition-all duration-300 focus:outline-none border-2 text-sm font-bold",
                                                                                     theme === 'dark'
                                                                                         ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
                                                                                         : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink",
-                                                                                    highlightedChanges?.formerCompanies && "border-brand-pink/50 bg-brand-pink/5"
+                                                                                    highlightedChanges?.subUnits && "border-brand-pink/50 bg-brand-pink/5"
                                                                                 )}
                                                                             />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRemoveSubUnit(index)}
+                                                                                className={cn(
+                                                                                    "p-3 rounded-2xl border-2 transition-colors",
+                                                                                    theme === 'dark'
+                                                                                        ? "border-red-500/20 text-red-400 hover:bg-red-500/10"
+                                                                                        : "border-red-200 text-red-500 hover:bg-red-50"
+                                                                                )}
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={handleAddSubUnit}
+                                                                        className={cn(
+                                                                            "w-full py-3 rounded-2xl border-2 border-dashed text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all",
+                                                                            theme === 'dark'
+                                                                                ? "border-white/10 text-slate-400 hover:border-brand-pink/50 hover:text-brand-pink hover:bg-brand-pink/5"
+                                                                                : "border-slate-200 text-slate-500 hover:border-brand-pink/50 hover:text-brand-pink hover:bg-brand-pink/5"
+                                                                        )}
+                                                                    >
+                                                                        <Plus size={16} /> Add Sub-unit
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="sm:col-span-2 space-y-2">
+                                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Former Companies (Group)</label>
+                                                                <div className="space-y-2">
+                                                                    {(formData.formerCompanies || []).map((item, index) => {
+                                                                        const companyVal = typeof item === 'string' ? item : item.company;
+                                                                        const inList = companies.some(c => c.name === companyVal);
+                                                                        const selectVal = inList ? companyVal : (companyVal ? '__other__' : '');
+                                                                        const inputClass = cn("flex-1 rounded-2xl p-3 transition-all duration-300 focus:outline-none border-2 text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink" : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink", highlightedChanges?.formerCompanies && "border-brand-pink/50 bg-brand-pink/5");
+                                                                        return (
+                                                                        <div key={index} className="flex gap-2 items-center flex-wrap">
+                                                                            <select
+                                                                                value={selectVal}
+                                                                                onChange={e => handleUpdateFormerCompany(index, 'company', e.target.value === '__other__' ? '' : e.target.value)}
+                                                                                className={cn(inputClass, "flex-1 min-w-[140px] [&>option]:bg-slate-900")}
+                                                                            >
+                                                                                <option value="">Select company...</option>
+                                                                                {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                                                                <option value="__other__">Other (type manually)</option>
+                                                                            </select>
+                                                                            {!inList && (
+                                                                                <input
+                                                                                    value={companyVal}
+                                                                                    onChange={(e) => handleUpdateFormerCompany(index, 'company', e.target.value)}
+                                                                                    placeholder="Company Name"
+                                                                                    className={cn(inputClass, "flex-1 min-w-[120px]")}
+                                                                                />
+                                                                            )}
                                                                             <input
                                                                                 value={typeof item === 'string' ? '' : item.duration}
                                                                                 onChange={(e) => handleUpdateFormerCompany(index, 'duration', e.target.value)}
@@ -1412,10 +1749,78 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                                 <Trash2 size={16} />
                                                                             </button>
                                                                         </div>
-                                                                    ))}
+                                                                    );
+                                                                    })}
                                                                     <button
                                                                         type="button"
                                                                         onClick={handleAddFormerCompany}
+                                                                        className={cn(
+                                                                            "w-full py-3 rounded-2xl border-2 border-dashed text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all",
+                                                                            theme === 'dark'
+                                                                                ? "border-white/10 text-slate-400 hover:border-brand-pink/50 hover:text-brand-pink hover:bg-brand-pink/5"
+                                                                                : "border-slate-200 text-slate-500 hover:border-brand-pink/50 hover:text-brand-pink hover:bg-brand-pink/5"
+                                                                        )}
+                                                                    >
+                                                                        <Plus size={16} /> Add Former Company (Group)
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="sm:col-span-2 space-y-2">
+                                                                <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Former Companies</label>
+                                                                <div className="space-y-2">
+                                                                    {(formData.soloFormerCompanies || []).map((item, index) => {
+                                                                        const companyVal = typeof item === 'string' ? item : item.company;
+                                                                        const inList = companies.some(c => c.name === companyVal);
+                                                                        const selectVal = inList ? companyVal : (companyVal ? '__other__' : '');
+                                                                        const inputClass = cn("flex-1 rounded-2xl p-3 transition-all duration-300 focus:outline-none border-2 text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink" : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink", highlightedChanges?.soloFormerCompanies && "border-brand-pink/50 bg-brand-pink/5");
+                                                                        return (
+                                                                        <div key={index} className="flex gap-2 items-center flex-wrap">
+                                                                            <select
+                                                                                value={selectVal}
+                                                                                onChange={e => handleUpdateFormerCompanySolo(index, 'company', e.target.value === '__other__' ? '' : e.target.value)}
+                                                                                className={cn(inputClass, "flex-1 min-w-[140px] [&>option]:bg-slate-900")}
+                                                                            >
+                                                                                <option value="">Select company...</option>
+                                                                                {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                                                                <option value="__other__">Other (type manually)</option>
+                                                                            </select>
+                                                                            {!inList && (
+                                                                                <input
+                                                                                    value={companyVal}
+                                                                                    onChange={(e) => handleUpdateFormerCompanySolo(index, 'company', e.target.value)}
+                                                                                    placeholder="Company Name"
+                                                                                    className={cn(inputClass, "flex-1 min-w-[120px]")}
+                                                                                />
+                                                                            )}
+                                                                            <input
+                                                                                value={typeof item === 'string' ? '' : item.duration}
+                                                                                onChange={(e) => handleUpdateFormerCompanySolo(index, 'duration', e.target.value)}
+                                                                                placeholder="Duration (e.g. 2018-2020)"
+                                                                                className={cn(
+                                                                                    "w-1/3 rounded-2xl p-3 transition-all duration-300 focus:outline-none border-2 text-sm font-bold",
+                                                                                    theme === 'dark'
+                                                                                        ? "bg-slate-800/50 text-white border-white/5 focus:border-brand-pink"
+                                                                                        : "bg-slate-50 text-slate-900 border-slate-100 focus:border-brand-pink"
+                                                                                )}
+                                                                            />
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleRemoveFormerCompanySolo(index)}
+                                                                                className={cn(
+                                                                                    "p-3 rounded-2xl border-2 transition-colors",
+                                                                                    theme === 'dark'
+                                                                                        ? "border-red-500/20 text-red-400 hover:bg-red-500/10"
+                                                                                        : "border-red-200 text-red-500 hover:bg-red-50"
+                                                                                )}
+                                                                            >
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                    })}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={handleAddFormerCompanySolo}
                                                                         className={cn(
                                                                             "w-full py-3 rounded-2xl border-2 border-dashed text-sm font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all",
                                                                             theme === 'dark'
@@ -1469,6 +1874,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                     <div key={idx} className="flex gap-2 items-center">
                                                                         <input value={video.title} onChange={e => handleVideoChange(idx, 'title', e.target.value)} className={cn("w-1/3 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="Title (e.g. MV)" />
                                                                         <input value={video.url} onChange={e => handleVideoChange(idx, 'url', e.target.value)} className={cn("flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="YouTube URL..." />
+                                                                        <button type="button" onClick={() => setShowYouTubeSearchVideoIdx(idx)} className={cn("shrink-0 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}><Youtube size={14} /> Search</button>
                                                                         <button type="button" onClick={() => removeVideo(idx)} className={cn("p-3 rounded-2xl transition-colors shrink-0", theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100")}><Trash2 size={16} /></button>
                                                                     </div>
                                                                 ))}
@@ -1487,10 +1893,17 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                         className="hidden"
                                                                         accept="image/*"
                                                                     />
-                                                                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
-                                                                        {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                                                                        {isUploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload File'}
-                                                                    </button>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="flex items-center gap-1 text-xs text-brand-pink font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                                                            {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+                                                                            {isUploading ? `Uploading ${Math.round(uploadProgress)}%` : 'Upload'}
+                                                                        </button>
+                                                                        {formData.image && (
+                                                                            <button type="button" onClick={handleDeleteProfileImage} className="flex items-center gap-1 text-xs text-red-500 font-black uppercase tracking-wider hover:underline disabled:opacity-50">
+                                                                                <Trash2 size={12} /> Delete
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="relative group/input">
                                                                     <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within/input:text-brand-pink transition-colors">
@@ -1540,24 +1953,21 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                 <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({ ...prev, gallery: newGallery }))} className="space-y-2">
                                                                     {(formData.gallery || []).map((url, idx) => (
                                                                         <Reorder.Item
-                                                                            key={idx}
+                                                                            key={`${url}-${idx}`}
                                                                             value={url}
                                                                             className="flex gap-2 items-center"
                                                                         >
-                                                                            <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                                                                            <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1 shrink-0">
                                                                                 <GripVertical size={16} />
                                                                             </div>
-                                                                            <input
-                                                                                value={url}
-                                                                                onChange={(e) => handleGalleryChange(idx, e.target.value)}
-                                                                                className={cn(
-                                                                                    "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                                                                                    theme === 'dark'
-                                                                                        ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white"
-                                                                                        : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                                                                                )}
-                                                                                placeholder={`Gallery Image ${idx + 1} URL...`}
-                                                                            />
+                                                                            <div className={cn("flex-1 min-w-0 flex items-center gap-3 rounded-2xl border-2 overflow-hidden", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-slate-50 border-slate-100")}>
+                                                                                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-700">
+                                                                                    {url ? (
+                                                                                        <img src={convertDriveLink(url)} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
+                                                                                    ) : null}
+                                                                                </div>
+                                                                                <span className="text-xs font-medium text-slate-500 truncate">Gallery {idx + 1}</span>
+                                                                            </div>
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={() => removeGalleryImage(idx)}
@@ -1660,7 +2070,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                         onAction={() => handleSpeak(formData.koreanName)}
                                                         highlighted={highlightedChanges?.koreanName}
                                                     />
-                                                    <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} theme={theme} highlighted={highlightedChanges?.otherNames} />
+                                                    <DetailItem icon={Tag} label="Other Name(s)" value={formData.otherNames} theme={theme} highlighted={highlightedChanges?.otherNames} hideWhenEmpty />
                                                     <DetailItem
                                                         icon={Heart}
                                                         label="Status"
@@ -1682,25 +2092,36 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                     {formData.status === 'Inactive' && formData.retirementDate && (
                                                         <DetailItem icon={Calendar} label="Retirement Date" value={formData.retirementDate} theme={theme} highlighted={highlightedChanges?.retirementDate} />
                                                     )}
-                                                    <DetailItem
-                                                        icon={Building2}
-                                                        label="Company"
+                                                    <CompanySelect
+                                                        label="Company (Group)"
                                                         value={formData.company}
-                                                        editMode={editMode}
                                                         name="company"
                                                         onChange={handleChange}
+                                                        companies={companies}
+                                                        editMode={editMode}
                                                         theme={theme}
-                                                        onClick={(!editMode && formData.company) ? () => {
-                                                            navigate(`/company/${encodeURIComponent(formData.company)}`);
-                                                            onClose();
-                                                        } : undefined}
+                                                        onClick={(!editMode && formData.company) ? () => { navigate(`/company/${encodeURIComponent(formData.company)}`); onClose(); } : undefined}
                                                         highlighted={highlightedChanges?.company}
+                                                        hideWhenEmpty
                                                     />
+                                                    {(editMode || formData.soloCompany) && (
+                                                        <CompanySelect
+                                                            label="Company"
+                                                            value={formData.soloCompany}
+                                                            name="soloCompany"
+                                                            onChange={handleChange}
+                                                            companies={companies}
+                                                            editMode={editMode}
+                                                            theme={theme}
+                                                            onClick={(!editMode && formData.soloCompany) ? () => { navigate(`/company/${encodeURIComponent(formData.soloCompany)}`); onClose(); } : undefined}
+                                                            highlighted={highlightedChanges?.soloCompany}
+                                                        />
+                                                    )}
                                                     {formData.formerCompanies?.length > 0 && (
                                                         <div className="p-2 rounded-xl transition-colors">
                                                             <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
                                                                 <History size={12} />
-                                                                Former Companies
+                                                                Former Companies (Group)
                                                             </p>
                                                             <div className={cn(
                                                                 "font-black text-base md:text-lg transition-colors flex flex-col gap-1",
@@ -1731,10 +2152,49 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                             </div>
                                                         </div>
                                                     )}
-                                                    <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} />
-                                                    <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} />
-                                                    <DetailItem icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} name="birthDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthDate} />
-                                                    <DetailItem icon={User} label="Age" value={formData.birthDate ? `${calculateAge(formData.birthDate)} years old` : ''} theme={theme} highlighted={highlightedChanges?.birthDate} />
+                                                    {formData.soloFormerCompanies?.length > 0 && (
+                                                        <div className="p-2 rounded-xl transition-colors">
+                                                            <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
+                                                                <History size={12} />
+                                                                Former Companies
+                                                            </p>
+                                                            <div className={cn(
+                                                                "font-black text-base md:text-lg transition-colors flex flex-col gap-1",
+                                                                theme === 'dark' ? "text-slate-100" : "text-slate-900"
+                                                            )}>
+                                                                {[...formData.soloFormerCompanies].sort((a, b) => {
+                                                                    const getEndYear = (item) => {
+                                                                        const val = typeof item === 'string' ? '' : (item.duration || '');
+                                                                        const lower = val.toLowerCase();
+                                                                        if (lower.includes('now') || lower.includes('present') || lower.includes('current')) return 9999;
+                                                                        const match = val.match(/(\d{4})/g);
+                                                                        return match ? parseInt(match[match.length - 1]) : 0;
+                                                                    };
+                                                                    return getEndYear(b) - getEndYear(a);
+                                                                }).map((c, i) => (
+                                                                    <div
+                                                                        key={`solo-${i}`}
+                                                                        className="cursor-pointer hover:text-brand-pink transition-colors w-fit"
+                                                                        onClick={() => {
+                                                                            const name = typeof c === 'string' ? c : c.company;
+                                                                            navigate(`/company/${encodeURIComponent(name)}`);
+                                                                            onClose();
+                                                                        }}
+                                                                    >
+                                                                        {typeof c === 'string' ? c : (c.duration ? `${c.company} (${c.duration})` : c.company)}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <DateSelectField icon={Activity} label="Debut Date (Group)" value={formData.debutDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'debutDate', value: val } })} theme={theme} highlighted={highlightedChanges?.debutDate} />
+                                                    {(editMode || formData.soloDebutDate) && (
+                                                        <DateSelectField icon={Activity} label="Debut Date" value={formData.soloDebutDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'soloDebutDate', value: val } })} theme={theme} highlighted={highlightedChanges?.soloDebutDate} />
+                                                    )}
+                                                    <DetailItem icon={Globe} label="Nationality" value={formData.nationality} editMode={editMode} name="nationality" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.nationality} hideWhenEmpty />
+                                                    <DetailItem icon={MapPin} label="Birth Place" value={formData.birthPlace} editMode={editMode} name="birthPlace" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.birthPlace} hideWhenEmpty />
+                                                    <DateSelectField icon={Calendar} label="Birth Date" value={formData.birthDate} editMode={editMode} onChange={val => handleChange({ target: { name: 'birthDate', value: val } })} theme={theme} highlighted={highlightedChanges?.birthDate} />
+                                                    <DetailItem icon={User} label="Age" value={formData.birthDate ? `${calculateAge(formData.birthDate)} years old` : ''} theme={theme} highlighted={highlightedChanges?.birthDate} hideWhenEmpty />
                                                     <DetailItem
                                                         icon={Star}
                                                         label="Zodiac"
@@ -1745,10 +2205,10 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                             onClose();
                                                         } : undefined}
                                                         highlighted={highlightedChanges?.birthDate}
+                                                        hideWhenEmpty
                                                     />
-                                                    <DetailItem icon={Activity} label="Debut Date" value={formData.debutDate} editMode={editMode} name="debutDate" type="date" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.debutDate} />
-                                                    <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} />
-                                                    <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} />
+                                                    <DetailItem icon={Ruler} label="Height" value={formData.height} editMode={editMode} name="height" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.height} hideWhenEmpty />
+                                                    <DetailItem icon={Droplet} label="Blood Type" value={formData.bloodType} editMode={editMode} name="bloodType" onChange={handleChange} theme={theme} highlighted={highlightedChanges?.bloodType} hideWhenEmpty />
 
                                                     <div className="sm:col-span-2 space-y-3">
                                                         <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] mb-1 block">Positions</label>
@@ -1961,6 +2421,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                                     <IdolCard
                                                                         key={simIdol.id || `similar-${idx}`}
                                                                         idol={mergedIdol}
+                                                                        groups={groups}
                                                                         onLike={() => onLike(simIdol.id)}
                                                                         onClick={(clickedIdol) => {
                                                                             if (onIdolClick) {
@@ -1983,61 +2444,44 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
 
                                     {/* Discography Tab Content */}
                                     {!editMode && activeTab === 'discography' && (
-                                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                                                {(formData.albums || []).length > 0 ? (
-                                                    (formData.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
-                                                        <motion.div
-                                                            key={idx}
-                                                            whileHover={{ y: -8 }}
-                                                            onClick={() => setSelectedAlbum(album)}
-                                                            className={cn(
-                                                                "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
-                                                                theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
-                                                            )}
-                                                        >
+                                        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                            {(formData.albums || []).length > 0 ? (
+                                                (() => {
+                                                    const { albums, mini, singles, other } = groupAlbumsByType(formData.albums || []);
+                                                    const Card = ({ album, idx }) => (
+                                                        <motion.div key={idx} whileHover={{ y: -8 }} onClick={() => setSelectedAlbum(album)} className={cn("group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300", theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50")}>
                                                             <div className="aspect-square overflow-hidden relative bg-slate-100 dark:bg-slate-800">
-                                                                <img
-                                                                    src={convertDriveLink(album.cover)}
-                                                                    alt={album.title}
-                                                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2"
-                                                                    loading="lazy"
-                                                                />
+                                                                <img src={convertDriveLink(album.cover)} alt={album.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2" loading="lazy" />
                                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
                                                                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-50 group-hover:scale-100">
-                                                                    <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl">
-                                                                        <PlayCircle size={24} fill="currentColor" />
-                                                                    </div>
+                                                                    <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl"><PlayCircle size={24} fill="currentColor" /></div>
                                                                 </div>
-
-                                                                {album.date && (
-                                                                    <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
-                                                                        {new Date(album.date).getFullYear()}
-                                                                    </div>
-                                                                )}
+                                                                {album.date && <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">{new Date(album.date).getFullYear()}</div>}
                                                             </div>
-
                                                             <div className="p-3 relative">
-                                                                <h4 className={cn("font-bold text-xs leading-tight mb-1 line-clamp-1 group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-slate-200" : "text-slate-800")}>
-                                                                    {album.title}
-                                                                </h4>
+                                                                <h4 className={cn("font-bold text-xs leading-tight mb-1 line-clamp-1 group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-slate-200" : "text-slate-800")}>{album.title}</h4>
                                                                 <div className="flex items-center justify-between">
-                                                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
-                                                                        {album.tracks?.length || 0} Tracks
-                                                                    </p>
+                                                                    <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{album.tracks?.length || 0} Tracks</p>
                                                                     {album.youtube && <Youtube size={12} className="text-red-500" />}
                                                                 </div>
                                                             </div>
                                                         </motion.div>
-                                                    ))
-                                                ) : (
-                                                    <div className="col-span-full text-center py-10">
-                                                        <Disc size={32} className="mx-auto text-slate-300 mb-3 opacity-50" />
-                                                        <p className="text-sm text-slate-500 font-medium">No discography added yet.</p>
-                                                    </div>
-                                                )}
-                                            </div>
+                                                    );
+                                                    return (
+                                                        <>
+                                                            {albums.length > 0 && <div><h4 className={cn("text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-4 h-0.5 bg-brand-purple rounded-full" /> Albums</h4><div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{albums.map((a, i) => <Card key={i} album={a} idx={i} />)}</div></div>}
+                                                            {mini.length > 0 && <div><h4 className={cn("text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-4 h-0.5 bg-brand-purple/70 rounded-full" /> Mini Albums & EPs</h4><div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{mini.map((a, i) => <Card key={i} album={a} idx={i} />)}</div></div>}
+                                                            {singles.length > 0 && <div><h4 className={cn("text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-4 h-0.5 bg-brand-pink/70 rounded-full" /> Singles</h4><div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{singles.map((a, i) => <Card key={i} album={a} idx={i} />)}</div></div>}
+                                                            {other.length > 0 && <div><h4 className={cn("text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-4 h-0.5 bg-slate-400 rounded-full" /> Other</h4><div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{other.map((a, i) => <Card key={i} album={a} idx={i} />)}</div></div>}
+                                                        </>
+                                                    );
+                                                })()
+                                            ) : (
+                                                <div className="text-center py-10">
+                                                    <Disc size={32} className="mx-auto text-slate-300 mb-3 opacity-50" />
+                                                    <p className="text-sm text-slate-500 font-medium">No discography added yet.</p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
@@ -2061,9 +2505,12 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                                                     </div>
                                                     <div className="grid grid-cols-1 gap-3">
                                                         <input placeholder="Album Title" value={album.title || ''} onChange={e => handleAlbumChange(idx, 'title', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                        <div className="grid grid-cols-2 gap-3">
-                                                            <input type="date" value={album.date || ''} onChange={e => handleAlbumChange(idx, 'date', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                            <input placeholder="Cover URL" value={album.cover || ''} onChange={e => handleAlbumChange(idx, 'cover', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                            <DateSelect label="Date" value={album.date || ''} onChange={val => handleAlbumChange(idx, 'date', val)} theme={theme} />
+                                                            <div className="space-y-1.5">
+                                                                <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">Cover URL</label>
+                                                                <input placeholder="Cover URL" value={album.cover || ''} onChange={e => handleAlbumChange(idx, 'cover', e.target.value)} className={cn("w-full p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                            </div>
                                                         </div>
                                                         <input placeholder="YouTube Link" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("p-2 rounded-xl border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
                                                         <textarea
@@ -2508,6 +2955,21 @@ export function IdolModal({ isOpen, mode, idol, idols = [], onClose, onSave, onD
                 {...modalConfig}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
+
+            <YouTubeSearchModal
+                isOpen={showYouTubeSearchVideoIdx != null}
+                onClose={() => setShowYouTubeSearchVideoIdx(null)}
+                defaultQuery={formData?.name ? `${formData.name} ${(formData.videos?.[showYouTubeSearchVideoIdx]?.title || '')} MV`.trim() : ''}
+                onSelect={(url, item) => {
+                    if (showYouTubeSearchVideoIdx != null && url) {
+                        const newVideos = [...(formData.videos || [])];
+                        const v = newVideos[showYouTubeSearchVideoIdx] || {};
+                        newVideos[showYouTubeSearchVideoIdx] = { ...v, url, title: item?.title ?? v.title };
+                        setFormData(prev => ({ ...prev, videos: newVideos }));
+                    }
+                    setShowYouTubeSearchVideoIdx(null);
+                }}
+            />
         </AnimatePresence>,
         document.body
     );
@@ -2571,7 +3033,70 @@ function calculateZodiac(dateString) {
 
 
 
-function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick, highlighted, disableHoverEffect }) {
+function CompanySelect({ label, value, name, onChange, companies, editMode, theme, onClick, highlighted, hideWhenEmpty }) {
+    const inList = companies.some(c => c.name === value);
+    const selectValue = inList ? value : (value ? '__other__' : '');
+    const showOtherInput = selectValue === '__other__';
+    const displayName = value && companies.length
+        ? (companies.find(c => (c.nameLower || (c.name || '').toLowerCase().trim()) === (value || '').toLowerCase().trim())?.name ?? value)
+        : value;
+
+    if (!editMode && hideWhenEmpty && !value) return null;
+    const inputClass = cn("w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white [&>option]:bg-slate-900" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 [&>option]:bg-white", highlighted && "border-brand-pink/50 bg-brand-pink/5");
+
+    if (!editMode) {
+        return (
+            <div className={cn("group/detail p-2 rounded-xl transition-colors", highlighted && "bg-brand-pink/10 border border-brand-pink/20")}>
+                <p className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2 mb-1.5 opacity-80">
+                    <Building2 size={12} className="group-hover/detail:text-brand-pink transition-colors" />
+                    {label}
+                </p>
+                <div className="flex items-center gap-3">
+                    {onClick && value ? (
+                        <button type="button" onClick={onClick} className={cn("font-black text-base md:text-lg transition-colors hover:text-brand-pink hover:underline text-left flex items-center gap-2 cursor-pointer", theme === 'dark' ? "text-slate-100" : "text-slate-900")}>
+                            {displayName}
+                            <Search size={16} className="opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                        </button>
+                    ) : (
+                        <div className={cn("font-black text-base md:text-lg", theme === 'dark' ? "text-slate-100" : "text-slate-900")}>{displayName || '-'}</div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-2">
+            <label className="text-xs text-slate-500 uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                <Building2 size={12} />
+                {label}
+            </label>
+            <select
+                value={selectValue}
+                onChange={e => {
+                    const v = e.target.value;
+                    onChange({ target: { name, value: v === '__other__' ? '__other__' : v } });
+                }}
+                className={inputClass}
+            >
+                <option value="">None</option>
+                {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                <option value="__other__">Other (type manually)</option>
+            </select>
+            {showOtherInput && (
+                <input
+                    name={name}
+                    value={value === '__other__' ? '' : (value || '')}
+                    onChange={onChange}
+                    className={inputClass}
+                    placeholder="e.g. YG Entertainment"
+                />
+            )}
+        </div>
+    );
+}
+
+function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type = "text", theme, onAction, onClick, highlighted, disableHoverEffect, hideWhenEmpty }) {
     if (editMode) {
         return (
             <div className="space-y-2">
@@ -2589,6 +3114,8 @@ function DetailItem({ icon: Icon, label, value, editMode, onChange, name, type =
             </div>
         );
     }
+
+    if (hideWhenEmpty && !value) return null;
 
     return (
         <div className={cn("group/detail p-2 rounded-xl transition-colors", highlighted && "bg-brand-pink/10 border border-brand-pink/20")}>

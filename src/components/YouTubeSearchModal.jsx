@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, Loader2, Youtube, List } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useYouTubeSearch } from '../hooks/useYouTubeSearch';
-import { cn } from '../lib/utils';
+import { cn, restorePageScroll } from '../lib/utils';
 
 export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelect }) {
   const { theme } = useTheme();
@@ -18,19 +18,25 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
     }
   }, [isOpen, defaultQuery, clear]);
 
+  const restoreScroll = restorePageScroll;
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
     } else {
-      document.body.style.overflow = '';
+      restoreScroll();
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
+    return restoreScroll;
   }, [isOpen]);
 
-  const handleSelect = (url) => {
-    onSelect?.(url);
+  const handleSelect = (item) => {
+    restoreScroll();
+    onSelect?.(item?.url, item);
+    onClose?.();
+  };
+
+  const handleClose = () => {
+    restoreScroll();
     onClose?.();
   };
 
@@ -48,7 +54,7 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         />
         <motion.div
@@ -63,9 +69,9 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
         >
           <div className={cn('flex items-center justify-between p-4 border-b', theme === 'dark' ? 'border-white/10' : 'border-slate-200')}>
             <h3 className={cn('text-lg font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-              <Youtube size={20} className="text-red-500" /> ค้นหา YouTube
+              <Youtube size={20} className="text-red-500" /> Search YouTube
             </h3>
-            <button onClick={onClose} className={cn('p-2 rounded-xl transition-colors', theme === 'dark' ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-500')}>
+            <button onClick={handleClose} className={cn('p-2 rounded-xl transition-colors', theme === 'dark' ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-500')}>
               <X size={20} />
             </button>
           </div>
@@ -76,7 +82,7 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && search(query)}
-                placeholder="เช่น BLACKPINK KILL THIS LOVE playlist"
+                placeholder="e.g. BLACKPINK KILL THIS LOVE playlist"
                 className={cn(
                   'flex-1 px-4 py-3 rounded-xl border outline-none font-medium',
                   theme === 'dark' ? 'bg-slate-800/50 border-white/10 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400'
@@ -91,7 +97,7 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
                 )}
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
-                {loading ? 'กำลังค้นหา...' : 'ค้นหา'}
+                {loading ? 'Searching...' : 'Search'}
               </button>
             </div>
 
@@ -99,13 +105,13 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
 
             {allItems.length > 0 && (
               <div className="space-y-2">
-                <p className={cn('text-xs font-bold uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>เลือกคลิปหรือ Playlist</p>
+                <p className={cn('text-xs font-bold uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Select video or Playlist</p>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {allItems.map((item) => (
                     <button
                       key={`${item.type}-${item.id}`}
                       type="button"
-                      onClick={() => handleSelect(item.url)}
+                      onClick={() => handleSelect(item)}
                       className={cn(
                         'w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
                         theme === 'dark' ? 'border-white/10 bg-slate-800/30 hover:bg-slate-800/60' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
@@ -128,7 +134,7 @@ export function YouTubeSearchModal({ isOpen, onClose, defaultQuery = '', onSelec
             )}
 
             {!loading && allItems.length === 0 && !error && query && (
-              <p className={cn('text-sm text-center py-8', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>พิมพ์คำค้นแล้วกดค้นหา</p>
+              <p className={cn('text-sm text-center py-8', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Enter search term and click Search</p>
             )}
           </div>
         </motion.div>

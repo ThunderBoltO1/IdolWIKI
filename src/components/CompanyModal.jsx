@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Building2, MapPin, Calendar, Globe, Users, Edit2, Save, Upload, Info, Loader2, Image as ImageIcon, Facebook, Youtube, Instagram } from 'lucide-react';
+import { X, Building2, MapPin, Calendar, Globe, Users, UserCircle, Edit2, Save, Upload, Info, Loader2, Image as ImageIcon, Facebook, Youtube, Instagram } from 'lucide-react';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, query, where, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { compressImage, validateFile } from '../lib/upload';
 import { db, storage } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { cn } from '../lib/utils';
+import { cn, restorePageScroll } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { useToast } from './Toast';
+import { DateSelect } from './DateSelect';
 
 import { logAudit } from '../lib/audit';
-
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 const TiktokIcon = ({ size = 24, className }) => (
     <svg
@@ -48,7 +48,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         name: '',
         description: '',
         founded: '',
-        founders: '',
+        founders: [],
+        ceos: [],
         headquarters: '',
         website: '',
         facebook: '',
@@ -66,6 +67,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
     const [error, setError] = useState(null);
     const [allCompanies, setAllCompanies] = useState([]); // List for dropdown
     const [initialSubs, setInitialSubs] = useState([]); // To track initial subsidiaries for diffing
+    const [newFounderInput, setNewFounderInput] = useState('');
+    const [newCeoInput, setNewCeoInput] = useState('');
 
     // Fetch all companies for parent selector
     useEffect(() => {
@@ -93,7 +96,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     name: initialData.name || '',
                     description: initialData.description || '',
                     founded: initialData.founded || '',
-                    founders: initialData.founders || '',
+                    founders: Array.isArray(initialData.founders) ? initialData.founders : (initialData.founder ? [initialData.founder] : (typeof initialData.founders === 'string' && initialData.founders.trim() ? initialData.founders.split(/,|;|\/|และ|and/i).map(s => s.trim()).filter(Boolean) : [])),
+                    ceos: Array.isArray(initialData.ceos) ? initialData.ceos : (initialData.ceo ? [initialData.ceo] : (typeof initialData.ceo === 'string' && initialData.ceo.trim() ? [initialData.ceo.trim()] : [])),
                     headquarters: initialData.headquarters || '',
                     website: initialData.website || '',
                     facebook: initialData.facebook || '',
@@ -133,7 +137,8 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                     name: initialData?.name || '',
                     description: '',
                     founded: '',
-                    founders: '',
+                    founders: [],
+                    ceos: [],
                     headquarters: '',
                     website: '',
                     image: '',
@@ -162,9 +167,10 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
             return;
         }
 
-        // Validate file size
-        if (file.size > MAX_FILE_SIZE) {
-            toast.error('Image size must be less than 5MB');
+        try {
+            validateFile(file, 5);
+        } catch (e) {
+            toast.error(e.message);
             return;
         }
 
@@ -172,14 +178,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         setError(null);
 
         try {
-            // Create a unique filename
+            const compressed = await compressImage(file);
             const timestamp = Date.now();
             const sanitizedName = formData.name.replace(/[^a-zA-Z0-9]/g, '_') || 'company';
-            const filename = `${sanitizedName}_${timestamp}.${file.name.split('.').pop()}`;
+            const filename = `${sanitizedName}_${timestamp}.webp`;
 
-            // Upload to Firebase Storage
+            // Upload compressed WebP
             const storageRef = ref(storage, `companies/${filename}`);
-            await uploadBytes(storageRef, file);
+            await uploadBytes(storageRef, compressed);
 
             // Get download URL
             const downloadURL = await getDownloadURL(storageRef);
@@ -193,6 +199,7 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
             toast.error('Failed to upload image');
         } finally {
             setUploading(false);
+            restorePageScroll();
         }
     };
 
@@ -230,6 +237,38 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
         }));
     };
 
+    const handleAddFounder = (name) => {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        setFormData(prev => ({
+            ...prev,
+            founders: [...(prev.founders || []), trimmed]
+        }));
+    };
+
+    const handleRemoveFounder = (index) => {
+        setFormData(prev => ({
+            ...prev,
+            founders: (prev.founders || []).filter((_, i) => i !== index)
+        }));
+    };
+
+    const handleAddCeo = (name) => {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        setFormData(prev => ({
+            ...prev,
+            ceos: [...(prev.ceos || []), trimmed]
+        }));
+    };
+
+    const handleRemoveCeo = (index) => {
+        setFormData(prev => ({
+            ...prev,
+            ceos: (prev.ceos || []).filter((_, i) => i !== index)
+        }));
+    };
+
     const handleSave = async (e) => {
         e.preventDefault();
         if (!isAdmin) return;
@@ -243,15 +282,20 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
             const companyData = {
                 ...formData,
+                founders: formData.founders || [],
+                ceos: formData.ceos || [],
                 parentCompanyIds: formData.parentCompanyIds || [], // Save IDs
                 updatedAt: serverTimestamp()
             };
             delete companyData.parentCompany; // Remove legacy field if it exists
+            delete companyData.founder; // Use founders array only
+            delete companyData.ceo;    // Use ceos array only
             let companyId;
 
             if (initialData?.id && !initialData.isNew) {
                 // Update
                 const ref = doc(db, 'companies', initialData.id);
+                companyData.nameLower = (companyData.name || '').trim().toLowerCase();
                 await updateDoc(ref, companyData);
                 companyId = initialData.id;
 
@@ -265,14 +309,18 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
             } else {
                 // Create New
                 // Check if exists first (only for new, separate logic to avoid name collision)
-                const q = query(collection(db, 'companies'), where('name', '==', formData.name));
-                const snap = await getDocs(q);
-                if (!snap.empty) {
+                const nameLower = formData.name.trim().toLowerCase();
+                const qLower = query(collection(db, 'companies'), where('nameLower', '==', nameLower));
+                const snapLower = await getDocs(qLower);
+                const qExact = query(collection(db, 'companies'), where('name', '==', formData.name));
+                const snapExact = await getDocs(qExact);
+                if (!snapLower.empty || !snapExact.empty) {
                     throw new Error("A company with this name already exists.");
                 }
 
                 const docRef = await addDoc(collection(db, 'companies'), {
                     ...companyData,
+                    nameLower,
                     createdAt: serverTimestamp()
                 });
                 companyId = docRef.id;
@@ -426,8 +474,13 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                         <Loader2 className="text-brand-pink animate-spin" size={24} />
                                     ) : formData.image ? (
                                         <>
-                                            <img src={convertDriveLink(formData.image)} alt="Preview" className="w-full h-full object-cover" />
-                                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <img
+                                                src={convertDriveLink(formData.image)}
+                                                alt="Company"
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
+                                            />
+                                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                                                 <ImageIcon className="text-white" size={24} />
                                             </div>
                                         </>
@@ -473,129 +526,90 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Company Name</label>
-                                    <div className="relative">
-                                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                        <input
-                                            name="name"
-                                            value={formData.name}
-                                            onChange={handleChange}
-                                            placeholder="e.g. EDAM Entertainment"
-                                            className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
-                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                            )}
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><Building2 size={16} /></div>
+                                        <input name="name" value={formData.name} onChange={handleChange} placeholder="Company name"
+                                            className={cn("flex-1 min-w-0 py-3 pr-4 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none", theme === 'dark' ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400")}
                                         />
                                     </div>
                                 </div>
 
-                                <div className="space-y-2">
-                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Founded Date</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="relative">
-                                            <select
-                                                value={formData.founded ? new Date(formData.founded).getDate() : ''}
-                                                onChange={(e) => {
-                                                    const d = new Date(formData.founded || Date.now());
-                                                    d.setDate(parseInt(e.target.value));
-                                                    handleChange({ target: { name: 'founded', value: d.toISOString().split('T')[0] } });
-                                                }}
-                                                className={cn(
-                                                    "w-full p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none",
-                                                    theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                                )}
-                                            >
-                                                <option value="">Day</option>
-                                                {[...Array(31)].map((_, i) => (
-                                                    <option key={i + 1} value={i + 1}>{i + 1}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="relative">
-                                            <select
-                                                value={formData.founded ? new Date(formData.founded).getMonth() : ''}
-                                                onChange={(e) => {
-                                                    const d = new Date(formData.founded || Date.now());
-                                                    d.setMonth(parseInt(e.target.value));
-                                                    handleChange({ target: { name: 'founded', value: d.toISOString().split('T')[0] } });
-                                                }}
-                                                className={cn(
-                                                    "w-full p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none",
-                                                    theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                                )}
-                                            >
-                                                <option value="">Month</option>
-                                                {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => (
-                                                    <option key={i} value={i}>{m}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="relative">
-                                            <select
-                                                value={formData.founded ? new Date(formData.founded).getFullYear() : ''}
-                                                onChange={(e) => {
-                                                    const d = new Date(formData.founded || Date.now());
-                                                    d.setFullYear(parseInt(e.target.value));
-                                                    handleChange({ target: { name: 'founded', value: d.toISOString().split('T')[0] } });
-                                                }}
-                                                className={cn(
-                                                    "w-full p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none",
-                                                    theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                                )}
-                                            >
-                                                <option value="">Year</option>
-                                                {[...Array(100)].map((_, i) => {
-                                                    const y = new Date().getFullYear() - i;
-                                                    return <option key={y} value={y}>{y}</option>;
-                                                })}
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
+                                <DateSelect
+                                    label="Founded Date"
+                                    value={formData.founded}
+                                    onChange={val => handleChange({ target: { name: 'founded', value: val } })}
+                                    theme={theme}
+                                />
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Headquarters</label>
-                                    <div className="relative">
-                                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                        <input
-                                            name="headquarters"
-                                            value={formData.headquarters}
-                                            onChange={handleChange}
-                                            placeholder="e.g. Seoul, South Korea"
-                                            className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
-                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                            )}
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><MapPin size={16} /></div>
+                                        <input name="headquarters" value={formData.headquarters} onChange={handleChange} placeholder="e.g. City, Country"
+                                            className={cn("flex-1 min-w-0 py-3 pr-4 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none", theme === 'dark' ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400")}
                                         />
                                     </div>
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Founders/CEO</label>
-                                    <div className="relative">
-                                        <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Founder(s) / Co-founder(s)</label>
+                                    {(formData.founders || []).length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.founders || []).map((name, i) => (
+                                                <div key={i} className={cn("flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full text-xs font-bold border", theme === 'dark' ? "bg-brand-purple/10 border-brand-purple/20 text-brand-purple" : "bg-brand-purple/5 border-brand-purple/20 text-brand-purple")}>
+                                                    <span>{name}</span>
+                                                    <button type="button" onClick={() => handleRemoveFounder(i)} className="p-1 hover:bg-black/10 rounded-full transition-colors"><X size={12} /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><Users size={16} /></div>
                                         <input
-                                            name="founders"
-                                            value={formData.founders}
-                                            onChange={handleChange}
-                                            placeholder="e.g. Bae Jong-han"
-                                            className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
-                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
-                                            )}
+                                            value={newFounderInput}
+                                            onChange={e => setNewFounderInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddFounder(newFounderInput); setNewFounderInput(''); } }}
+                                            placeholder="Founder / Co-founder name"
+                                            className={cn("flex-1 min-w-0 py-3 pr-4 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none", theme === 'dark' ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400")}
                                         />
+                                        <button type="button" onClick={() => { handleAddFounder(newFounderInput); setNewFounderInput(''); }} className="shrink-0 pr-3 py-2 text-brand-purple font-black text-xs uppercase hover:opacity-80">Add</button>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">CEO</label>
+                                    {(formData.ceos || []).length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.ceos || []).map((name, i) => (
+                                                <div key={i} className={cn("flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full text-xs font-bold border", theme === 'dark' ? "bg-brand-pink/10 border-brand-pink/20 text-brand-pink" : "bg-brand-pink/5 border-brand-pink/20 text-brand-pink")}>
+                                                    <span>{name}</span>
+                                                    <button type="button" onClick={() => handleRemoveCeo(i)} className="p-1 hover:bg-black/10 rounded-full transition-colors"><X size={12} /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><UserCircle size={16} /></div>
+                                        <input
+                                            value={newCeoInput}
+                                            onChange={e => setNewCeoInput(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddCeo(newCeoInput); setNewCeoInput(''); } }}
+                                            placeholder="CEO name"
+                                            className={cn("flex-1 min-w-0 py-3 pr-4 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none", theme === 'dark' ? "text-white placeholder:text-slate-500" : "text-slate-900 placeholder:text-slate-400")}
+                                        />
+                                        <button type="button" onClick={() => { handleAddCeo(newCeoInput); setNewCeoInput(''); }} className="shrink-0 pr-3 py-2 text-brand-pink font-black text-xs uppercase hover:opacity-80">Add</button>
                                     </div>
                                 </div>
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Parent Companies (Optional)</label>
-                                    <div className="relative">
-                                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><Building2 size={16} /></div>
                                         <select
                                             value="" // Reset after selection
                                             onChange={handleAddParent}
                                             className={cn(
-                                                "w-full pl-10 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none cursor-pointer",
-                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                                "flex-1 min-w-0 py-3 pr-4 pl-0 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none appearance-none cursor-pointer",
+                                                theme === 'dark' ? "text-white [&>option]:bg-slate-800" : "text-slate-900 [&>option]:bg-slate-50"
                                             )}
                                         >
                                             <option value="" disabled>Select parent companies...</option>
@@ -635,14 +649,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
 
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Subsidiaries (Child Companies)</label>
-                                    <div className="relative">
-                                        <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                    <div className={cn("flex items-center gap-2 rounded-xl border overflow-hidden focus-within:ring-2 focus-within:ring-brand-pink focus-within:border-transparent", theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200")}>
+                                        <div className="pl-3 shrink-0 text-slate-400"><Building2 size={16} /></div>
                                         <select
                                             value=""
                                             onChange={handleAddSubsidiary}
                                             className={cn(
-                                                "w-full pl-10 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all appearance-none cursor-pointer",
-                                                theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                                                "flex-1 min-w-0 py-3 pr-4 pl-0 bg-transparent border-0 text-sm font-bold focus:ring-0 focus:outline-none appearance-none cursor-pointer",
+                                                theme === 'dark' ? "text-white [&>option]:bg-slate-800" : "text-slate-900 [&>option]:bg-slate-50"
                                             )}
                                         >
                                             <option value="" disabled>Add subsidiary company...</option>
@@ -685,14 +699,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Website</label>
                                     <div className="relative">
-                                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="website"
                                             value={formData.website}
                                             onChange={handleChange}
                                             placeholder="https://..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />
@@ -702,14 +716,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Facebook</label>
                                     <div className="relative">
-                                        <Facebook className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <Facebook className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="facebook"
                                             value={formData.facebook}
                                             onChange={handleChange}
                                             placeholder="https://facebook.com/..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />
@@ -719,14 +733,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">Instagram</label>
                                     <div className="relative">
-                                        <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <Instagram className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="instagram"
                                             value={formData.instagram}
                                             onChange={handleChange}
                                             placeholder="https://instagram.com/..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />
@@ -736,14 +750,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">X (Twitter)</label>
                                     <div className="relative">
-                                        <XIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <XIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="twitter"
                                             value={formData.twitter}
                                             onChange={handleChange}
                                             placeholder="https://x.com/..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />
@@ -753,14 +767,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">YouTube</label>
                                     <div className="relative">
-                                        <Youtube className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <Youtube className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="youtube"
                                             value={formData.youtube}
                                             onChange={handleChange}
                                             placeholder="https://youtube.com/..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />
@@ -770,14 +784,14 @@ export function CompanyModal({ isOpen, onClose, initialData, onSave }) {
                                 <div className="space-y-2 md:col-span-2">
                                     <label className="text-xs font-bold uppercase text-slate-500 tracking-wider">TikTok</label>
                                     <div className="relative">
-                                        <TiktokIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                        <TiktokIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none select-none" size={16} />
                                         <input
                                             name="tiktok"
                                             value={formData.tiktok}
                                             onChange={handleChange}
                                             placeholder="https://tiktok.com/@..."
                                             className={cn(
-                                                "w-full pl-14 p-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
+                                                "w-full pl-14 pr-4 py-3 rounded-xl border text-sm font-bold focus:ring-2 focus:ring-brand-pink focus:border-transparent outline-none transition-all",
                                                 theme === 'dark' ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
                                             )}
                                         />

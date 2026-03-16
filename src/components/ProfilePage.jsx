@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { User, Globe, Save, ArrowLeft, CheckCircle2, Mail, Info, Loader2, Trash2, Upload, RotateCcw, Settings, Facebook, Youtube, Instagram, Star, Music } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, restorePageScroll } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
+import { useToast } from './Toast';
 import { BackgroundShapes } from './BackgroundShapes';
 import { IdolCard } from './IdolCard';
 
@@ -21,9 +22,10 @@ const TiktokIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-export const ProfilePage = ({ onBack, idols = [], onSelectIdol, onFavoriteIdol, onEditIdol }) => {
+export const ProfilePage = ({ onBack, idols = [], groups = [], onSelectIdol, onFavoriteIdol, onEditIdol }) => {
     const { user, updateUser } = useAuth();
     const { theme } = useTheme();
+    const toast = useToast();
     const [formData, setFormData] = useState({
         name: user?.name || '',
         avatar: user?.avatar || '',
@@ -81,7 +83,7 @@ export const ProfilePage = ({ onBack, idols = [], onSelectIdol, onFavoriteIdol, 
         try {
             validateFile(file, 5);
         } catch (error) {
-            alert(error.message);
+            toast.error(error.message);
             return;
         }
 
@@ -92,10 +94,11 @@ export const ProfilePage = ({ onBack, idols = [], onSelectIdol, onFavoriteIdol, 
             setFormData(prev => ({ ...prev, avatar: url }));
         } catch (error) {
             console.error("Upload failed", error);
-            alert(error?.message || "Failed to upload image");
+            toast.error(error?.message || "Failed to upload image");
         } finally {
             setIsUploading(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -227,6 +230,7 @@ export const ProfilePage = ({ onBack, idols = [], onSelectIdol, onFavoriteIdol, 
                                     <IdolCard
                                         key={idol.id}
                                         idol={idol}
+                                        groups={groups}
                                         onClick={onSelectIdol}
                                         onLike={onFavoriteIdol}
                                         onEdit={onEditIdol}

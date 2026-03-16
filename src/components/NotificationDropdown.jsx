@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Check, AlertCircle, Heart, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, writeBatch, deleteDoc } from 'firebase/firestore';
@@ -11,6 +12,7 @@ import { db } from '../lib/firebase';
 export function NotificationDropdown({ onNotificationClick }) {
     const { user } = useAuth();
     const { theme } = useTheme();
+    const t = useTranslation();
     const [notifications, setNotifications] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef(null);
@@ -194,14 +196,14 @@ export function NotificationDropdown({ onNotificationClick }) {
                             theme === 'dark' ? "border-white/5 bg-slate-950/50" : "border-slate-100 bg-slate-50/50"
                         )}>
                             <h3 className={cn("font-black text-sm uppercase tracking-widest", theme === 'dark' ? "text-white" : "text-slate-900")}>
-                                Notifications
+                                {t('notifications.title')}
                             </h3>
                             {unreadCount > 0 && (
                                 <button
                                     onClick={handleMarkAllAsRead}
                                     className="text-xs font-bold text-brand-pink hover:underline flex items-center gap-1"
                                 >
-                                    <Check size={12} /> Mark all read
+                                    <Check size={12} /> {t('notifications.markAllRead')}
                                 </button>
                             )}
                         </div>
@@ -210,7 +212,7 @@ export function NotificationDropdown({ onNotificationClick }) {
                             {groupedNotifications.length === 0 ? (
                                 <div className="p-8 text-center"> 
                                     <Bell size={32} className="mx-auto mb-3 text-slate-300 opacity-50" />
-                                    <p className="text-xs font-bold text-slate-400">No notifications yet</p>
+                                    <p className="text-xs font-bold text-slate-400">{t('notifications.noNotifications')}</p>
                                 </div>
                             ) : (
                                 groupedNotifications.map(notification => (

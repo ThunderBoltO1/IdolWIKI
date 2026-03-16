@@ -100,6 +100,7 @@ export const FavoritesPage = ({ idols, groups, onBack, onSelectIdol, onSelectGro
                                     <IdolCard
                                         key={idol.id}
                                         idol={idol}
+                                        groups={groups}
                                         onClick={onSelectIdol}
                                         onLike={onFavoriteIdol} // onLike is the prop for favoriting
                                     />

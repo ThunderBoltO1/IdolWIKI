@@ -87,7 +87,21 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
                 transition={{ duration: 0.5 }}
                 src={convertDriveLink(group.coverImage || group.image, 600)}
                 alt={group.name}
-                className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                className="absolute inset-0 w-full h-full transition-transform duration-1000 group-hover:scale-110"
+                style={(() => {
+                    const pos = group.coverImagePosition || group.imagePosition;
+                    const x = pos?.x ?? 50;
+                    const y = pos?.y ?? 50;
+                    const scale = group.coverImageScale ?? group.imageScale ?? 1;
+                    const fit = group.coverImageFit ?? group.imageFit ?? 'cover';
+                    const styles = { objectFit: fit };
+                    if (pos) styles.objectPosition = `${x}% ${y}%`;
+                    if (scale !== 1) {
+                        styles.transform = `scale(${scale})`;
+                        styles.transformOrigin = `${x}% ${y}%`;
+                    }
+                    return styles;
+                })()}
                 loading="lazy"
                 decoding="async"
                 onLoad={() => setImageLoaded(true)}
@@ -101,8 +115,8 @@ export function GroupCard({ group, onClick, onFavorite, searchTerm }) {
                     : "from-black/90 via-black/20 to-transparent opacity-80 group-hover:opacity-60"
             )} />
 
-            {/* Content */}
-            <div className="absolute inset-0 p-6 md:p-8 flex flex-col justify-end translate-z-10 mt-10">
+            {/* Content - pb-2 md:pb-3 ลดระยะจากขอบล่างให้ชื่ออยู่ต่ำลง (ปรับ pb- ได้ตามต้องการ) */}
+            <div className="absolute inset-0 px-6 pt-6 pb-2 md:px-8 md:pt-8 md:pb-3 flex flex-col justify-end translate-z-10 mt-10">
                 <div className="space-y-2">
                     <motion.p className="text-brand-pink font-black text-xs tracking-[0.3em] uppercase mb-1 truncate">
                         <Highlight text={group.company} highlight={searchTerm} />

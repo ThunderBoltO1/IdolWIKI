@@ -1,77 +1,25 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 import { ArrowLeft, Users, LayoutDashboard, Building2, FileText, Trophy, History, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { BackgroundShapes } from './BackgroundShapes';
 
 export function AdminManagement({ onBack }) {
     const { theme } = useTheme();
+    const t = useTranslation();
     const navigate = useNavigate();
 
-    const adminOptions = [
-        {
-            title: 'Dashboard',
-            description: 'System overview, statistics & analytics',
-            icon: LayoutDashboard,
-            color: 'text-blue-500',
-            bg: 'bg-blue-500/10',
-            borderColor: 'border-blue-500/20',
-            gradient: 'from-blue-500/5',
-            onClick: () => navigate('/admin/dashboard')
-        },
-        {
-            title: 'User Management',
-            description: 'Manage users, roles & permissions',
-            icon: Users,
-            color: 'text-green-500',
-            bg: 'bg-green-500/10',
-            borderColor: 'border-green-500/20',
-            gradient: 'from-green-500/5',
-            onClick: () => navigate('/admin/users')
-        },
-        {
-            title: 'Company Management',
-            description: 'Manage companies & agencies',
-            icon: Building2,
-            color: 'text-purple-500',
-            bg: 'bg-purple-500/10',
-            borderColor: 'border-purple-500/20',
-            gradient: 'from-purple-500/5',
-            onClick: () => navigate('/admin/companies')
-        },
-        {
-            title: 'Pending Submissions',
-            description: 'Review & approve user submissions',
-            icon: FileText,
-            color: 'text-orange-500',
-            bg: 'bg-orange-500/10',
-            borderColor: 'border-orange-500/20',
-            gradient: 'from-orange-500/5',
-            onClick: () => navigate('/admin/submissions')
-        },
-        {
-            title: 'Award Management',
-            description: 'Manage awards & achievements',
-            icon: Trophy,
-            color: 'text-yellow-500',
-            bg: 'bg-yellow-500/10',
-            borderColor: 'border-yellow-500/20',
-            gradient: 'from-yellow-500/5',
-            onClick: () => navigate('/admin/awards')
-        },
-        {
-            title: 'Audit Logs',
-            description: 'View system activity & changes',
-            icon: History,
-            color: 'text-cyan-500',
-            bg: 'bg-cyan-500/10',
-            borderColor: 'border-cyan-500/20',
-            gradient: 'from-cyan-500/5',
-            onClick: () => navigate('/admin/audit-logs')
-        }
-    ];
+    const adminOptions = useMemo(() => [
+        { titleKey: 'admin.dashboard', descKey: 'admin.dashboardDesc', icon: LayoutDashboard, color: 'text-blue-500', bg: 'bg-blue-500/10', borderColor: 'border-blue-500/20', gradient: 'from-blue-500/5', onClick: () => navigate('/admin/dashboard') },
+        { titleKey: 'admin.userManagement', descKey: 'admin.userManagementDesc', icon: Users, color: 'text-green-500', bg: 'bg-green-500/10', borderColor: 'border-green-500/20', gradient: 'from-green-500/5', onClick: () => navigate('/admin/users') },
+        { titleKey: 'admin.companyManagement', descKey: 'admin.companyManagementDesc', icon: Building2, color: 'text-purple-500', bg: 'bg-purple-500/10', borderColor: 'border-purple-500/20', gradient: 'from-purple-500/5', onClick: () => navigate('/admin/companies') },
+        { titleKey: 'admin.pendingSubmissions', descKey: 'admin.pendingSubmissionsDesc', icon: FileText, color: 'text-orange-500', bg: 'bg-orange-500/10', borderColor: 'border-orange-500/20', gradient: 'from-orange-500/5', onClick: () => navigate('/admin/submissions') },
+        { titleKey: 'admin.awardManagement', descKey: 'admin.awardManagementDesc', icon: Trophy, color: 'text-yellow-500', bg: 'bg-yellow-500/10', borderColor: 'border-yellow-500/20', gradient: 'from-yellow-500/5', onClick: () => navigate('/admin/awards') },
+        { titleKey: 'admin.auditLogs', descKey: 'admin.auditLogsDesc', icon: History, color: 'text-cyan-500', bg: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20', gradient: 'from-cyan-500/5', onClick: () => navigate('/admin/audit-logs') }
+    ], [navigate]);
 
     return (
         <div className="container mx-auto px-4 py-8 min-h-screen max-w-7xl">
@@ -97,13 +45,13 @@ export function AdminManagement({ onBack }) {
                             theme === 'dark' ? "text-white" : "text-slate-900"
                         )}>
                             <Settings className="text-brand-pink" size={32} />
-                            Admin Management
+                            {t('admin.title')}
                         </h1>
                         <p className={cn(
                             "text-sm font-medium mt-1",
                             theme === 'dark' ? "text-slate-400" : "text-slate-500"
                         )}>
-                            Manage and configure system settings
+                            {t('admin.subtitle')}
                         </p>
                     </div>
                 </div>
@@ -113,7 +61,7 @@ export function AdminManagement({ onBack }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {adminOptions.map((option, index) => (
                     <motion.button
-                        key={option.title}
+                        key={option.titleKey}
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.1 }}
@@ -154,7 +102,7 @@ export function AdminManagement({ onBack }) {
                                 "text-xl font-black mb-2 transition-colors",
                                 theme === 'dark' ? "text-white" : "text-slate-900"
                             )}>
-                                {option.title}
+                                {t(option.titleKey)}
                             </h3>
 
                             {/* Description */}
@@ -162,7 +110,7 @@ export function AdminManagement({ onBack }) {
                                 "text-sm font-medium",
                                 theme === 'dark' ? "text-slate-400" : "text-slate-500"
                             )}>
-                                {option.description}
+                                {t(option.descKey)}
                             </p>
 
                             {/* Arrow Indicator */}
@@ -170,7 +118,7 @@ export function AdminManagement({ onBack }) {
                                 "mt-4 flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-transform group-hover:translate-x-2",
                                 option.color
                             )}>
-                                Open
+                                {t('admin.open')}
                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                 </svg>

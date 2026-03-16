@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronDown, TrendingUp, Users, Star, LayoutGrid, Music, ZoomIn, ZoomOut, Sparkles, Loader2, X, Calendar, Globe, Building2, Share2, Check, RotateCcw, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { IdolCard } from './IdolCard';
 import { GroupCard } from './GroupCard';
@@ -12,6 +13,7 @@ import { SectionErrorBoundary } from './SectionErrorBoundary';
 
 export function GroupSelection({ groups, idols, companies, selectedCompany, onSelectCompany, onSelectGroup, onSelectIdol, onLikeIdol, onFavoriteGroup, loading, searchTerm, onSearchPosition, onEditIdol }) {
     const { theme } = useTheme();
+    const t = useTranslation();
     const [viewMode, setViewMode] = useState('all'); // 'all', 'groups', 'soloists'
     const [cardSize, setCardSize] = useState(300);
     const [visibleCount, setVisibleCount] = useState(12);
@@ -169,9 +171,9 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                         theme === 'dark' ? "text-white" : "text-slate-900"
                     )}
                 >
-                    Discover Your <br />
+                    {t('home.heroTitle1')} <br />
                     <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-pink via-brand-purple to-brand-blue animate-gradient bg-[length:200%_auto]">
-                        K-Pop Destiny
+                        {t('home.heroTitle2')}
                     </span>
                 </motion.h1>
 
@@ -184,7 +186,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                         theme === 'dark' ? "text-slate-400" : "text-slate-600"
                     )}
                 >
-                    Experience the next generation of idol discovery. Seamlessly browse, interact, and stay updated with your favorite artists.
+                    {t('home.heroSubtitle')}
                 </motion.p>
 
             </section>
@@ -201,9 +203,9 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                             className="flex justify-center md:justify-start gap-2 w-full md:w-auto"
                         >
                             {[
-                                { id: 'all', label: 'All', icon: LayoutGrid },
-                                { id: 'groups', label: 'Groups', icon: Users },
-                                { id: 'soloists', label: 'Soloists', icon: Music }
+                                { id: 'all', label: t('home.all'), icon: LayoutGrid },
+                                { id: 'groups', label: t('home.groups'), icon: Users },
+                                { id: 'soloists', label: t('home.soloists'), icon: Music }
                             ].map((mode) => (
                                 <button
                                     key={mode.id}
@@ -246,7 +248,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                             >
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     {selectedCompany ? <Building2 size={16} className="text-brand-pink shrink-0" /> : <Globe size={16} className="text-slate-400 shrink-0" />}
-                                    <span className="text-xs font-black uppercase tracking-widest truncate">{selectedCompany || "All Companies"}</span>
+                                    <span className="text-xs font-black uppercase tracking-widest truncate">{selectedCompany || t('home.allCompanies')}</span>
                                 </div>
                                 <ChevronDown size={16} className={cn("transition-transform shrink-0 ml-2", isCompanyDropdownOpen ? "rotate-180" : "")} />
                             </button>
@@ -272,7 +274,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                                         type="text"
                                                         value={companySearch}
                                                         onChange={(e) => setCompanySearch(e.target.value)}
-                                                        placeholder="Search company..."
+                                                        placeholder={t('home.searchCompany')}
                                                         className={cn(
                                                             "w-full pl-9 pr-8 py-2 rounded-lg text-xs font-bold outline-none transition-colors",
                                                             theme === 'dark' ? "bg-slate-800 text-white placeholder:text-slate-500 focus:bg-slate-700" : "bg-slate-100 text-slate-900 placeholder:text-slate-400 focus:bg-slate-200"
@@ -377,7 +379,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                     theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
                                 )}
                             >
-                                <option value="">Year</option>
+                                <option value="">{t('home.year')}</option>
                                 {debutYears.map(year => (
                                     <option key={year} value={year}>{year}</option>
                                 ))}
@@ -391,7 +393,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                     theme === 'dark' ? "bg-slate-900 border-white/10 text-slate-500 hover:text-white hover:border-white/20" : "bg-white border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-300"
                                 )}
                             >
-                                <option value="name_asc">A-Z</option>
+                                <option value="name_asc">{t('home.aToZ')}</option>
                                 <option value="name_desc">Z-A</option>
                                 <option value="debut_desc">Newest</option>
                                 <option value="debut_asc">Oldest</option>
@@ -433,7 +435,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                     <>
                         {/* Groups Section */}
                         {(viewMode === 'all' || viewMode === 'groups') && visibleItems.some(i => i._type === 'group') && (
-                            <SectionErrorBoundary sectionName="รายการวง">
+                            <SectionErrorBoundary sectionName="Groups list">
                             <section className="space-y-6">
                                 {viewMode === 'all' && (
                                     <motion.div
@@ -455,10 +457,10 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                                     "text-3xl md:text-4xl font-black tracking-tight",
                                                     theme === 'dark' ? "text-white" : "text-slate-900"
                                                 )}>
-                                                    Groups
+                                                    {t('home.groupsSection')}
                                                 </h2>
                                                 <p className="text-sm font-bold text-brand-purple uppercase tracking-widest">
-                                                    {visibleItems.filter(i => i._type === 'group').length} {visibleItems.filter(i => i._type === 'group').length === 1 ? 'Group' : 'Groups'}
+                                                    {visibleItems.filter(i => i._type === 'group').length} {visibleItems.filter(i => i._type === 'group').length === 1 ? t('home.group') : t('home.groupsCount')}
                                                 </p>
                                             </div>
                                         </div>
@@ -488,7 +490,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
 
                         {/* Solo Artists Section */}
                         {(viewMode === 'all' || viewMode === 'soloists') && visibleItems.some(i => i._type === 'idol') && (
-                            <SectionErrorBoundary sectionName="ศิลปินเดี่ยว">
+                            <SectionErrorBoundary sectionName="Solo artists">
                             <section className="space-y-6">
                                 {viewMode === 'all' && (
                                     <motion.div
@@ -510,10 +512,10 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                                     "text-3xl md:text-4xl font-black tracking-tight",
                                                     theme === 'dark' ? "text-white" : "text-slate-900"
                                                 )}>
-                                                    Solo Artists
+                                                    {t('home.soloArtistsSection')}
                                                 </h2>
                                                 <p className="text-sm font-bold text-brand-pink uppercase tracking-widest">
-                                                    {visibleItems.filter(i => i._type === 'idol').length} {visibleItems.filter(i => i._type === 'idol').length === 1 ? 'Artist' : 'Artists'}
+                                                    {visibleItems.filter(i => i._type === 'idol').length} {visibleItems.filter(i => i._type === 'idol').length === 1 ? t('home.artist') : t('home.artists')}
                                                 </p>
                                             </div>
                                         </div>
@@ -531,6 +533,7 @@ export function GroupSelection({ groups, idols, companies, selectedCompany, onSe
                                                     key={item.id}
                                                     idol={item}
                                                     searchTerm={searchTerm}
+                                                    groups={groups}
                                                     onLike={onLikeIdol}
                                                     onClick={onSelectIdol}
                                                     onQuickView={setQuickViewIdol}

@@ -1,19 +1,21 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { Loader2 } from 'lucide-react';
 import { ConfirmationModal } from './components/ConfirmationModal';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { LanguageProvider } from './context/LanguageContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { collection, onSnapshot, doc, addDoc, updateDoc, deleteDoc, arrayUnion, arrayRemove, serverTimestamp, writeBatch, setDoc, Timestamp, getDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { cn } from './lib/utils';
-import { submitPendingIdol, submitPendingGroup, submitEditRequest } from './lib/pendingSubmissions';
+import { submitPendingIdol, submitPendingGroup, submitEditRequest, submitDeleteRequest } from './lib/pendingSubmissions';
 import { logAudit } from './lib/audit';
-import { ToastProvider } from './components/Toast';
+import { ToastProvider, useToast } from './components/Toast';
 import { HelmetProvider } from 'react-helmet-async';
 
 // Lazy load components for better performance (Code Splitting)
@@ -26,6 +28,7 @@ const ForgotPasswordPage = React.lazy(() => import('./components/ForgotPasswordP
 const ProfilePage = React.lazy(() => import('./components/ProfilePage').then(module => ({ default: module.ProfilePage })));
 const FavoritesPage = React.lazy(() => import('./components/FavoritesPage').then(module => ({ default: module.FavoritesPage })));
 const IdolDetailPage = React.lazy(() => import('./components/IdolDetailPage').then(module => ({ default: module.IdolDetailPage })));
+const IdolBiographyPage = React.lazy(() => import('./components/IdolBiographyPage').then(module => ({ default: module.IdolBiographyPage })));
 const PublicProfilePage = React.lazy(() => import('./components/PublicProfilePage').then(module => ({ default: module.PublicProfilePage })));
 const AdminManagement = React.lazy(() => import('./components/AdminManagement').then(module => ({ default: module.AdminManagement })));
 const AdminUserManagement = React.lazy(() => import('./components/AdminUserManagement').then(module => ({ default: module.AdminUserManagement })));
@@ -73,10 +76,12 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, isAdmin, logout } = useAuth();
+  const toast = useToast();
 
   const [_error, setError] = useState(null);
   const [rawIdols, setRawIdols] = useState([]);
   const [rawGroups, setRawGroups] = useState([]);
+  const [rawCompanies, setRawCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -156,9 +161,22 @@ function AppContent() {
     };
   }, []);
 
+  useEffect(() => {
+    const unsubCompanies = onSnapshot(collection(db, 'companies'),
+      (snap) => {
+        const data = snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setRawCompanies(data);
+      },
+      () => setRawCompanies([])
+    );
+    return () => unsubCompanies();
+  }, []);
+
+  const companies = useMemo(() => rawCompanies.filter(c => !c.deleted && !c.pendingDeletion), [rawCompanies]);
+
   const groups = useMemo(() => {
     return rawGroups
-      .filter(g => !g.deleted)
+      .filter(g => !g.deleted && !g.pendingDeletion)
       .map(group => ({
         ...group,
         isFavorite: user ? (group.favoritedBy || []).includes(user.uid) : false
@@ -168,7 +186,7 @@ function AppContent() {
   const idols = useMemo(() => {
     const groupMap = new Map(rawGroups.map(g => [g.id, g]));
     return rawIdols
-      .filter(i => !i.deleted)
+      .filter(i => !i.deleted && !i.pendingDeletion)
       .map(idol => ({
         ...idol,
         isFavorite: user ? (idol.favoritedBy || []).includes(user.uid) : false,
@@ -244,6 +262,7 @@ function AppContent() {
 
       await setDoc(groupRef, {
         ...restGroupData,
+        companyLower: (restGroupData.company || '').trim().toLowerCase(),
         createdAt: new Date().toISOString(),
         members: memberIds || []
       });
@@ -302,10 +321,19 @@ function AppContent() {
 
   const handleSave = async (idolData) => {
     try {
+      let data = { ...idolData };
+      if (!data.company && groups?.length) {
+        const g = data.groupId
+          ? groups.find(gr => gr.id === data.groupId)
+          : groups.find(gr => (gr.name || '').toLowerCase() === (data.group || '').trim().toLowerCase());
+        if (g?.company) data.company = g.company;
+      }
       const timestamp = new Date().toISOString();
       if (modalMode === 'create') {
         const newIdol = {
-          ...idolData,
+          ...data,
+          companyLower: (data.company || '').trim().toLowerCase(),
+          soloCompanyLower: (data.soloCompany || '').trim().toLowerCase(),
           likes: 0,
           isFavorite: false,
           createdAt: timestamp,
@@ -406,9 +434,9 @@ function AppContent() {
 
         const changes = {};
         let hasChanges = false;
-        Object.keys(idolData).forEach(key => {
+        Object.keys(data).forEach(key => {
           if (['id', 'createdAt', 'updatedAt', 'likes', 'isFavorite'].includes(key)) return;
-          const newValue = idolData[key];
+          const newValue = data[key];
           const oldValue = selectedIdol[key];
           if (JSON.stringify(newValue) !== JSON.stringify(oldValue)) {
             changes[key] = { from: oldValue ?? null, to: newValue };
@@ -416,7 +444,17 @@ function AppContent() {
           }
         });
 
-        await updateDoc(idolRef, { ...idolData, updatedAt: timestamp });
+        // Firestore ไม่รับ undefined — เอา key ที่ value เป็น undefined ออก
+        const payload = {
+          ...data,
+          companyLower: (data.company || '').trim().toLowerCase(),
+          soloCompanyLower: (data.soloCompany || '').trim().toLowerCase(),
+          updatedAt: timestamp
+        };
+        Object.keys(payload).forEach((k) => {
+          if (payload[k] === undefined) delete payload[k];
+        });
+        await updateDoc(idolRef, payload);
 
         try {
           if (hasChanges && user) {
@@ -457,39 +495,30 @@ function AppContent() {
   };
 
   const handleDelete = async (id) => {
+    const idol = idols.find(i => i.id === id) || selectedIdol;
+    const name = idol?.name || 'Idol';
     setConfirmModal({
       isOpen: true,
-      title: 'Delete Idol',
-      message: 'Are you sure you want to delete this idol? This will move it to trash and permanent deletion will occur in 7 days.',
-      confirmText: 'Delete',
+      title: 'ส่งคำขอลบศิลปิน',
+      message: `ส่งคำขอลบ "${name}" ใช่หรือไม่? รายการจะหายจากหน้ารายการและรอการอนุมัติจากแอดมิน (ต้องใส่รหัสผ่านเพื่อยืนยันการลบ)`,
+      confirmText: 'ส่งคำขอ',
       type: 'danger',
-      onConfirm: async () => {
+      showReasonInput: true,
+      reasonValue: '',
+      onReasonChange: (v) => setConfirmModal(prev => ({ ...prev, reasonValue: v })),
+      onConfirm: async (reason) => {
         try {
-          const expireDate = new Date();
-          expireDate.setDate(expireDate.getDate() + 7);
-
-          const idolRef = doc(db, 'idols', id);
-          await updateDoc(idolRef, {
-            deleted: true,
-            deletedAt: serverTimestamp(),
-            expireAt: Timestamp.fromDate(expireDate)
-          });
-
-          if (user) {
-            await logAudit({
-              action: 'delete',
-              targetType: 'idol',
-              targetId: id,
-              user: user,
-              details: { type: 'soft-delete' }
-            });
+          const result = await submitDeleteRequest('idol', id, name, user, reason);
+          if (result.success) {
+            setModalOpen(false);
+            toast.success('ส่งคำขอลบแล้ว รอการอนุมัติจากแอดมิน');
+            if (isAdmin) navigate('/admin/submissions?tab=deletions');
+          } else {
+            toast.error(result.error || 'ส่งคำขอลบไม่สำเร็จ');
           }
-
-          setModalOpen(false);
-          // Force refresh or optimistic update might be handled by Firestore listener
         } catch (err) {
-          console.error("Delete error:", err);
-          alert("Failed to delete idol");
+          console.error("Delete request error:", err);
+          toast.error(err?.message || 'ส่งคำขอลบไม่สำเร็จ');
         }
       }
     });
@@ -561,7 +590,11 @@ function AppContent() {
   const handleUpdateGroup = async (groupId, data) => {
     try {
       const groupRef = doc(db, 'groups', groupId);
-      await updateDoc(groupRef, data);
+      const updateData = {
+        ...data,
+        ...(data.company !== undefined && { companyLower: (data.company || '').trim().toLowerCase() })
+      };
+      await updateDoc(groupRef, updateData);
 
       if (user) {
         // Calculate changes if possible, or just log the update
@@ -598,49 +631,34 @@ function AppContent() {
 
   const handleDeleteGroup = async (groupId) => {
     if (!isAdmin) return;
+    const group = groups.find(g => g.id === groupId);
+    const name = group?.name || 'Group';
     setConfirmModal({
       isOpen: true,
-      title: 'Delete Group',
-      message: 'Are you sure you want to delete this group? This will move it to trash and permanent deletion will occur in 7 days.',
-      confirmText: 'Delete',
+      title: 'ส่งคำขอลบกลุ่ม',
+      message: `ส่งคำขอลบ "${name}" ใช่หรือไม่? รายการจะหายจากหน้ารายการและรอการอนุมัติจากแอดมิน (ต้องใส่รหัสผ่านเพื่อยืนยันการลบ)`,
+      confirmText: 'ส่งคำขอ',
       type: 'danger',
-      onConfirm: async () => {
+      showReasonInput: true,
+      reasonValue: '',
+      onReasonChange: (v) => setConfirmModal(prev => ({ ...prev, reasonValue: v })),
+      onConfirm: async (reason) => {
         try {
-          const expireDate = new Date();
-          expireDate.setDate(expireDate.getDate() + 7);
-
-          const groupRef = doc(db, 'groups', groupId);
-          await updateDoc(groupRef, {
-            deleted: true,
-            deletedAt: serverTimestamp(),
-            expireAt: Timestamp.fromDate(expireDate)
-          });
-
-          if (user) {
-            await logAudit({
-              action: 'delete',
-              targetType: 'group',
-              targetId: groupId,
-              user: user,
-              details: { type: 'soft-delete' }
-            });
+          const result = await submitDeleteRequest('group', groupId, name, user, reason);
+          if (result.success) {
+            navigate('/');
+            toast.success('ส่งคำขอลบแล้ว รอการอนุมัติจากแอดมิน');
+          } else {
+            toast.error(result.error || 'ส่งคำขอลบไม่สำเร็จ');
           }
-
-          navigate('/');
         } catch (err) {
-          console.error("Error deleting group:", err);
-          setConfirmModal({
-            isOpen: true,
-            title: 'Error',
-            message: "Failed to delete group",
-            type: 'danger',
-            singleButton: true,
-            confirmText: 'Close'
-          });
+          console.error("Delete group request error:", err);
+          toast.error(err?.message || 'ส่งคำขอลบไม่สำเร็จ');
         }
       }
     });
   };
+
 
   const handleMemberClick = (member) => {
     setSelectedIdol(member);
@@ -651,12 +669,14 @@ function AppContent() {
   const handleNotificationClick = (notification) => {
     if (notification.type === 'admin_alert') {
       if (isAdmin) {
+        // คำขอลบ: แค่เด้งแจ้งเตือน ไม่พาไปหน้า (เผื่อแอดมินกำลังเพิ่มข้อมูลอยู่)
+        if (notification.targetType === 'delete_request') {
+          return;
+        }
         let tab = 'idols';
         if (notification.targetType === 'group') tab = 'groups';
         else if (notification.targetType === 'edit_request') tab = 'edits';
-
-        setAdminDashboardInitialTab(tab);
-        setIsAdminDashboardOpen(true);
+        navigate(`/admin/submissions?tab=${tab}`);
       }
       return;
     }
@@ -820,6 +840,7 @@ function AppContent() {
                   <ProfilePage
                     onBack={() => navigate(-1)}
                     idols={idols}
+                    groups={groups}
                     onSelectIdol={handleCardClick}
                     onFavoriteIdol={handleFavoriteIdol}
                     onEditIdol={handleEditIdol}
@@ -847,6 +868,19 @@ function AppContent() {
                 </motion.div>
               } />
 
+              <Route
+                path="/idol/:idolId/biography"
+                element={
+                  <motion.div
+                    key="idol-biography"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                  >
+                    <IdolBiographyPage />
+                  </motion.div>
+                }
+              />
               <Route
                 path="/idol/:idolId"
                 element={
@@ -931,7 +965,7 @@ function AppContent() {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                     >
-                      <CompanyManagement />
+                      <CompanyManagement onBack={() => navigate('/admin')} />
                     </motion.div>
                   </RequireAdmin>
                 }
@@ -973,14 +1007,7 @@ function AppContent() {
                 path="/admin/submissions"
                 element={
                   <RequireAdmin>
-                    <motion.div
-                      key="admin-submissions"
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                    >
-                      <AdminSubmissionDashboard onBack={() => navigate(-1)} />
-                    </motion.div>
+                    <AdminSubmissionsRoute />
                   </RequireAdmin>
                 }
               />
@@ -1013,6 +1040,7 @@ function AppContent() {
           mode={modalMode}
           idol={selectedIdol}
           idols={idols}
+          groups={groups}
           onClose={handleCloseModal}
           onSave={handleSave}
           onDelete={handleDelete}
@@ -1054,6 +1082,10 @@ function AppContent() {
         confirmButtonClass={confirmModal.confirmButtonClass}
         singleButton={confirmModal.singleButton}
         type={confirmModal.type}
+        showReasonInput={confirmModal.showReasonInput}
+        reasonValue={confirmModal.reasonValue ?? ''}
+        onReasonChange={confirmModal.onReasonChange}
+        reasonPlaceholder={confirmModal.reasonPlaceholder}
       />
       <AnimatePresence>
         {isAdminDashboardOpen && isAdmin && (
@@ -1066,8 +1098,25 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      <AIChatbot idols={idols} groups={groups} />
+      <AIChatbot idols={idols} groups={groups} companies={companies} />
     </div>
+  );
+}
+
+function AdminSubmissionsRoute() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'idols';
+  const validTab = ['idols', 'groups', 'edits', 'deletions'].includes(tab) ? tab : 'idols';
+  return (
+    <motion.div
+      key="admin-submissions"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <AdminSubmissionDashboard onBack={() => navigate(-1)} initialTab={validTab} />
+    </motion.div>
   );
 }
 
@@ -1105,13 +1154,17 @@ function App() {
     <HelmetProvider>
       <Router>
         <ThemeProvider>
-          <AuthProvider>
-            <ToastProvider>
-              <ErrorBoundary>
-                <AppContent />
-              </ErrorBoundary>
-            </ToastProvider>
-          </AuthProvider>
+          <LanguageProvider>
+            <ConfirmProvider>
+              <AuthProvider>
+                <ToastProvider>
+                  <ErrorBoundary>
+                    <AppContent />
+                  </ErrorBoundary>
+                </ToastProvider>
+              </AuthProvider>
+            </ConfirmProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </Router>
     </HelmetProvider>

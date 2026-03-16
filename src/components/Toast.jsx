@@ -26,7 +26,14 @@ export const ToastProvider = ({ children }) => {
             onClose: () => removeToast(id)
         };
 
-        setToasts(prev => [...prev, toast]);
+        setToasts(prev => {
+            const sameMessage = prev.filter(t => t.type === type && t.message === message);
+            if (sameMessage.length > 0) {
+                const idsToRemove = new Set(sameMessage.map(t => t.id));
+                return [...prev.filter(t => !idsToRemove.has(t.id)), toast];
+            }
+            return [...prev, toast];
+        });
 
         if (duration > 0) {
             setTimeout(() => {

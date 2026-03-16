@@ -2,34 +2,35 @@ import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } f
 import imageCompression from 'browser-image-compression';
 
 /**
- * Validates a file based on type and size.
+ * Validates image file type only. Size is handled by auto-compression before upload.
  * @param {File} file The file to validate.
- * @param {number} maxSizeMB The maximum size in megabytes.
- * @throws {Error} If the file is invalid.
+ * @param {number} _maxSizeMB Kept for backward compatibility; oversized files are now auto-compressed.
+ * @throws {Error} If the file type is invalid.
  */
-export function validateFile(file, maxSizeMB = 5) {
+export function validateFile(file, _maxSizeMB = 5) {
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!validTypes.includes(file.type)) {
         throw new Error('Invalid file type. Please select an image (JPEG, PNG, WebP, GIF).');
     }
-    if (file.size > maxSizeMB * 1024 * 1024) {
-        throw new Error(`File size exceeds ${maxSizeMB}MB.`);
-    }
+    // Size limit removed: oversized images are auto-compressed before upload.
 }
 
 /**
  * Compresses an image and converts it to WebP format.
+ * ปรับค่า default ให้รูปไม่แตก: ใช้ maxSizeMB/ความละเอียดสูงขึ้น + initialQuality
  * @param {File} file The image file to compress.
  * @param {number} maxSizeMB The target maximum size in megabytes.
  * @param {number} maxWidthOrHeight The maximum width or height of the image.
+ * @param {number} initialQuality 0–1 คุณภาพเริ่มต้น (สูง = ชัดกว่า)
  * @returns {Promise<File>} The compressed WebP file.
  */
-export async function compressImage(file, maxSizeMB = 0.8, maxWidthOrHeight = 1920) {
+export async function compressImage(file, maxSizeMB = 1.5, maxWidthOrHeight = 2560, initialQuality = 0.92) {
   const options = {
-    maxSizeMB: maxSizeMB,
-    maxWidthOrHeight: maxWidthOrHeight,
+    maxSizeMB,
+    maxWidthOrHeight,
+    initialQuality,
     useWebWorker: true,
-    fileType: 'image/webp', // Convert to WebP
+    fileType: 'image/webp',
   };
   try {
     const compressedFile = await imageCompression(file, options);
@@ -38,7 +39,30 @@ export async function compressImage(file, maxSizeMB = 0.8, maxWidthOrHeight = 19
     return webpFile;
   } catch (error) {
     console.error('Image compression to WebP failed:', error);
-    // Fallback to original file if compression fails
+    return file;
+  }
+}
+
+/**
+ * บีบอัดรูปสำหรับ Hero/Cover (แบนเนอร์ใหญ่) — คงความละเอียดสูง ไม่แปลงเป็น WebP
+ * ใช้ขนาดไฟล์และความละเอียดสูงมาก + คงประเภทไฟล์เดิม (JPEG/PNG) เพื่อไม่ให้ภาพแตก
+ */
+export async function compressImageForHero(file) {
+  const options = {
+    maxSizeMB: 4,
+    maxWidthOrHeight: 3840,
+    initialQuality: 0.98,
+    useWebWorker: true,
+    // ไม่บังคับ WebP — ใช้ประเภทเดิม (image/jpeg, image/png) เพื่อความคม
+    fileType: file.type || 'image/jpeg',
+  };
+  try {
+    const compressedFile = await imageCompression(file, options);
+    const name = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+    const ext = (file.type === 'image/png' ? '.png' : '.jpg');
+    return new File([compressedFile], `${name}${ext}`, { type: compressedFile.type || file.type });
+  } catch (error) {
+    console.error('Hero image compression failed:', error);
     return file;
   }
 }

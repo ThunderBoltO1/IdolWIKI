@@ -5,14 +5,17 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
-import { Building2, Plus, Search, Edit2, Trash2, Calendar, MapPin, Users, Globe } from 'lucide-react';
+import { ArrowLeft, Building2, Plus, Search, Edit2, Trash2, Calendar, MapPin, Users, Globe } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { CompanyModal } from './CompanyModal';
 import { ConfirmationModal } from './ConfirmationModal';
+import { submitDeleteRequest } from '../lib/pendingSubmissions';
+import { useToast } from './Toast';
 
-export function CompanyManagement() {
+export function CompanyManagement({ onBack }) {
     const { theme } = useTheme();
-    const { isAdmin } = useAuth();
+    const { isAdmin, user } = useAuth();
+    const toast = useToast();
     const navigate = useNavigate();
 
     const [companies, setCompanies] = useState([]);
@@ -33,7 +36,7 @@ export function CompanyManagement() {
             const snapshot = await getDocs(q);
             const data = snapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(company => !company.deleted);
+                .filter(company => !company.deleted && !company.pendingDeletion);
             setCompanies(data);
         } catch (error) {
             console.error("Error fetching companies:", error);
@@ -54,31 +57,30 @@ export function CompanyManagement() {
     const handleDeleteClick = (company) => {
         setConfirmModal({
             isOpen: true,
-            title: 'Delete Company',
-            message: `Are you sure you want to delete "${company.name}"? This will be permanently removed in 7 days.`,
-            onConfirm: () => deleteCompany(company.id),
+            title: 'ส่งคำขอลบบริษัท',
+            message: `ส่งคำขอลบ "${company.name}" ใช่หรือไม่? รายการจะหายจากหน้ารายการและรอการอนุมัติจากแอดมิน (ต้องใส่รหัสผ่านเพื่อยืนยันการลบ)`,
             type: 'danger',
-            confirmText: 'Schedule Deletion'
+            confirmText: 'ส่งคำขอ',
+            showReasonInput: true,
+            reasonValue: '',
+            onReasonChange: (v) => setConfirmModal(prev => ({ ...prev, reasonValue: v })),
+            onConfirm: async (reason) => {
+                try {
+                    const result = await submitDeleteRequest('company', company.id, company.name, user, reason);
+                    if (result.success) {
+                        setCompanies(prev => prev.filter(c => c.id !== company.id));
+                        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+                        toast.success('ส่งคำขอลบแล้ว รอการอนุมัติจากแอดมิน');
+                        navigate('/admin/submissions?tab=deletions');
+                    } else {
+                        toast.error(result.error || 'ส่งคำขอลบไม่สำเร็จ');
+                    }
+                } catch (error) {
+                    console.error("Error submitting delete request:", error);
+                    toast.error(error?.message || 'ส่งคำขอลบไม่สำเร็จ');
+                }
+            }
         });
-    };
-
-    const deleteCompany = async (id) => {
-        try {
-            // Soft delete with 7-day expiration
-            const expireDate = new Date();
-            expireDate.setDate(expireDate.getDate() + 7);
-
-            await updateDoc(doc(db, 'companies', id), {
-                deleted: true,
-                deletedAt: serverTimestamp(),
-                expireAt: Timestamp.fromDate(expireDate)
-            });
-
-            setCompanies(prev => prev.filter(c => c.id !== id));
-            setConfirmModal({ isOpen: false });
-        } catch (error) {
-            console.error("Error deleting company:", error);
-        }
     };
 
     const handleEditClick = (company) => {
@@ -109,9 +111,23 @@ export function CompanyManagement() {
             <div className="max-w-7xl mx-auto space-y-8">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div>
-                        <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-2">Company Management</h1>
-                        <p className="text-slate-500 font-medium">Manage all entertainment companies and agencies.</p>
+                    <div className="flex items-center gap-4">
+                        {onBack && (
+                            <button
+                                onClick={onBack}
+                                className={cn(
+                                    "p-2.5 rounded-xl border transition-colors shrink-0",
+                                    theme === 'dark' ? "border-white/10 hover:bg-white/10" : "border-slate-200 hover:bg-slate-100"
+                                )}
+                                title="Back to Management"
+                            >
+                                <ArrowLeft size={22} />
+                            </button>
+                        )}
+                        <div>
+                            <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-2">Company Management</h1>
+                            <p className="text-slate-500 font-medium">Manage all entertainment companies and agencies.</p>
+                        </div>
                     </div>
                     <button
                         onClick={handleCreateClick}
@@ -226,12 +242,16 @@ export function CompanyManagement() {
 
             <ConfirmationModal
                 isOpen={confirmModal.isOpen}
-                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
                 onConfirm={confirmModal.onConfirm}
                 title={confirmModal.title}
                 message={confirmModal.message}
                 type={confirmModal.type}
                 confirmText={confirmModal.confirmText}
+                showReasonInput={confirmModal.showReasonInput}
+                reasonValue={confirmModal.reasonValue ?? ''}
+                onReasonChange={confirmModal.onReasonChange}
+                reasonPlaceholder={confirmModal.reasonPlaceholder}
             />
         </div>
     );

@@ -147,5 +147,13 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    // คำขอลบ (รออนุมัติ) — ส่งคำขอได้ถ้า login, อ่าน/อนุมัติ/ปฏิเสธได้เฉพาะแอดมิน
+    match /deleteRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
   }
 }

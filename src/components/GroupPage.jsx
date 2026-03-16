@@ -1,18 +1,20 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence, useScroll, useTransform, useMotionValue, useSpring, Reorder, useAnimation } from 'framer-motion';
-import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, CheckSquare, Square, FileText, AlertCircle, ImageIcon, Facebook } from 'lucide-react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, Reorder, useAnimation } from 'framer-motion';
+import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, CheckSquare, Square, FileText, AlertCircle, ImageIcon, Facebook, ZoomIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { cn, getRelativeTime, getYouTubeEmbedSrc } from '../lib/utils';
+import { cn, getRelativeTime, getYouTubeEmbedSrc, groupAlbumsByType, restorePageScroll } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { convertDriveLink } from '../lib/storage';
 import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, increment, deleteDoc, deleteField, getDocs, limit, getDoc, writeBatch, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ConfirmationModal } from './ConfirmationModal';
 import { GroupCard } from './GroupCard';
 import { useAwards } from '../hooks/useAwards.js';
-import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
+import { deleteImage, uploadImage, validateFile, compressImage, compressImageForHero } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
 import { useToast } from './Toast';
 import { logAudit } from '../lib/audit';
@@ -23,6 +25,7 @@ import { GroupNewsSection } from './group/GroupNewsSection';
 import { MusicBrainzImportModal } from './MusicBrainzImportModal';
 import { Helmet } from 'react-helmet-async';
 import { YouTubeSearchModal } from './YouTubeSearchModal';
+import { DateSelect } from './DateSelect';
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
         <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
@@ -45,6 +48,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const { isAdmin, user } = useAuth();
     const toast = useToast();
     const { theme } = useTheme();
+    const t = useTranslation();
+    const { confirm } = useConfirm();
     const navigate = useNavigate();
     const containerRef = useRef(null);
 
@@ -64,6 +69,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const [selectedVideo, setSelectedVideo] = useState(null);
     const [isEditingGroupInfo, setIsEditingGroupInfo] = useState(false);
     const [isEditingMembers, setIsEditingMembers] = useState(false);
+    const [memberAddSearch, setMemberAddSearch] = useState('');
     const [isEditingGallery, setIsEditingGallery] = useState(false);
     const [isEditingDiscography, setIsEditingDiscography] = useState(false);
     const [isEditingVideos, setIsEditingVideos] = useState(false);
@@ -114,6 +120,8 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const galleryReplaceInputRef = useRef(null);
     const galleryReplaceIdxRef = useRef(null);
     const albumCoverInputRef = useRef(null);
+    const memberAddSearchRef = useRef(null);
+    const editFormScrollRef = useRef(null);
     const [galleryItems, setGalleryItems] = useState([]);
     const [videoList, setVideoList] = useState([]);
     const [albumList, setAlbumList] = useState([]);
@@ -174,23 +182,27 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const sortedMembers = useMemo(() => {
+        if (isEditingMembers) {
+            // When editing, use editingMembers so newly added idols appear immediately
+            return [...editingMembers].sort((a, b) => {
+                const isAInactive = ['inactive', 'former'].includes(a.status?.toLowerCase());
+                const isBInactive = ['inactive', 'former'].includes(b.status?.toLowerCase());
+                return (isAInactive ? 1 : 0) - (isBInactive ? 1 : 0);
+            });
+        }
         if (!members) return [];
-        const currentMemberIds = isEditingMembers ? (formData.members || []) : (displayGroup?.members || []);
-
+        const currentMemberIds = displayGroup?.members || [];
         const memberMap = new Map(members.map(m => [m.id, m]));
         const ordered = currentMemberIds.map(id => memberMap.get(id)).filter(Boolean);
         const orderedIds = new Set(ordered.map(m => m.id));
         const remaining = members.filter(m => !orderedIds.has(m.id));
-        
         const allItems = [...ordered, ...remaining];
-        
-        // Sort: Active members first, then former members
         return allItems.sort((a, b) => {
             const isAInactive = ['inactive', 'former'].includes(a.status?.toLowerCase());
             const isBInactive = ['inactive', 'former'].includes(b.status?.toLowerCase());
             return (isAInactive ? 1 : 0) - (isBInactive ? 1 : 0);
         });
-    }, [members, isEditingMembers, formData.members, displayGroup?.members]);
+    }, [members, isEditingMembers, editingMembers, formData.members, displayGroup?.members]);
 
     const timelineMembers = useMemo(() => {
         return [...(members || [])].sort((a, b) => {
@@ -209,10 +221,10 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     }, [sortedMembers]);
 
     useEffect(() => {
-        if (members) {
+        if (members && !isEditingMembers) {
             setEditingMembers(members);
         }
-    }, [members]);
+    }, [members, isEditingMembers]);
 
     useEffect(() => {
         setSelectedTimelineMember(null);
@@ -433,12 +445,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const handleDeleteComment = async (commentId) => {
-        if (!window.confirm("Are you sure you want to delete this comment?")) return;
-        try {
-            await deleteDoc(doc(db, 'comments', commentId));
-        } catch (error) {
-            console.error("Error deleting comment:", error);
-        }
+        confirm({
+            title: 'Delete Comment',
+            message: 'Are you sure you want to delete this comment?',
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                try {
+                    await deleteDoc(doc(db, 'comments', commentId));
+                } catch (error) {
+                    console.error("Error deleting comment:", error);
+                }
+            }
+        });
     };
 
     const handleMentionClick = (mention) => {
@@ -451,11 +469,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     // Utility function to generate stable IDs
     const generateId = (prefix, index) => `${prefix}-${index}-${Date.now()}`;
 
+    // Ensure scroll is restored when edit form closes (e.g. after save)
+    useEffect(() => {
+        if (!isEditingGroupInfo && !selectedAlbum) {
+            restorePageScroll();
+        }
+    }, [isEditingGroupInfo, selectedAlbum]);
+
     // Lock body scroll when album popup is open (prevent wheel/touch on backdrop only)
     useEffect(() => {
         if (!selectedAlbum) return;
         const preventScroll = (e) => {
-            if (e.target.closest('[data-album-modal]')) return; // allow scroll inside modal
+            if (e.target.closest('[data-album-modal]')) return;
             e.preventDefault();
         };
         document.body.style.overflow = 'hidden';
@@ -463,12 +488,23 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         document.addEventListener('wheel', preventScroll, { passive: false });
         document.addEventListener('touchmove', preventScroll, { passive: false });
         return () => {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
+            restorePageScroll();
             document.removeEventListener('wheel', preventScroll);
             document.removeEventListener('touchmove', preventScroll);
         };
     }, [selectedAlbum]);
+
+    // Close Add Members dropdown when clicking outside
+    useEffect(() => {
+        if (!memberAddSearch || !isEditingMembers) return;
+        const handleClickOutside = (e) => {
+            if (memberAddSearchRef.current && !memberAddSearchRef.current.contains(e.target)) {
+                setMemberAddSearch('');
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [memberAddSearch, isEditingMembers]);
 
     // Sync activeImage when group data changes from Firestore
     useEffect(() => {
@@ -514,12 +550,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         setVisibleComments(5);
     }, [displayGroup?.id]);
 
-    const { scrollY } = useScroll();
-    const y1 = useTransform(scrollY, [0, 500], [0, 150]);
-    const scale = useTransform(scrollY, [0, 500], [1, 1.1]);
-    const opacity = useTransform(scrollY, [0, 400], [1, 0]);
-    const y2 = useTransform(scrollY, [0, 400], [0, -50]);
-
     const allImages = displayGroup ? [displayGroup.image, ...(displayGroup.gallery || [])].filter(Boolean) : [];
 
     // Filter root comments and replies
@@ -553,14 +583,14 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         try {
             validateFile(file, 5);
         } catch (error) {
-            alert(error.message);
+            toast.error(error.message);
             return;
         }
 
         setIsHeroUploading(true);
         setHeroUploadProgress(0);
         try {
-            const compressed = await compressImage(file);
+            const compressed = await compressImageForHero(file);
             if (displayGroup.image && displayGroup.image.includes('firebasestorage')) {
                 await deleteImage(displayGroup.image);
             }
@@ -569,11 +599,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setActiveImage(url);
         } catch (err) {
             console.error('Hero upload error', err);
-            alert('Upload failed. Please try again.');
+            toast.error('Upload failed. Please try again.');
         } finally {
             setIsHeroUploading(false);
             setHeroUploadProgress(0);
             if (heroFileInputRef.current) heroFileInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -586,7 +617,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setActiveImage('');
         } catch (err) {
             console.error('Delete banner failed', err);
-            setModalConfig({ isOpen: true, title: 'ลบรูปไม่สำเร็จ', message: err?.message || 'เกิดข้อผิดพลาด', type: 'danger' });
+            setModalConfig({ isOpen: true, title: 'Failed to delete image', message: err?.message || 'An error occurred', type: 'danger' });
         }
     };
 
@@ -598,7 +629,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setFormData((prev) => ({ ...prev, coverImage: '' }));
         } catch (err) {
             console.error('Delete cover failed', err);
-            setModalConfig({ isOpen: true, title: 'ลบรูปไม่สำเร็จ', message: err?.message || 'เกิดข้อผิดพลาด', type: 'danger' });
+            setModalConfig({ isOpen: true, title: 'Failed to delete image', message: err?.message || 'An error occurred', type: 'danger' });
         }
     };
 
@@ -608,21 +639,22 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         try {
             validateFile(file, 5);
         } catch (err) {
-            alert(err.message);
+            toast.error(err.message);
             if (coverFileInputRef.current) coverFileInputRef.current.value = '';
             return;
         }
         setIsCoverUploading(true);
         try {
-            const compressed = await compressImage(file);
+            const compressed = await compressImageForHero(file);
             const url = await uploadImage(compressed, 'groups/covers');
             setFormData(prev => ({ ...prev, coverImage: url }));
         } catch (err) {
             console.error('Cover upload error', err);
-            alert('Cover upload failed. Please try again.');
+            toast.error('Cover upload failed. Please try again.');
         } finally {
             setIsCoverUploading(false);
             if (coverFileInputRef.current) coverFileInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -634,7 +666,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             try {
                 validateFile(file, 5);
             } catch (error) {
-                alert(`File ${file.name} is too large. Max 5MB.`);
+                toast.error(error.message || `Invalid file: ${file.name}`);
                 return;
             }
         }
@@ -661,7 +693,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setGalleryItems(prev => [...prev, ...newItems]);
         } catch (error) {
             console.error("Gallery upload error", error);
-            alert("Failed to upload images. Please try again.");
+            toast.error("Failed to upload images. Please try again.");
         } finally {
             setIsUploading(false);
             setGalleryUploadProgress(0);
@@ -676,7 +708,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         try {
             validateFile(file, 5);
         } catch (err) {
-            alert(err.message);
+            toast.error(err.message);
             if (galleryReplaceInputRef.current) galleryReplaceInputRef.current.value = '';
             return;
         }
@@ -691,11 +723,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setFormData(prev => ({ ...prev, gallery: newItems.map(i => i.url) }));
         } catch (err) {
             console.error('Gallery replace upload error', err);
-            alert('Failed to replace image. Please try again.');
+            toast.error('Failed to replace image. Please try again.');
         } finally {
             setIsUploading(false);
             setGalleryUploadProgress(0);
             if (galleryReplaceInputRef.current) galleryReplaceInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -704,7 +737,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             if (!lightboxImage) return;
             if (e.key === 'ArrowRight') handleNextImage();
             if (e.key === 'ArrowLeft') handlePrevImage();
-            if (e.key === 'Escape') setLightboxImage(null);
+            if (e.key === 'Escape') { restorePageScroll(); setLightboxImage(null); }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
@@ -737,7 +770,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         }
 
         const imageToSave = formData.image;
-        const imagePositionToSave = displayGroup.imagePosition || null;
+        const imagePositionToSave = formData.imagePosition ?? displayGroup.imagePosition ?? null;
+        const imageScaleToSave = formData.imageScale ?? displayGroup.imageScale ?? null;
+        const imageFitToSave = formData.imageFit ?? displayGroup.imageFit ?? null;
+        const coverImagePositionToSave = formData.coverImagePosition ?? displayGroup.coverImagePosition ?? null;
+        const coverImageScaleToSave = formData.coverImageScale ?? displayGroup.coverImageScale ?? null;
+        const coverImageFitToSave = formData.coverImageFit ?? displayGroup.coverImageFit ?? null;
 
         // Handle Member Updates
         const currentMemberIds = members.map(m => m.id);
@@ -749,13 +787,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         if (addedMembers.length > 0 || removedMembers.length > 0) {
             const batch = writeBatch(db);
 
-            // Update added members
+            const groupCompany = formData.company || displayGroup?.company;
             addedMembers.forEach(idolId => {
                 const idolRef = doc(db, 'idols', idolId);
-                batch.update(idolRef, {
-                    groupId: displayGroup.id,
-                    group: formData.name
-                });
+                const updates = { groupId: displayGroup.id, group: formData.name };
+                if (groupCompany) updates.company = groupCompany;
+                batch.update(idolRef, updates);
             });
 
             // Update removed members
@@ -786,7 +823,21 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         };
         if (imagePositionToSave === null) updatePayload.imagePosition = deleteField();
         else if (imagePositionToSave != null) updatePayload.imagePosition = imagePositionToSave;
-        await onUpdateGroup(displayGroup.id, updatePayload);
+        if (imageScaleToSave === null) updatePayload.imageScale = deleteField();
+        else if (imageScaleToSave != null) updatePayload.imageScale = imageScaleToSave;
+        if (imageFitToSave === null) updatePayload.imageFit = deleteField();
+        else if (imageFitToSave != null) updatePayload.imageFit = imageFitToSave;
+        if (coverImagePositionToSave === null) updatePayload.coverImagePosition = deleteField();
+        else if (coverImagePositionToSave != null) updatePayload.coverImagePosition = coverImagePositionToSave;
+        if (coverImageScaleToSave === null) updatePayload.coverImageScale = deleteField();
+        else if (coverImageScaleToSave != null) updatePayload.coverImageScale = coverImageScaleToSave;
+        if (coverImageFitToSave === null) updatePayload.coverImageFit = deleteField();
+        else if (coverImageFitToSave != null) updatePayload.coverImageFit = coverImageFitToSave;
+        // Remove undefined values (Firestore rejects them)
+        const cleanedPayload = Object.fromEntries(
+            Object.entries(updatePayload).filter(([, v]) => v !== undefined)
+        );
+        await onUpdateGroup(displayGroup.id, cleanedPayload);
         // Optimistic update: อัปเดตทันทีไม่ต้องรอ Firestore
         const nextDisplay = {
             ...displayGroup,
@@ -800,18 +851,29 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         };
         if (imagePositionToSave === null) delete nextDisplay.imagePosition;
         else if (imagePositionToSave != null) nextDisplay.imagePosition = imagePositionToSave;
+        if (imageScaleToSave === null) delete nextDisplay.imageScale;
+        else if (imageScaleToSave != null) nextDisplay.imageScale = imageScaleToSave;
+        if (imageFitToSave === null) delete nextDisplay.imageFit;
+        else if (imageFitToSave != null) nextDisplay.imageFit = imageFitToSave;
+        if (coverImagePositionToSave === null) delete nextDisplay.coverImagePosition;
+        else if (coverImagePositionToSave != null) nextDisplay.coverImagePosition = coverImagePositionToSave;
+        if (coverImageScaleToSave === null) delete nextDisplay.coverImageScale;
+        else if (coverImageScaleToSave != null) nextDisplay.coverImageScale = coverImageScaleToSave;
+        if (coverImageFitToSave === null) delete nextDisplay.coverImageFit;
+        else if (coverImageFitToSave != null) nextDisplay.coverImageFit = coverImageFitToSave;
         setDisplayGroup(nextDisplay);
         setGalleryItems(galleryUrls.map((url, i) => ({ id: `item-${i}-${Date.now()}`, url })));
         setVideoList(videosClean.map((v, i) => ({ ...v, internalId: `vid-${i}-${Date.now()}` })));
         setAlbumList(albumsClean.map((a, i) => ({ ...a, internalId: `alb-${i}-${Date.now()}` })));
         setIsEditingGroupInfo(false);
         setIsEditingMembers(false);
+        setMemberAddSearch('');
         setIsEditingGallery(false);
         setIsEditingDiscography(false);
         setIsEditingVideos(false);
         setIsReordering(false);
         setActiveImage(imageToSave);
-        toast.success('บันทึกวงสำเร็จ');
+        toast.success('Group saved successfully');
     };
 
     const confirmSubmitEdit = async () => {
@@ -839,6 +901,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             setShowReasonModal(false);
             setIsEditingGroupInfo(false);
             setIsEditingMembers(false);
+            setMemberAddSearch('');
             setIsEditingGallery(false);
             setIsEditingDiscography(false);
             setIsEditingVideos(false);
@@ -974,11 +1037,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const removeAlbum = (index) => {
-        const newList = albumList.filter((_, i) => i !== index);
-        setAlbumList(newList);
-
-        const newAlbums = newList.map(({ internalId, ...rest }) => rest);
-        setFormData(prev => ({ ...prev, albums: newAlbums }));
+        const album = albumList[index];
+        const title = album?.title || `Album #${index + 1}`;
+        confirm({
+            title: 'Remove Album',
+            message: `Remove "${title}"? Changes will be saved when you click Save.`,
+            confirmText: 'Remove',
+            onConfirm: () => {
+                const newList = albumList.filter((_, i) => i !== index);
+                setAlbumList(newList);
+                const newAlbums = newList.map(({ internalId, ...rest }) => rest);
+                setFormData(prev => ({ ...prev, albums: newAlbums }));
+            }
+        });
     };
 
     const handleMusicBrainzAdd = (albums) => {
@@ -1003,7 +1074,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         try {
             validateFile(file, 5);
         } catch (error) {
-            alert(`File ${file.name} is too large. Max 5MB.`);
+            toast.error(`Invalid file: ${file.name}`);
             setAlbumCoverUploadingIdx(null);
             if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
             return;
@@ -1015,10 +1086,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             handleAlbumChange(idx, 'cover', uploadedUrl);
         } catch (error) {
             console.error('Album cover upload error', error);
-            alert('Failed to upload cover image');
+            toast.error('Failed to upload cover image');
         } finally {
             setAlbumCoverUploadingIdx(null);
             if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -1082,11 +1154,19 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     };
 
     const removeVideo = (index) => {
-        const newList = videoList.filter((_, i) => i !== index);
-        setVideoList(newList);
-
-        const newVideos = newList.map(({ internalId, ...rest }) => rest);
-        setFormData(prev => ({ ...prev, videos: newVideos }));
+        const video = videoList[index];
+        const title = video?.title || `Video #${index + 1}`;
+        confirm({
+            title: 'Remove Video',
+            message: `Remove "${title}"? Changes will be saved when you click Save.`,
+            confirmText: 'Remove',
+            onConfirm: () => {
+                const newList = videoList.filter((_, i) => i !== index);
+                setVideoList(newList);
+                const newVideos = newList.map(({ internalId, ...rest }) => rest);
+                setFormData(prev => ({ ...prev, videos: newVideos }));
+            }
+        });
     };
 
     const handleRefresh = async () => {
@@ -1178,7 +1258,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
     const metaTitle = displayGroup?.name ? `${displayGroup.name} | K-Pop Wiki` : 'K-Pop Wiki';
     const metaDesc = displayGroup?.description
         ? (displayGroup.description.slice(0, 160) + (displayGroup.description.length > 160 ? '…' : ''))
-        : `${displayGroup?.name || 'กลุ่ม'}: ค้นหาข้อมูลวงเคป๊อป`;
+        : `${displayGroup?.name || 'Group'}: K-Pop group search`;
     const ogImage = displayGroup?.image ? convertDriveLink(displayGroup.image) : '';
 
     return (
@@ -1200,7 +1280,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
             {/* Header / Hero Section */}
             <section className="relative h-[35vh] min-h-[300px] md:h-[55vh] max-h-[600px] rounded-[24px] md:rounded-[48px] overflow-hidden shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] group/hero perspective-1000">
                 <motion.div
-                    style={{ y: y1, scale }}
                     className="absolute inset-0 w-full h-full transition-all duration-700"
                 >
                     {isHeroUploading && (
@@ -1225,7 +1304,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         <img
                             src={convertDriveLink(activeImage)}
                             alt={displayGroup.name}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full"
+                            style={(() => {
+                                const pos = formData.imagePosition || displayGroup?.imagePosition;
+                                const x = pos?.x ?? 50;
+                                const y = pos?.y ?? 50;
+                                const scale = formData.imageScale ?? displayGroup?.imageScale ?? 1;
+                                const fit = formData.imageFit ?? displayGroup?.imageFit ?? 'cover';
+                                const s = { objectFit: fit };
+                                if (pos) s.objectPosition = `${x}% ${y}%`;
+                                if (scale !== 1) { s.transform = `scale(${scale})`; s.transformOrigin = `${x}% ${y}%`; }
+                                return s;
+                            })()}
                             onError={(e) => { e.target.onerror = null; e.target.src = ''; }}
                         />
                     ) : (
@@ -1233,8 +1323,18 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             src={convertDriveLink(displayGroup?.image || activeImage)}
                             alt={displayGroup.name}
                             loading="eager"
-                            className="w-full h-full object-cover"
-                            style={displayGroup?.imagePosition ? { objectPosition: `${displayGroup.imagePosition.x}% ${displayGroup.imagePosition.y}%` } : undefined}
+                            className="w-full h-full"
+                            style={(() => {
+                                const pos = displayGroup?.imagePosition || formData?.imagePosition;
+                                const x = pos?.x ?? 50;
+                                const y = pos?.y ?? 50;
+                                const scale = displayGroup?.imageScale ?? formData?.imageScale ?? 1;
+                                const fit = displayGroup?.imageFit ?? formData?.imageFit ?? 'cover';
+                                const s = { objectFit: fit };
+                                if (pos) s.objectPosition = `${x}% ${y}%`;
+                                if (scale !== 1) { s.transform = `scale(${scale})`; s.transformOrigin = `${x}% ${y}%`; }
+                                return s;
+                            })()}
                             onError={(e) => {
                                 e.target.onerror = null;
                                 e.target.src = '';
@@ -1242,6 +1342,40 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         />
                     )}
                 </motion.div>
+
+                {isEditingGroupInfo && isAdmin && (formData.image || activeImage) && (
+                    <div className="absolute bottom-0 left-0 right-0 z-20 p-4 bg-black/30 backdrop-blur-sm border-t border-white/10 rounded-b-[24px] md:rounded-b-[48px]">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Pin size={14} className="text-brand-pink shrink-0" />
+                            <span className="text-xs font-bold text-white uppercase tracking-wider">Banner – Adjust position (Reframe)</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <span className="text-[10px] text-white/80 block mb-1">Horizontal (X) {formData.imagePosition?.x ?? displayGroup?.imagePosition?.x ?? 50}%</span>
+                                <input type="range" min="0" max="100" value={formData.imagePosition?.x ?? displayGroup?.imagePosition?.x ?? 50} onChange={e => setFormData(prev => ({ ...prev, imagePosition: { x: Number(e.target.value), y: prev.imagePosition?.y ?? displayGroup?.imagePosition?.y ?? 50 } }))} className="w-full h-1.5 accent-brand-pink" />
+                            </div>
+                            <div>
+                                <span className="text-[10px] text-white/80 block mb-1">Vertical (Y) {formData.imagePosition?.y ?? displayGroup?.imagePosition?.y ?? 50}%</span>
+                                <input type="range" min="0" max="100" value={formData.imagePosition?.y ?? displayGroup?.imagePosition?.y ?? 50} onChange={e => setFormData(prev => ({ ...prev, imagePosition: { x: prev.imagePosition?.x ?? displayGroup?.imagePosition?.x ?? 50, y: Number(e.target.value) } }))} className="w-full h-1.5 accent-brand-pink" />
+                            </div>
+                        </div>
+                        <div className="mt-2">
+                            <span className="text-[10px] text-white/80 block mb-1">Fit</span>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setFormData(prev => ({ ...prev, imageFit: 'cover' }))} className={cn("px-2 py-1 rounded text-[10px] font-bold", (formData.imageFit ?? displayGroup?.imageFit ?? 'cover') === 'cover' ? "bg-brand-pink text-white" : "bg-white/20 text-white/80 hover:bg-white/30")}>Cover</button>
+                                <button type="button" onClick={() => setFormData(prev => ({ ...prev, imageFit: 'contain' }))} className={cn("px-2 py-1 rounded text-[10px] font-bold", (formData.imageFit ?? displayGroup?.imageFit) === 'contain' ? "bg-brand-pink text-white" : "bg-white/20 text-white/80 hover:bg-white/30")}>Contain</button>
+                            </div>
+                        </div>
+                        <div className="mt-2">
+                            <span className="text-[10px] text-white/80 block mb-1">Scale {Math.round((formData.imageScale ?? displayGroup?.imageScale ?? 1) * 100)}%</span>
+                            <input type="range" min="25" max="200" value={(formData.imageScale ?? displayGroup?.imageScale ?? 1) * 100} onChange={e => setFormData(prev => ({ ...prev, imageScale: Number(e.target.value) / 100 }))} className="w-full h-1.5 accent-brand-pink" />
+                        </div>
+                        <div className="flex gap-3 mt-1.5">
+                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, imagePosition: { x: 50, y: 50 } }))} className="text-[10px] text-white/60 hover:text-white">Reset position</button>
+                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, imageScale: 1, imageFit: 'cover' }))} className="text-[10px] text-white/60 hover:text-white">Reset scale/fit</button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="absolute top-4 right-4 md:top-8 md:right-8 z-20 flex flex-col items-end gap-3">
                     <div className="flex gap-2">
@@ -1279,7 +1413,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         {user && (
                             isEditingGroupInfo ? (
                                 <>
-                                    <button
+                                    <motion.button
                                         onClick={() => {
                                             setIsEditingGroupInfo(false);
                                             setFormData(prev => ({
@@ -1288,6 +1422,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 koreanName: displayGroup.koreanName,
                                                 image: displayGroup.image,
                                                 coverImage: displayGroup.coverImage,
+                                                imagePosition: displayGroup.imagePosition,
+                                                imageScale: displayGroup.imageScale,
+                                                imageFit: displayGroup.imageFit,
+                                                coverImagePosition: displayGroup.coverImagePosition,
+                                                coverImageScale: displayGroup.coverImageScale,
+                                                coverImageFit: displayGroup.coverImageFit,
                                                 fanclub: displayGroup.fanclub,
                                                 company: displayGroup.company,
                                                 debut: displayGroup.debut,
@@ -1307,24 +1447,23 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             }));
                                             setActiveImage(displayGroup.image);
                                         }}
-                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20 active:scale-95"
+                                        whileHover={{ scale: 1.05 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-white/10 border-white/20 text-white hover:bg-white/20"
                                         title="Cancel"
                                     >
                                         <X size={20} />
-                                    </button>
-                                    <button
-                                        onClick={handleSaveGroup}
-                                        className="p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center bg-green-500/20 border-green-500/50 text-white hover:bg-green-500/40 active:scale-95"
-                                        title={isAdmin ? "Save" : "Submit"}
-                                    >
-                                        <Save size={20} />
-                                    </button>
+                                    </motion.button>
                                 </>
                             ) : (
-                                <button
+                                <motion.button
                                     onClick={() => setIsEditingGroupInfo(true)}
+                                    whileHover={{ scale: 1.05 }}
+                                    whileTap={{ scale: 0.9 }}
+                                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
                                     className={cn(
-                                        "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center active:scale-95",
+                                        "p-2.5 md:p-4 rounded-2xl backdrop-blur-3xl border transition-all shadow-2xl flex items-center justify-center",
                                         isAdmin
                                             ? "bg-white/10 border-white/20 text-white hover:bg-brand-pink/20 hover:border-brand-pink/50"
                                             : "bg-brand-purple/20 border-brand-purple/50 text-white hover:bg-brand-purple/40"
@@ -1332,7 +1471,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     title={isAdmin ? "Edit Group Info" : "Suggest Edit"}
                                 >
                                     <Edit2 size={20} />
-                                </button>
+                                </motion.button>
                             )
                         )}
                     </div>
@@ -1352,126 +1491,29 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     className="absolute top-4 left-4 md:top-8 md:left-8 flex items-center gap-2 md:gap-3 px-4 py-2 md:px-6 md:py-3 rounded-2xl bg-white/10 backdrop-blur-2xl text-white hover:bg-white/20 transition-all z-20 font-black text-[10px] md:text-xs uppercase tracking-[0.2em] border border-white/20 shadow-2xl"
                 >
                     <ArrowLeft size={16} />
-                    <span>Back to Discovery</span>
+                    <span>{t('home.backToDiscovery')}</span>
                 </motion.button>
 
                 <motion.div
-                    style={{ y: y2, opacity }}
                     className="absolute bottom-6 md:bottom-12 left-4 md:left-10 right-4 md:right-10 flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 z-10 min-h-0 pt-24 sm:pt-28 md:pt-24"
                 >
                     <div className="max-w-3xl flex flex-col gap-3 shrink min-w-0 overflow-hidden">
                         <AnimatePresence mode="wait">
                         {isEditingGroupInfo ? (
                             <motion.div
-                                key="edit-form"
-                                initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -10, scale: 0.98 }}
-                                transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-                                className="space-y-4 bg-black/30 p-6 rounded-2xl backdrop-blur-xl border border-white/10 mt-4 max-h-[min(55vh,420px)] overflow-y-auto overscroll-contain"
+                                key="edit-preview"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="min-w-0"
                             >
-                                <input
-                                    value={formData.name || ''}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="w-full bg-transparent text-3xl md:text-5xl font-black text-white border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-white/20"
-                                    placeholder="Group Name"
-                                />
-                                <input
-                                    value={formData.koreanName || ''}
-                                    onChange={e => setFormData({ ...formData, koreanName: e.target.value })}
-                                    className="w-full bg-transparent text-lg md:text-2xl font-black text-brand-pink border-b border-white/20 focus:border-brand-pink focus:outline-none placeholder:text-brand-pink/20"
-                                    placeholder="Korean Name"
-                                />
-
-
-                                <div className="space-y-3">
-                                    {isAdmin && (
-                                        <>
-                                            <div className="flex items-center gap-3">
-                                                <label className="text-xs text-white/60 uppercase font-black tracking-widest flex items-center gap-2 shrink-0"><ImageIcon size={12} /> Banner Image</label>
-                                                {activeImage && (
-                                                    <div className="rounded-lg overflow-hidden border border-white/20 w-16 h-10 shrink-0">
-                                                        <img src={convertDriveLink(activeImage)} alt="Preview" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <input
-                                                    value={formData.image || ''}
-                                                    onChange={(e) => {
-                                                        const newUrl = e.target.value;
-                                                        setFormData({ ...formData, image: newUrl });
-                                                        setActiveImage(newUrl);
-                                                    }}
-                                                    className="flex-1 bg-white/10 text-sm font-medium text-white placeholder:text-white/40 border border-white/20 rounded-xl px-3 py-2 focus:border-brand-pink focus:ring-1 focus:ring-brand-pink focus:outline-none"
-                                                    placeholder="Paste URL or Upload"
-                                                />
-                                                <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => heroFileInputRef.current?.click()}
-                                                    disabled={isHeroUploading}
-                                                    className="shrink-0 px-4 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase tracking-wider hover:bg-brand-pink/90 active:scale-95 transition-all disabled:opacity-60 flex items-center gap-2"
-                                                >
-                                                    {isHeroUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                                    {isHeroUploading ? 'Uploading...' : 'Upload'}
-                                                </button>
-                                                {(formData.image || activeImage) && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setModalConfig({
-                                                            isOpen: true, title: 'ลบรูป Banner', message: 'ลบรูป Banner จะลบจาก Firebase Storage ด้วย ยืนยันไหม?', type: 'danger',
-                                                            singleButton: false, confirmText: 'ลบ',
-                                                            onConfirm: () => handleDeleteBannerImage()
-                                                        })}
-                                                        className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-bold text-xs uppercase tracking-wider hover:bg-red-500/30 active:scale-95 transition-all flex items-center gap-1"
-                                                        title="ลบรูป"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                            <div className="space-y-2 pt-2 border-t border-white/10">
-                                                <div className="flex items-center gap-3">
-                                                    <label className="text-xs text-white/60 uppercase font-black tracking-widest flex items-center gap-2 shrink-0"><ImageIcon size={12} /> Card Image (Home)</label>
-                                                    {formData.coverImage && (
-                                                        <div className="rounded-lg overflow-hidden border border-white/20 w-16 h-10 shrink-0">
-                                                            <img src={convertDriveLink(formData.coverImage)} alt="Cover" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <p className="text-[10px] text-white/50">Shown in group list. Uses Banner if empty.</p>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        value={formData.coverImage || ''}
-                                                        onChange={e => setFormData({ ...formData, coverImage: e.target.value })}
-                                                        className="flex-1 bg-white/10 text-sm font-medium text-white placeholder:text-white/40 border border-white/20 rounded-xl px-3 py-2 focus:border-brand-pink focus:ring-1 focus:ring-brand-pink focus:outline-none"
-                                                        placeholder="Paste URL or Upload"
-                                                    />
-                                                    <input type="file" ref={coverFileInputRef} onChange={handleCoverFileUpload} className="hidden" accept="image/*" />
-                                                    <button type="button" onClick={() => coverFileInputRef.current?.click()} disabled={isCoverUploading} className="shrink-0 px-4 py-2 rounded-xl bg-white/20 text-white font-bold text-xs uppercase tracking-wider hover:bg-white/30 active:scale-95 transition-all disabled:opacity-60 flex items-center gap-2">
-                                                        {isCoverUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                                        Upload
-                                                    </button>
-                                                    {formData.coverImage && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setModalConfig({
-                                                                isOpen: true, title: 'ลบรูป Card', message: 'ลบรูป Card จะลบจาก Firebase Storage ด้วย ยืนยันไหม?', type: 'danger',
-                                                                singleButton: false, confirmText: 'ลบ',
-                                                                onConfirm: () => handleDeleteCoverImage()
-                                                            })}
-                                                            className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-bold text-xs uppercase tracking-wider hover:bg-red-500/30 active:scale-95 transition-all flex items-center gap-1"
-                                                            title="ลบรูป"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
+                                <h1 className="text-2xl sm:text-4xl md:text-6xl font-black text-white mb-1 drop-shadow-[0_10px_30px_rgba(0,0,0,0.5)] truncate">
+                                    {formData.name || displayGroup.name || 'Group Name'}
+                                </h1>
+                                <p className="text-base sm:text-xl md:text-2xl text-brand-pink/90 font-black tracking-widest drop-shadow-2xl italic truncate">
+                                    {formData.koreanName || displayGroup.koreanName || ''}
+                                </p>
+                                <p className="text-xs text-white/60 mt-2">Edit below ↓</p>
                             </motion.div>
                         ) : (
                             <motion.div
@@ -1494,25 +1536,184 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                     </div>
 
                     <div className="flex gap-2 md:gap-4">
-                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-pink/50 transition-colors">
-                            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-pink transition-colors">Members</p>
-                            <p className="text-xl md:text-3xl font-black text-white">{activeMembers.length}</p>
+                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-black/20 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-pink/60 transition-colors">
+                            <p className="text-[10px] md:text-[11px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-pink transition-colors">
+                                {t('groupPage.members')}
+                            </p>
+                            <p className="text-xl md:text-3xl font-black text-white">
+                                {activeMembers.length}
+                            </p>
                         </div>
-                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-white/5 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-blue/50 transition-colors">
-                            <p className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">Fanclub</p>
-                            {isEditingGroupInfo ? (
-                                <input
-                                    value={formData.fanclub || ''}
-                                    onChange={e => setFormData({ ...formData, fanclub: e.target.value })}
-                                    className="w-full bg-transparent text-xl md:text-3xl font-black text-brand-blue text-center border-b border-white/20 focus:border-brand-blue focus:outline-none"
-                                />
-                            ) : (
-                                <p className="text-xl md:text-3xl font-black text-brand-blue drop-shadow-sm">{displayGroup.fanclub || '-'}</p>
-                            )}
+                        <div className="px-3 md:px-6 py-2 md:py-4 rounded-[16px] md:rounded-[24px] bg-black/20 backdrop-blur-3xl border border-white/10 text-center shadow-2xl min-w-[70px] md:min-w-[120px] group/stat hover:border-brand-blue/60 transition-colors">
+                            <p className="text-[10px] md:text-[11px] text-white/40 uppercase tracking-[0.2em] font-black mb-1 group-hover/stat:text-brand-blue transition-colors">
+                                {t('groupPage.fandom')}
+                            </p>
+                            <p className="text-xl md:text-3xl font-black text-brand-blue">
+                                {displayGroup.fanclub || '-'}
+                            </p>
                         </div>
                     </div>
                 </motion.div>
             </section>
+
+            <AnimatePresence>
+            {isEditingGroupInfo && isAdmin && (
+                <motion.div
+                    key="edit-group-form"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    className={cn(
+                        "mx-2 md:mx-4 mb-8 rounded-2xl border overflow-hidden max-h-[min(70vh,560px)] flex flex-col",
+                        theme === 'dark' ? "bg-slate-900/80 border-white/10" : "bg-white border-slate-200 shadow-xl"
+                    )}
+                >
+                    <div className="p-4 border-b shrink-0 flex flex-wrap items-center justify-between gap-4" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgb(226,232,240)' }}>
+                        <h3 className={cn("font-black text-sm uppercase tracking-widest", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                            Edit group info
+                        </h3>
+                        <div className="flex gap-2">
+                            <motion.button
+                                onClick={() => {
+                                    setIsEditingGroupInfo(false);
+                                    setFormData(prev => ({
+                                        ...prev, name: displayGroup.name, koreanName: displayGroup.koreanName,
+                                        image: displayGroup.image, coverImage: displayGroup.coverImage, imagePosition: displayGroup.imagePosition, imageScale: displayGroup.imageScale, imageFit: displayGroup.imageFit, coverImagePosition: displayGroup.coverImagePosition, coverImageScale: displayGroup.coverImageScale, coverImageFit: displayGroup.coverImageFit,
+                                        fanclub: displayGroup.fanclub, company: displayGroup.company, debut: displayGroup.debut, debutDate: displayGroup.debutDate,
+                                        status: displayGroup.status, disbandDate: displayGroup.disbandDate, description: displayGroup.description,
+                                        socialOrder: displayGroup.socialOrder, awards: displayGroup.awards,
+                                        instagram: displayGroup.instagram, facebook: displayGroup.facebook, twitter: displayGroup.twitter,
+                                        youtube: displayGroup.youtube, tiktok: displayGroup.tiktok, appleMusic: displayGroup.appleMusic, spotify: displayGroup.spotify
+                                    }));
+                                    setActiveImage(displayGroup.image);
+                                }}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                                className={cn("px-4 py-2 rounded-xl text-sm font-bold border transition-colors", theme === 'dark' ? "border-white/20 text-slate-300 hover:bg-white/10" : "border-slate-200 text-slate-600 hover:bg-slate-100")}
+                            >
+                                <X size={16} className="inline mr-1.5 -mt-0.5" /> Cancel
+                            </motion.button>
+                            <motion.button
+                                onClick={handleSaveGroup}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.96 }}
+                                transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                                className="px-4 py-2 rounded-xl bg-green-500 text-white text-sm font-bold hover:bg-green-600 transition-colors flex items-center gap-1.5"
+                            >
+                                <Save size={16} /> Save
+                            </motion.button>
+                        </div>
+                    </div>
+                    <div
+                        ref={editFormScrollRef}
+                        className="overflow-y-auto overscroll-contain flex-1 p-6 space-y-6 custom-scrollbar"
+                        onWheel={(e) => {
+                            const el = editFormScrollRef.current;
+                            const target = e.target;
+                            if (!el || !target?.closest?.('input, textarea, select')) return;
+                            const canScrollUp = el.scrollTop > 0 && e.deltaY < 0;
+                            const canScrollDown = el.scrollTop < el.scrollHeight - el.clientHeight - 1 && e.deltaY > 0;
+                            if (canScrollUp || canScrollDown) {
+                                el.scrollTop += e.deltaY;
+                                e.preventDefault();
+                            }
+                        }}
+                    >
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Group Name</label>
+                            <input value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} className={cn("w-full p-3 rounded-xl border font-bold", theme === 'dark' ? "bg-slate-800 border-white/10 text-white" : "bg-slate-50 border-slate-200 text-slate-900")} placeholder="Group Name" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Korean Name</label>
+                            <input value={formData.koreanName || ''} onChange={e => setFormData({ ...formData, koreanName: e.target.value })} className={cn("w-full p-3 rounded-xl border font-bold", theme === 'dark' ? "bg-slate-800 border-white/10 text-white" : "bg-slate-50 border-slate-200 text-slate-900")} placeholder="Korean Name" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2"><ImageIcon size={14} /> Banner Image</label>
+                            <div className="flex gap-2">
+                                <input value={formData.image || ''} onChange={(e) => { const u = e.target.value; setFormData({ ...formData, image: u }); setActiveImage(u); }} className={cn("flex-1 p-3 rounded-xl border text-sm", theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-slate-50 border-slate-200")} placeholder="URL or Upload" />
+                                <input type="file" ref={heroFileInputRef} onChange={handleHeroFileUpload} className="hidden" accept="image/*" />
+                                <button type="button" onClick={() => heroFileInputRef.current?.click()} disabled={isHeroUploading} className="shrink-0 px-4 py-2 rounded-xl bg-brand-pink text-white font-bold text-xs uppercase flex items-center gap-2">
+                                    {isHeroUploading ? <Loader2 size={14} className="animate-spin" /> : null}
+                                    {isHeroUploading ? 'Uploading...' : 'Upload'}
+                                </button>
+                                {(formData.image || activeImage) && <button type="button" onClick={() => setModalConfig({ isOpen: true, title: 'Delete banner image', message: 'Are you sure?', type: 'danger', singleButton: false, confirmText: 'Delete', onConfirm: () => handleDeleteBannerImage() })} className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-500 font-bold text-xs">Delete</button>}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Card Image (Home)</label>
+                            <div className="flex gap-2 flex-wrap items-center">
+                                <input value={formData.coverImage || ''} onChange={e => setFormData({ ...formData, coverImage: e.target.value })} className={cn("flex-1 min-w-0 p-3 rounded-xl border text-sm", theme === 'dark' ? "bg-slate-800 border-white/10" : "bg-slate-50 border-slate-200")} placeholder="URL" />
+                                <input type="file" ref={coverFileInputRef} onChange={handleCoverFileUpload} className="hidden" accept="image/*" />
+                                <button type="button" onClick={() => coverFileInputRef.current?.click()} disabled={isCoverUploading} className={cn("shrink-0 px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition-all", isCoverUploading ? "bg-brand-pink/20 text-brand-pink cursor-not-allowed" : "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-white")}>
+                                    {isCoverUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                                    {isCoverUploading ? 'Uploading...' : 'Upload'}
+                                </button>
+                                {formData.coverImage && !isCoverUploading && <button type="button" onClick={() => setModalConfig({ isOpen: true, title: 'Delete card image', message: 'Are you sure?', type: 'danger', singleButton: false, confirmText: 'Delete', onConfirm: () => handleDeleteCoverImage() })} className="shrink-0 px-3 py-2 rounded-xl bg-red-500/20 text-red-500 font-bold text-xs">Delete</button>}
+                            </div>
+                            {isCoverUploading && (
+                                <p className={cn("mt-2 text-xs font-medium flex items-center gap-2", theme === 'dark' ? "text-brand-pink" : "text-brand-pink")}>
+                                    <Loader2 size={14} className="animate-spin shrink-0" />
+                                    กำลังอัปโหลด Card Image...
+                                </p>
+                            )}
+                            {formData.coverImage && (
+                                <div className={cn("mt-3 p-3 rounded-xl border", theme === 'dark' ? "bg-slate-800/50 border-white/10" : "bg-slate-50 border-slate-200")}>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <Pin size={14} className="text-brand-pink shrink-0" />
+                                        <span className="text-xs font-bold uppercase tracking-wider">Adjust position (Reframe)</span>
+                                    </div>
+                                    <div className="mb-4">
+                                        <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Preview</p>
+                                        <div className="relative aspect-[3/4.2] max-w-[160px] rounded-2xl overflow-hidden border border-white/10 shadow-lg bg-slate-800">
+                                            <img
+                                                src={convertDriveLink(formData.coverImage || displayGroup?.coverImage, 600)}
+                                                alt="Card preview"
+                                                className="absolute inset-0 w-full h-full"
+                                                style={{
+                                                    objectFit: formData.coverImageFit ?? displayGroup?.coverImageFit ?? 'cover',
+                                                    objectPosition: `${formData.coverImagePosition?.x ?? displayGroup?.coverImagePosition?.x ?? 50}% ${formData.coverImagePosition?.y ?? displayGroup?.coverImagePosition?.y ?? 50}%`,
+                                                    transform: `scale(${formData.coverImageScale ?? displayGroup?.coverImageScale ?? 1})`,
+                                                    transformOrigin: `${formData.coverImagePosition?.x ?? displayGroup?.coverImagePosition?.x ?? 50}% ${formData.coverImagePosition?.y ?? displayGroup?.coverImagePosition?.y ?? 50}%`
+                                                }}
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <span className="text-[10px] text-slate-500 block mb-1">Horizontal (X) {formData.coverImagePosition?.x ?? displayGroup?.coverImagePosition?.x ?? 50}%</span>
+                                            <input type="range" min="0" max="100" value={formData.coverImagePosition?.x ?? displayGroup?.coverImagePosition?.x ?? 50} onChange={e => setFormData(prev => ({ ...prev, coverImagePosition: { x: Number(e.target.value), y: prev.coverImagePosition?.y ?? displayGroup?.coverImagePosition?.y ?? 50 } }))} className="w-full h-1.5 accent-brand-pink" />
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] text-slate-500 block mb-1">Vertical (Y) {formData.coverImagePosition?.y ?? displayGroup?.coverImagePosition?.y ?? 50}%</span>
+                                            <input type="range" min="0" max="100" value={formData.coverImagePosition?.y ?? displayGroup?.coverImagePosition?.y ?? 50} onChange={e => setFormData(prev => ({ ...prev, coverImagePosition: { x: prev.coverImagePosition?.x ?? displayGroup?.coverImagePosition?.x ?? 50, y: Number(e.target.value) } }))} className="w-full h-1.5 accent-brand-pink" />
+                                        </div>
+                                    </div>
+                                    <div className="mt-3">
+                                        <span className="text-[10px] text-slate-500 block mb-1">Fit</span>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, coverImageFit: 'cover' }))} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", (formData.coverImageFit ?? displayGroup?.coverImageFit ?? 'cover') === 'cover' ? "bg-brand-pink text-white" : theme === 'dark' ? "bg-slate-700 text-slate-400 hover:bg-slate-600" : "bg-slate-200 text-slate-600 hover:bg-slate-300")}>Cover</button>
+                                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, coverImageFit: 'contain' }))} className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-colors", (formData.coverImageFit ?? displayGroup?.coverImageFit) === 'contain' ? "bg-brand-pink text-white" : theme === 'dark' ? "bg-slate-700 text-slate-400 hover:bg-slate-600" : "bg-slate-200 text-slate-600 hover:bg-slate-300")}>Contain (show full image)</button>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-1">Cover = crop to fill · Contain = show full image (no crop)</p>
+                                    </div>
+                                    <div className="mt-3">
+                                        <span className="text-[10px] text-slate-500 block mb-1">Scale (Zoom) {Math.round((formData.coverImageScale ?? displayGroup?.coverImageScale ?? 1) * 100)}%</span>
+                                        <input type="range" min="25" max="200" value={(formData.coverImageScale ?? displayGroup?.coverImageScale ?? 1) * 100} onChange={e => setFormData(prev => ({ ...prev, coverImageScale: Number(e.target.value) / 100 }))} className="w-full h-1.5 accent-brand-pink" />
+                                    </div>
+                                    <div className="flex gap-3 mt-1.5">
+                                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, coverImagePosition: { x: 50, y: 50 } }))} className="text-[10px] text-slate-500 hover:text-slate-700">Reset position</button>
+                                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, coverImageScale: 1 }))} className="text-[10px] text-slate-500 hover:text-slate-700">Reset scale</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+            </AnimatePresence>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 px-2 md:px-4">
                 {/* Left Column: Info & Description */}
@@ -1538,13 +1739,13 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                 <div className="p-2.5 rounded-xl bg-brand-purple/10 text-brand-purple">
                                     <Info size={20} />
                                 </div>
-                                Information
+                                {t('groupPage.information')}
                             </h3>
 
                             <div className="space-y-4">
                                 <InfoRow
                                     icon={Building2}
-                                    label="Foundation"
+                                    label={t('groupPage.foundation')}
                                     value={isEditingGroupInfo ? (
                                         <input
                                             value={formData.company || ''}
@@ -1557,22 +1758,24 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     } : undefined}
                                     theme={theme}
                                 />
-                                <InfoRow
-                                    icon={Calendar}
-                                    label="Debut Era"
-                                    value={isEditingGroupInfo ? (
-                                        <input
-                                            type="date"
-                                            value={formData.debutDate || formData.debut || ''}
-                                            onChange={e => setFormData({ ...formData, debutDate: e.target.value })}
-                                            className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                        />
-                                    ) : (displayGroup.debutDate || '-')}
-                                    theme={theme}
-                                />
+                                {isEditingGroupInfo ? (
+                                    <DateSelect
+label={t('groupPage.debutEra')}
+                                    value={formData.debutDate || formData.debut || ''}
+                                        onChange={val => setFormData({ ...formData, debutDate: val })}
+                                        theme={theme}
+                                    />
+                                ) : (
+                                    <InfoRow
+                                        icon={Calendar}
+                                        label={t('groupPage.debutEra')}
+                                        value={displayGroup.debutDate || '-'}
+                                        theme={theme}
+                                    />
+                                )}
                                 <InfoRow
                                     icon={Heart}
-                                    label="Status"
+                                    label={t('groupPage.status')}
                                     value={isEditingGroupInfo ? (
                                         <select
                                             value={formData.status || 'Active'}
@@ -1593,27 +1796,29 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     )}
                                 />
                                 {(isEditingGroupInfo ? formData.status === 'Inactive' : displayGroup.status === 'Inactive') && (
-                                    <InfoRow
-                                        icon={Calendar}
-                                        label="Disband Date"
-                                        value={isEditingGroupInfo ? (
-                                            <input
-                                                type="date"
-                                                value={formData.disbandDate || ''}
-                                                onChange={e => setFormData({ ...formData, disbandDate: e.target.value })}
-                                                className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
-                                            />
-                                        ) : (displayGroup.disbandDate || 'N/A')}
-                                        theme={theme}
-                                        valueClass="text-red-500"
-                                    />
+                                    isEditingGroupInfo ? (
+                                        <DateSelect
+                                            label="Disband Date"
+                                            value={formData.disbandDate || ''}
+                                            onChange={val => setFormData({ ...formData, disbandDate: val })}
+                                            theme={theme}
+                                        />
+                                    ) : (
+                                        <InfoRow
+                                            icon={Calendar}
+                                            label="Disband Date"
+                                            value={displayGroup.disbandDate || 'N/A'}
+                                            theme={theme}
+                                            valueClass="text-red-500"
+                                        />
+                                    )
                                 )}
 
                                 {/* Social Media Links */}
                                 {(isEditingGroupInfo || socialLinksOrder.some(link => displayGroup?.[link.id])) && (
                                     <div className="pt-4 border-t border-dashed border-slate-200 dark:border-white/10 space-y-3">
                                         <h4 className={cn("text-[10px] font-black uppercase tracking-widest mb-2 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
-                                            <Globe size={12} /> Social Media
+                                            <Globe size={12} /> {t('groupPage.socialMedia')}
                                         </h4>
 
                                         {isEditingGroupInfo ? (
@@ -1720,28 +1925,28 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 w-full">
                             <button onClick={() => setActiveTab('members')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'members' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><Star size={20} fill="currentColor" /></motion.div>}
-                                Members
+                                {t('groupPage.members')}
                             </button>
                             <button onClick={() => setActiveTab('gallery')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'gallery' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><ImageIcon size={20} fill="currentColor" /></motion.div>}
-                                Gallery
+                                {t('groupPage.gallery')}
                             </button>
                             <button onClick={() => setActiveTab('timeline')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'timeline' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><History size={20} /></motion.div>}
-                                Timeline
+                                {t('groupPage.timeline')}
                             </button>
                             <button onClick={() => setActiveTab('discography')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'discography' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-purple/10 text-brand-purple shadow-inner"><Disc size={20} fill="currentColor" /></motion.div>}
-                                Discography
+                                {t('groupPage.discography')}
                             </button>
                             <button onClick={() => setActiveTab('videos')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'videos' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-red-500/10 text-red-500 shadow-inner"><Youtube size={20} fill="currentColor" /></motion.div>}
-                                Video Gallery
+                                {t('groupPage.videoGallery')}
                             </button>
                             <div onClick={() => setActiveTab('news')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'news' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-green-500/10 text-green-500 shadow-inner"><Newspaper size={20} fill="currentColor" /></motion.div>}
                                 <div className="flex items-center gap-3">
-                                    News
+                                    {t('groupPage.news')}
                                     {activeTab === 'news' && (
                                         <button onClick={(e) => { e.stopPropagation(); fetchNews(); }} disabled={loadingNews} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
                                             <RefreshCw size={16} className={cn(loadingNews && "animate-spin")} />
@@ -1751,7 +1956,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             </div>
                             <button onClick={() => setActiveTab('comments')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'comments' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><MessageSquare size={20} fill="currentColor" /></motion.div>}
-                                Fan Talk
+                                {t('groupPage.fanTalk')}
                                 <span className="text-base md:text-xl opacity-30 ml-2">({comments.length})</span>
                             </button>
                         </div>
@@ -1789,6 +1994,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     axis="y"
                                     values={sortedMembers}
                                     onReorder={(newOrder) => {
+                                        setEditingMembers(newOrder);
                                         setFormData(prev => ({
                                             ...prev,
                                             members: newOrder.map(m => m.id)
@@ -1833,7 +2039,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 <div className="col-span-1 md:col-span-1 xl:col-span-2 flex items-center justify-between gap-4 mt-4 mb-2">
                                                     <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
                                                         <div className="w-8 h-1 bg-brand-pink rounded-full" />
-                                                        {activeMembers.length > 0 ? "Active Members" : "Members"}
+                                                        {activeMembers.length > 0 ? t('groupPage.activeMembers') : t('groupPage.members')}
                                                     </h3>
                                                     {user && isAdmin && (
                                                         <div className="flex items-center gap-2 shrink-0">
@@ -1847,7 +2053,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                                         theme === 'dark' ? "bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5" : "bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-brand-pink border border-slate-200"
                                                                     )}
                                                                 >
-                                                                    <Edit2 size={12} /> Edit
+                                                                    <Edit2 size={12} /> {t('groupPage.edit')}
                                                                 </motion.button>
                                                             ) : (
                                                                 <motion.div
@@ -1859,6 +2065,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                                         onClick={() => {
                                                                             setIsEditingMembers(false);
                                                                             setIsReordering(false);
+                                                                            setMemberAddSearch('');
                                                                             setFormData(prev => ({ ...prev, members: displayGroup.members }));
                                                                             setEditingMembers(members);
                                                                         }}
@@ -1891,6 +2098,84 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     )}
                                                 </div>
 
+                                                {/* Add Members from existing idols - only when editing and not reordering */}
+                                                {isEditingMembers && !isReordering && allIdols && allIdols.length > 0 && (
+                                                    <div className="col-span-1 md:col-span-1 xl:col-span-2 mb-8">
+                                                        <div className="relative" ref={memberAddSearchRef}>
+                                                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} strokeWidth={1.5} />
+                                                            <input
+                                                                value={memberAddSearch}
+                                                                onChange={e => setMemberAddSearch(e.target.value)}
+                                                                className={cn(
+                                                                    "w-full rounded-xl py-3.5 pl-12 pr-4 text-[15px] font-medium placeholder:font-normal transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand-pink/40",
+                                                                    theme === 'dark'
+                                                                        ? "bg-slate-800/60 placeholder:text-slate-500 text-white border border-white/5 focus:border-brand-pink/50"
+                                                                        : "bg-white placeholder:text-slate-400 text-slate-800 border border-slate-200/80 shadow-sm focus:border-brand-pink/40"
+                                                                )}
+                                                                placeholder="Search idols to add..."
+                                                            />
+                                                            {memberAddSearch && (
+                                                                <div
+                                                                    className={cn(
+                                                                        "absolute top-full left-0 right-0 mt-1.5 rounded-xl overflow-hidden z-20 max-h-56 overflow-y-auto border shadow-lg",
+                                                                        theme === 'dark'
+                                                                            ? "bg-slate-800/95 border-white/10 shadow-black/20"
+                                                                            : "bg-white border-slate-200/80 shadow-slate-200/50"
+                                                                    )}
+                                                                >
+                                                                    {allIdols
+                                                                        .filter(i =>
+                                                                            !(formData.members || []).includes(i.id) &&
+                                                                            (i.name?.toLowerCase().includes(memberAddSearch.toLowerCase()) || (i.koreanName && i.koreanName.toLowerCase().includes(memberAddSearch.toLowerCase())))
+                                                                        )
+                                                                        .map((idol, idx) => (
+                                                                            <button
+                                                                                key={idol.id}
+                                                                                type="button"
+                                                                                onClick={() => {
+                                                                                    const doAdd = () => {
+                                                                                        setEditingMembers(prev => [...prev, idol]);
+                                                                                        setFormData(prev => ({ ...prev, members: [...(prev.members || []), idol.id] }));
+                                                                                        setMemberAddSearch('');
+                                                                                        toast.success(`${idol.name} added. Click Save to confirm.`);
+                                                                                    };
+                                                                                    if (idol.groupId && idol.groupId !== displayGroup?.id) {
+                                                                                        confirm({
+                                                                                            title: 'Move Member',
+                                                                                            message: `${idol.name} is already in another group. Move them to ${displayGroup?.name || 'this group'}?`,
+                                                                                            confirmText: 'Move',
+                                                                                            onConfirm: doAdd
+                                                                                        });
+                                                                                    } else {
+                                                                                        doAdd();
+                                                                                    }
+                                                                                }}
+                                                                                className={cn(
+                                                                                    "w-full px-4 py-3 flex items-center gap-4 text-left transition-colors duration-150 border-b last:border-b-0",
+                                                                                    theme === 'dark'
+                                                                                        ? "border-white/5 hover:bg-white/5 text-white"
+                                                                                        : "border-slate-100 hover:bg-slate-50 text-slate-800"
+                                                                                )}
+                                                                            >
+                                                                                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-slate-100 dark:bg-white/10 flex items-center justify-center">
+                                                                                    {idol.image ? (
+                                                                                        <img src={convertDriveLink(idol.image)} className="w-full h-full object-cover" alt="" />
+                                                                                    ) : (
+                                                                                        <User size={18} className="text-slate-400" />
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <p className="text-[15px] font-semibold truncate">{idol.name}</p>
+                                                                                    <p className={cn("text-xs truncate", theme === 'dark' ? "text-slate-500" : "text-slate-500")}>{idol.group || 'Soloist'}</p>
+                                                                                </div>
+                                                                            </button>
+                                                                        ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+
                                                 {activeMembers.map((member, idx) => (
                                                     <MemberCard
                                                         key={member.id || idx}
@@ -1903,6 +2188,17 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                         user={user}
                                                         onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
                                                         onEdit={() => onEditMember && onEditMember(member)}
+                                                        onRemove={isEditingMembers && !isReordering ? () => {
+                                                            confirm({
+                                                                title: 'Remove Member',
+                                                                message: `Remove ${member.name} from this group? Changes will be saved when you click Save.`,
+                                                                confirmText: 'Remove',
+                                                                onConfirm: () => {
+                                                                    setEditingMembers(prev => prev.filter(m => m.id !== member.id));
+                                                                    setFormData(prev => ({ ...prev, members: (prev.members || []).filter(id => id !== member.id) }));
+                                                                }
+                                                            });
+                                                        } : undefined}
                                                     />
                                                 ))}
 
@@ -1933,6 +2229,17 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                                 user={user}
                                                                 onFavorite={() => onFavoriteMember && onFavoriteMember(member.id)}
                                                                 onEdit={() => onEditMember && onEditMember(member)}
+                                                                onRemove={isEditingMembers && !isReordering ? () => {
+                                                                    confirm({
+                                                                        title: 'Remove Member',
+                                                                        message: `Remove ${member.name} from this group? Changes will be saved when you click Save.`,
+                                                                        confirmText: 'Remove',
+                                                                        onConfirm: () => {
+                                                                            setEditingMembers(prev => prev.filter(m => m.id !== member.id));
+                                                                            setFormData(prev => ({ ...prev, members: (prev.members || []).filter(id => id !== member.id) }));
+                                                                        }
+                                                                    });
+                                                                } : undefined}
                                                             />
                                                         ))}
                                                     </>
@@ -1954,7 +2261,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="flex items-center justify-between gap-4 mb-2">
                                 <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
                                     <div className="w-8 h-1 bg-brand-blue rounded-full" />
-                                    Gallery
+                                    {t('groupPage.gallery')}
                                 </h3>
                                 {user && isAdmin && (
                                     !isEditingGallery ? (
@@ -2024,7 +2331,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                     <button type="button" onClick={() => toggleGallerySelection(idx)} className="p-1">
                                                         {selectedGalleryIndices.has(idx) ? <CheckSquare size={20} className="text-brand-pink" /> : <Square size={20} className="text-slate-400" />}
                                                     </button>
-                                                    <div className="w-20 h-20 rounded-xl overflow-hidden border bg-slate-100 dark:bg-slate-800 shrink-0">
+                                                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden border bg-slate-100 dark:bg-slate-800 shrink-0">
                                                         {item.url ? (
                                                             <img src={convertDriveLink(item.url)} className="w-full h-full object-cover" alt="" onError={(e) => { e.target.onerror = null; e.target.src = ''; }} />
                                                         ) : (
@@ -2032,18 +2339,12 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                         )}
                                                     </div>
                                                 </div>
-                                                <div className="flex-1 flex flex-col sm:flex-row gap-2 min-w-0">
-                                                    <input
-                                                        value={item.url}
-                                                        onChange={e => handleGalleryChange(idx, e.target.value)}
-                                                        className={cn("flex-1 p-3 rounded-xl border outline-none text-sm font-medium", theme === 'dark' ? "border-white/10 bg-slate-900/50 text-white placeholder:text-slate-500" : "border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400")}
-                                                        placeholder="Paste image URL or upload"
-                                                    />
+                                                <div className="flex-1 flex flex-wrap items-center gap-2 min-w-0">
                                                     <button type="button" onClick={() => { galleryReplaceIdxRef.current = idx; galleryReplaceInputRef.current?.click(); }} disabled={isUploading} className="shrink-0 px-3 py-2 rounded-xl bg-brand-pink/10 text-brand-pink hover:bg-brand-pink/20 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 disabled:opacity-60">
                                                         {isUploading && galleryReplaceIdxRef.current === idx ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                                                         Upload
                                                     </button>
-                                                    <button type="button" onClick={() => removeGalleryImage(idx)} className="shrink-0 px-3 py-2 rounded-xl text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-2 self-start sm:self-auto">
+                                                    <button type="button" onClick={() => removeGalleryImage(idx)} className="shrink-0 px-3 py-2 rounded-xl text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-2">
                                                         <Trash2 size={16} /> Delete
                                                     </button>
                                                 </div>
@@ -2095,7 +2396,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             {(allImages.length <= 1 && !isEditingGallery) && (
                                 <div className="text-center py-20">
                                     <ImageIcon size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
-                                    <p className="text-slate-500 font-medium">No gallery images yet.</p>
+                                    <p className="text-slate-500 font-medium">{t('groupPage.noGalleryYet')}</p>
                                 </div>
                             )}
                         </motion.div>
@@ -2376,7 +2677,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="flex items-center justify-between gap-4 mb-2">
                                 <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
                                     <div className="w-8 h-1 bg-red-500 rounded-full" />
-                                    Video Gallery
+                                    {t('groupPage.videoGallery')}
                                 </h3>
                                 {user && isAdmin && (
                                     !isEditingVideos ? (
@@ -2437,12 +2738,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <input placeholder="Video Title" value={video.title || ''} onChange={e => handleVideoChange(idx, 'title', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                    <div className="flex gap-2">
-                                                        <input type="date" value={video.date || ''} onChange={e => handleVideoChange(idx, 'date', e.target.value)} className={cn("flex-1 p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                        <button type="button" onClick={() => handleVideoChange(idx, 'date', new Date().toISOString().split('T')[0])} className={cn("p-3 rounded-xl border font-bold text-xs uppercase", theme === 'dark' ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-50")}>
-                                                            Today
-                                                        </button>
-                                                    </div>
+                                                    <DateSelect label="Date" value={video.date || ''} onChange={val => handleVideoChange(idx, 'date', val)} theme={theme} />
                                                     <div className="md:col-span-2">
                                                         <input placeholder="YouTube URL" value={video.url || ''} onChange={e => handleVideoChange(idx, 'url', e.target.value)} className={cn("w-full p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
                                                     </div>
@@ -2856,7 +3152,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="flex items-center justify-between gap-4 mb-2">
                                 <h3 className={cn("text-lg font-black uppercase tracking-widest flex items-center gap-2 shrink-0", theme === 'dark' ? "text-slate-400" : "text-slate-500")}>
                                     <div className="w-8 h-1 bg-brand-purple rounded-full" />
-                                    Discography
+                                    {t('groupPage.discography')}
                                 </h3>
                                 {user && isAdmin && (
                                     !isEditingDiscography ? (
@@ -2918,7 +3214,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <input placeholder="Album Title" value={album.title || ''} onChange={e => handleAlbumChange(idx, 'title', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                    <input type="date" value={album.date || ''} onChange={e => handleAlbumChange(idx, 'date', e.target.value)} className={cn("p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
+                                                    <DateSelect label="Date" value={album.date || ''} onChange={val => handleAlbumChange(idx, 'date', val)} theme={theme} />
                                                     <div className="md:col-span-2 flex flex-col sm:flex-row gap-3">
                                                         <div className="flex gap-3 items-start flex-1 min-w-0">
                                                             <div className="w-20 h-20 rounded-xl overflow-hidden border bg-slate-100 dark:bg-slate-800 shrink-0 flex items-center justify-center">
@@ -2974,7 +3270,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                             onClick={() => setShowMusicBrainzModal(true)}
                                             className={cn("flex-1 py-4 rounded-2xl border transition-all duration-200 flex items-center justify-center gap-2 font-semibold", theme === 'dark' ? "border-brand-purple/50 text-brand-purple hover:bg-brand-purple/10" : "border-brand-purple/40 text-brand-purple hover:bg-brand-purple/5")}
                                         >
-                                            <Disc size={20} /> Import from MusicBrainz
+                                            <Disc size={20} /> Import from iTunes
                                         </button>
                                         <button onClick={addAlbum} className={cn("flex-1 py-4 rounded-2xl border-2 border-dashed transition-all duration-200 flex items-center justify-center gap-2 font-semibold", theme === 'dark' ? "border-brand-pink/30 text-brand-pink hover:bg-brand-pink/10 hover:border-brand-pink/50" : "border-brand-pink/40 text-brand-pink hover:bg-brand-pink/5 hover:border-brand-pink/60")}>
                                             <Plus size={20} /> Add Album
@@ -2989,58 +3285,73 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                     }}
                                     initial="hidden"
                                     animate="show"
-                                    className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4"
+                                    className="space-y-10"
                                 >
                                     {(displayGroup.albums || []).length > 0 ? (
-                                        (displayGroup.albums || []).sort((a, b) => new Date(b.date) - new Date(a.date)).map((album, idx) => (
-                                            <motion.div
-                                                layout
-                                                variants={{ hidden: { opacity: 0, y: 20, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
-                                                key={idx}
-                                                whileHover={{ y: -8 }}
-                                                onClick={() => setSelectedAlbum(album)}
-                                                className={cn(
-                                                    "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
-                                                    theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
-                                                )}
-                                            >
-                                                <div className="aspect-square overflow-hidden relative bg-slate-100 dark:bg-slate-800">
-                                                    <img
-                                                        src={convertDriveLink(album.cover)}
-                                                        alt={album.title}
-                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2"
-                                                        loading="lazy"
-                                                    />
-                                                    <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-                                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-50 group-hover:scale-100">
-                                                        <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl">
-                                                            <PlayCircle size={24} fill="currentColor" />
+                                        (() => {
+                                            const { albums, mini, singles, other } = groupAlbumsByType(displayGroup.albums);
+                                            const AlbumCard = ({ album, idx }) => (
+                                                <motion.div
+                                                    layout
+                                                    variants={{ hidden: { opacity: 0, y: 20, scale: 0.95 }, show: { opacity: 1, y: 0, scale: 1 } }}
+                                                    key={idx}
+                                                    whileHover={{ y: -8 }}
+                                                    onClick={() => setSelectedAlbum(album)}
+                                                    className={cn(
+                                                        "group cursor-pointer rounded-2xl overflow-hidden border shadow-sm hover:shadow-xl transition-all duration-300",
+                                                        theme === 'dark' ? "bg-slate-800/50 border-white/5 hover:border-brand-pink/50" : "bg-white border-slate-100 hover:border-brand-pink/50"
+                                                    )}
+                                                >
+                                                    <div className="aspect-square overflow-hidden relative bg-slate-100 dark:bg-slate-800">
+                                                        <img src={convertDriveLink(album.cover)} alt={album.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 group-hover:rotate-2" loading="lazy" />
+                                                        <div className="absolute inset-0 bg-linear-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 transform scale-50 group-hover:scale-100">
+                                                            <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-white shadow-xl"><PlayCircle size={24} fill="currentColor" /></div>
+                                                        </div>
+                                                        {album.date && (
+                                                            <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">{new Date(album.date).getFullYear()}</div>
+                                                        )}
+                                                    </div>
+                                                    <div className="p-3 relative">
+                                                        <h4 className={cn("font-bold text-xs leading-tight mb-1 line-clamp-1 group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-slate-200" : "text-slate-800")}>{album.title}</h4>
+                                                        <div className="flex items-center justify-between">
+                                                            <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{album.tracks?.length || 0} Tracks</p>
+                                                            {album.youtube && <Youtube size={12} className="text-red-500" />}
                                                         </div>
                                                     </div>
-
-                                                    {album.date && (
-                                                        <div className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md border border-white/10 text-[10px] font-bold text-white uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
-                                                            {new Date(album.date).getFullYear()}
+                                                </motion.div>
+                                            );
+                                            return (
+                                                <>
+                                                    {albums.length > 0 && (
+                                                        <div>
+                                                            <h4 className={cn("text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-6 h-0.5 bg-brand-purple rounded-full" /> Albums</h4>
+                                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">{albums.map((album, i) => <AlbumCard key={i} album={album} idx={i} />)}</div>
                                                         </div>
                                                     )}
-                                                </div>
-
-                                                <div className="p-3 relative">
-                                                    <h4 className={cn("font-bold text-xs leading-tight mb-1 line-clamp-1 group-hover:text-brand-pink transition-colors", theme === 'dark' ? "text-slate-200" : "text-slate-800")}>
-                                                        {album.title}
-                                                    </h4>
-                                                    <div className="flex items-center justify-between">
-                                                        <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">
-                                                            {album.tracks?.length || 0} Tracks
-                                                        </p>
-                                                        {album.youtube && <Youtube size={12} className="text-red-500" />}
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        ))
+                                                    {(mini.length > 0) && (
+                                                        <div>
+                                                            <h4 className={cn("text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-6 h-0.5 bg-brand-purple/70 rounded-full" /> Mini Albums & EPs</h4>
+                                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">{mini.map((album, i) => <AlbumCard key={i} album={album} idx={i} />)}</div>
+                                                        </div>
+                                                    )}
+                                                    {singles.length > 0 && (
+                                                        <div>
+                                                            <h4 className={cn("text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-6 h-0.5 bg-brand-pink/70 rounded-full" /> Singles</h4>
+                                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">{singles.map((album, i) => <AlbumCard key={i} album={album} idx={i} />)}</div>
+                                                        </div>
+                                                    )}
+                                                    {other.length > 0 && (
+                                                        <div>
+                                                            <h4 className={cn("text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2", theme === 'dark' ? "text-slate-400" : "text-slate-500")}><div className="w-6 h-0.5 bg-slate-400 rounded-full" /> Other</h4>
+                                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">{other.map((album, i) => <AlbumCard key={i} album={album} idx={i} />)}</div>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            );
+                                        })()
                                     ) : (
-                                        <div className="col-span-full text-center py-20">
+                                        <div className="text-center py-20">
                                             <Disc size={48} className="mx-auto text-slate-300 mb-4 opacity-50" />
                                             <p className="text-slate-500 font-medium">No discography added yet.</p>
                                         </div>
@@ -3083,11 +3394,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            onClick={() => setLightboxImage(null)}
+                            onClick={() => { restorePageScroll(); setLightboxImage(null); }}
                             className="fixed inset-0 z-100 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
                         >
                             <button
-                                onClick={() => setLightboxImage(null)}
+                                onClick={() => { restorePageScroll(); setLightboxImage(null); }}
                                 className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
                             >
                                 <X size={24} />
@@ -3135,11 +3446,11 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            onClick={() => setSelectedVideo(null)}
+                            onClick={() => { restorePageScroll(); setSelectedVideo(null); }}
                             className="fixed inset-0 z-100 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
                         >
                             <button
-                                onClick={() => setSelectedVideo(null)}
+                                onClick={() => { restorePageScroll(); setSelectedVideo(null); }}
                                 className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
                             >
                                 <X size={24} />
@@ -3179,7 +3490,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        onClick={() => setSelectedAlbum(null)}
+                        onClick={() => { restorePageScroll(); setSelectedAlbum(null); }}
                         className="fixed inset-0 z-100 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-hidden"
                     >
                         <motion.div
@@ -3193,7 +3504,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                             <div className="w-full md:w-1/2 aspect-square md:aspect-auto relative">
                                 <img src={convertDriveLink(selectedAlbum.cover)} className="w-full h-full object-cover" alt={selectedAlbum.title || 'Album Cover'} loading="lazy" />
                                 <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent md:hidden" />
-                                <button onClick={() => setSelectedAlbum(null)} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
+                                <button onClick={() => { restorePageScroll(); setSelectedAlbum(null); }} className="absolute top-4 right-4 p-2 rounded-full bg-black/40 text-white hover:bg-black/60 md:hidden"><X size={20} /></button>
                             </div>
                             <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col overflow-y-auto custom-scrollbar">
                                 <div className="flex justify-between items-start mb-6">
@@ -3201,7 +3512,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
                                         <h3 className={cn("text-2xl md:text-3xl font-black leading-tight mb-2", theme === 'dark' ? "text-white" : "text-slate-900")}>{selectedAlbum.title}</h3>
                                         <p className="text-sm font-bold text-brand-pink uppercase tracking-widest">{selectedAlbum.date}</p>
                                     </div>
-                                    <button onClick={() => setSelectedAlbum(null)} className="hidden md:block p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"><X size={24} className={theme === 'dark' ? "text-white" : "text-slate-900"} /></button>
+                                    <button onClick={() => { restorePageScroll(); setSelectedAlbum(null); }} className="hidden md:block p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"><X size={24} className={theme === 'dark' ? "text-white" : "text-slate-900"} /></button>
                                 </div>
 
                                 <div className="flex-1 space-y-4 mb-8">
@@ -3324,7 +3635,7 @@ function usePrevious(value) {
     return ref.current;
 }
 
-const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite, onEdit }) {
+const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onImageClick, id, onSearchPosition, user, onFavorite, onEdit, onRemove }) {
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
 
     const x = useMotionValue(0);
@@ -3523,6 +3834,14 @@ const MemberCard = React.memo(function MemberCard({ member, theme, onClick, onIm
                 )}>
                     <ChevronRight size={32} />
                 </div>
+
+                {onRemove && (
+                    <div className="absolute bottom-4 right-4 z-20">
+                        <motion.button type="button" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={(e) => { e.stopPropagation(); onRemove(member); }} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-400/30" : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200")} title="Remove from group">
+                            <Trash2 size={16} /> Remove
+                        </motion.button>
+                    </div>
+                )}
             </div>
         </motion.div>
     );

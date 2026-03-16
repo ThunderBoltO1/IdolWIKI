@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { collection, getDocs, getCountFromServer, query, where, orderBy, limit, writeBatch, onSnapshot, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Users, Music2, MessageSquare, Star, ArrowLeft, LayoutDashboard, Building2, Loader2, AlertCircle, Trophy, Activity, TrendingUp, Heart, Crown, RotateCcw, History, Trash2 } from 'lucide-react';
@@ -12,6 +13,7 @@ import { BackgroundShapes } from './BackgroundShapes';
 export function AdminDashboard({ onBack }) {
     const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const { confirm } = useConfirm();
 
     const [stats, setStats] = useState({
         users: 0,
@@ -172,9 +174,12 @@ export function AdminDashboard({ onBack }) {
     }, [isAdmin]);
 
     const handleResetAllLikes = async () => {
-        if (!window.confirm("⚠️ WARNING: This will reset the 'likes' count for ALL idols to 0.\n\nAre you sure you want to continue?")) return;
-
-        setLoading(true);
+        confirm({
+            title: 'Reset All Likes',
+            message: "⚠️ WARNING: This will reset the 'likes' count for ALL idols to 0.\n\nAre you sure you want to continue?",
+            confirmText: 'Reset',
+            onConfirm: async () => {
+                setLoading(true);
         try {
             const idolsSnapshot = await getDocs(collection(db, 'idols'));
             const docs = idolsSnapshot.docs;
@@ -195,19 +200,24 @@ export function AdminDashboard({ onBack }) {
                 totalReset += chunk.length;
             }
 
-            alert(`Successfully reset likes for ${totalReset} idols.`);
-            window.location.reload();
-        } catch (error) {
-            console.error("Error resetting likes:", error);
-            setError("Failed to reset likes: " + error.message);
-            setLoading(false);
-        }
+                alert(`Successfully reset likes for ${totalReset} idols.`);
+                window.location.reload();
+            } catch (error) {
+                console.error("Error resetting likes:", error);
+                setError("Failed to reset likes: " + error.message);
+                setLoading(false);
+            }
+            }
+        });
     };
 
     const handleResetAllFavorites = async () => {
-        if (!window.confirm("⚠️ WARNING: This will reset the 'favorites' count for ALL groups to 0.\n\nAre you sure you want to continue?")) return;
-
-        setLoading(true);
+        confirm({
+            title: 'Reset All Favorites',
+            message: "⚠️ WARNING: This will reset the 'favorites' count for ALL groups to 0.\n\nAre you sure you want to continue?",
+            confirmText: 'Reset',
+            onConfirm: async () => {
+                setLoading(true);
         try {
             const groupsSnapshot = await getDocs(collection(db, 'groups'));
             const docs = groupsSnapshot.docs;
@@ -228,19 +238,24 @@ export function AdminDashboard({ onBack }) {
                 totalReset += chunk.length;
             }
 
-            alert(`Successfully reset favorites for ${totalReset} groups.`);
-            window.location.reload();
-        } catch (error) {
-            console.error("Error resetting favorites:", error);
-            setError("Failed to reset favorites: " + error.message);
-            setLoading(false);
-        }
+                alert(`Successfully reset favorites for ${totalReset} groups.`);
+                window.location.reload();
+            } catch (error) {
+                console.error("Error resetting favorites:", error);
+                setError("Failed to reset favorites: " + error.message);
+                setLoading(false);
+            }
+            }
+        });
     };
 
     const handleCleanupExpiredItems = async () => {
-        if (!window.confirm("Are you sure you want to permanently delete all expired items from the trash?")) return;
-
-        setLoading(true);
+        confirm({
+            title: 'Cleanup Expired',
+            message: 'Are you sure you want to permanently delete all expired items from the trash?',
+            confirmText: 'Delete',
+            onConfirm: async () => {
+                setLoading(true);
         try {
             const now = Timestamp.now();
             const collectionsToCheck = ['users', 'companies', 'groups', 'idols'];
@@ -278,12 +293,14 @@ export function AdminDashboard({ onBack }) {
             } else {
                 alert('No expired items found to clean up.');
             }
-        } catch (error) {
-            console.error("Cleanup error:", error);
-            setError("Failed to cleanup trash: " + error.message);
-        } finally {
-            setLoading(false);
-        }
+            } catch (error) {
+                console.error("Cleanup error:", error);
+                setError("Failed to cleanup trash: " + error.message);
+            } finally {
+                setLoading(false);
+            }
+            }
+        });
     };
 
     if (!isAdmin) return <div className="p-10 text-center text-red-500 font-bold">Access Denied: Admin privileges required.</div>;

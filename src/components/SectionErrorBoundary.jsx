@@ -44,14 +44,14 @@ function SectionErrorFallback({ error, sectionName, onRetry }) {
         >
             <AlertCircle size={32} className="mx-auto mb-4 text-red-500" />
             <h3 className="font-bold text-sm uppercase tracking-wider mb-2">
-                ไม่สามารถโหลด{sectionName ? ` ${sectionName}` : ''}ได้
+                Failed to load{sectionName ? ` ${sectionName}` : ''}
             </h3>
             <p className="text-xs opacity-80 mb-4 max-w-md mx-auto">{error?.message}</p>
             <button
                 onClick={onRetry}
                 className="px-4 py-2 rounded-xl bg-brand-pink/20 text-brand-pink font-bold text-xs uppercase tracking-wider hover:bg-brand-pink/30 transition-colors"
             >
-                ลองอีกครั้ง
+                Try again
             </button>
         </div>
     );

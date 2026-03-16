@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, useMotionValue, useSpring, useTransform, useAnimation } from 'framer-motion';
-import { Star, ChevronRight, Edit2 } from 'lucide-react';
+import { Star, ChevronRight, Edit2, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -14,7 +14,7 @@ function usePrevious(value) {
     return ref.current;
 }
 
-export const MemberCard = React.memo(function MemberCard({ member, onClick, onImageClick, id, onSearchPosition, onFavorite, onEdit }) {
+export const MemberCard = React.memo(function MemberCard({ member, onClick, onImageClick, id, onSearchPosition, onFavorite, onEdit, onRemove }) {
     const { theme } = useTheme();
     const { user } = useAuth();
     const [glowPos, setGlowPos] = useState({ x: 50, y: 50 });
@@ -91,16 +91,24 @@ export const MemberCard = React.memo(function MemberCard({ member, onClick, onIm
                             </div>
                         )}
                     </motion.div>
-                    {user && (
-                        <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+                    <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+                        {user && (
                             <motion.button type="button" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }} onClick={handleFavoriteClick} className={cn("p-2.5 rounded-full bg-black/40 backdrop-blur-md border transition-all duration-300", member.isFavorite ? "border-yellow-400/50 text-yellow-400" : "border-white/10 text-white hover:text-yellow-400 hover:border-yellow-400/30")} title={member.isFavorite ? "Unfavorite" : "Favorite"}>
                                 <motion.div animate={controls}>
                                     <Star size={18} className={cn("transition-colors duration-200", member.isFavorite ? "fill-yellow-400 text-yellow-400" : "fill-transparent stroke-current")} />
                                 </motion.div>
                             </motion.button>
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </motion.div>
+
+                {onRemove && (
+                    <div className="absolute bottom-4 right-4 z-20">
+                        <motion.button type="button" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={(e) => { e.stopPropagation(); onRemove(member); }} className={cn("flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-400/30" : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200")} title="Remove from group">
+                            <Trash2 size={16} /> Remove
+                        </motion.button>
+                    </div>
+                )}
 
                 <div className="flex-1 space-y-3 min-w-0 flex flex-col justify-center">
                     <p className="text-[15px] text-brand-pink font-black uppercase tracking-widest" title={(member.positions && member.positions[0]) || 'Member'}>

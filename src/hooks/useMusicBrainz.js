@@ -117,7 +117,7 @@ export function useMusicBrainz() {
   const search = useCallback(async (artistName) => {
     if (!artistName?.trim()) {
       setResults([]);
-      setError('กรุณาใส่ชื่อศิลปิน/กลุ่ม');
+      setError('Please enter artist/group name');
       return;
     }
     setLoading(true);
@@ -126,9 +126,9 @@ export function useMusicBrainz() {
     try {
       const groups = await searchReleaseGroups(artistName);
       setResults(groups);
-      if (groups.length === 0) setError('ไม่พบผลลัพธ์จาก MusicBrainz');
+      if (groups.length === 0) setError('No results from MusicBrainz');
     } catch (e) {
-      setError(e.message || 'ดึงข้อมูลไม่สำเร็จ');
+      setError(e.message || 'Failed to fetch data');
       setResults([]);
     } finally {
       setLoading(false);

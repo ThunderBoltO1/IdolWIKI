@@ -3,9 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Users, User, Building2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
 
 export function AddMenu({ onAddClick, onAddGroupClick, onAddCompanyClick }) {
     const { theme } = useTheme();
+    const t = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -32,7 +34,7 @@ export function AddMenu({ onAddClick, onAddGroupClick, onAddCompanyClick }) {
                 )}
             >
                 <Plus size={16} />
-                <span className="hidden sm:inline">Add New</span>
+                <span className="hidden sm:inline">{t('nav.addNew')}</span>
             </button>
 
             <AnimatePresence>
@@ -61,7 +63,7 @@ export function AddMenu({ onAddClick, onAddGroupClick, onAddCompanyClick }) {
                                 <div className="p-1.5 rounded-lg bg-pink-500/10 text-pink-500">
                                     <Users size={16} />
                                 </div>
-                                Group
+                                {t('nav.addGroup')}
                             </button>
 
                             <button
@@ -77,7 +79,7 @@ export function AddMenu({ onAddClick, onAddGroupClick, onAddCompanyClick }) {
                                 <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500">
                                     <User size={16} />
                                 </div>
-                                Idol
+                                {t('nav.addIdol')}
                             </button>
 
                             <button
@@ -93,7 +95,7 @@ export function AddMenu({ onAddClick, onAddGroupClick, onAddCompanyClick }) {
                                 <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500">
                                     <Building2 size={16} />
                                 </div>
-                                Company
+                                {t('nav.addCompany')}
                             </button>
                         </div>
                     </motion.div>

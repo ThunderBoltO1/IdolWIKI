@@ -9,7 +9,10 @@ import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { logAudit } from '../lib/audit';
+import { findCompanyByName } from '../lib/companyUtils';
+import { submitDeleteRequest } from '../lib/pendingSubmissions';
 import { CompanyModal } from './CompanyModal';
+import { useToast } from './Toast';
 import { BackgroundShapes } from './BackgroundShapes';
 import { ConfirmationModal } from './ConfirmationModal';
 
@@ -39,8 +42,9 @@ const XIcon = ({ size = 24, className }) => (
 export function CompanyDetailPage() {
     const { companyName } = useParams();
     const navigate = useNavigate();
-    const { isAdmin } = useAuth();
+    const { isAdmin, user } = useAuth();
     const { theme } = useTheme();
+    const toast = useToast();
 
     const [company, setCompany] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -81,27 +85,38 @@ export function CompanyDetailPage() {
             setLoading(true);
             try {
                 const name = decodeURIComponent(companyName);
-                const q = query(collection(db, 'companies'), where('name', '==', name));
-                const snap = await getDocs(q);
+                const companyDoc = await findCompanyByName(name);
 
-                if (snap.empty) {
+                if (!companyDoc) {
                     setError('Company not found');
                     if (isAdmin) {
                         setCompany({ name: name, isNew: true });
                     }
                 } else {
-                    const data = snap.docs[0].data();
-                    setCompany({ id: snap.docs[0].id, ...data });
+                    const data = companyDoc.data();
+                    const companyNameStored = data.name; // ชื่อจริงที่เก็บใน DB
+                    const nameLower = (data.nameLower || companyNameStored || '').toLowerCase().trim();
 
-                    // Fetch Groups
-                    const qGroups = query(collection(db, 'groups'), where('company', '==', name));
-                    const groupSnap = await getDocs(qGroups);
-                    const groups = groupSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setCompany({ id: companyDoc.id, ...data });
 
-                    // Fetch Idols
-                    const qIdols = query(collection(db, 'idols'), where('company', '==', name));
-                    const idolSnap = await getDocs(qIdols);
-                    const idols = idolSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // Fetch Groups - case-insensitive (exact + companyLower)
+                    const groupQueries = [query(collection(db, 'groups'), where('company', '==', companyNameStored))];
+                    if (nameLower) groupQueries.push(query(collection(db, 'groups'), where('companyLower', '==', nameLower)));
+                    const groupSnaps = await Promise.all(groupQueries.map(q => getDocs(q)));
+                    const groupMap = new Map();
+                    groupSnaps.forEach(snap => snap.docs.forEach(d => groupMap.set(d.id, { id: d.id, ...d.data() })));
+                    const groups = Array.from(groupMap.values());
+
+                    // Fetch Idols - case-insensitive: company, companyLower, soloCompany, soloCompanyLower
+                    const idolQueries = [];
+                    if (companyNameStored) idolQueries.push(query(collection(db, 'idols'), where('company', '==', companyNameStored)));
+                    if (companyNameStored) idolQueries.push(query(collection(db, 'idols'), where('soloCompany', '==', companyNameStored)));
+                    if (nameLower) idolQueries.push(query(collection(db, 'idols'), where('companyLower', '==', nameLower)));
+                    if (nameLower) idolQueries.push(query(collection(db, 'idols'), where('soloCompanyLower', '==', nameLower)));
+                    const idolSnaps = await Promise.all(idolQueries.map(q => getDocs(q)));
+                    const idolMap = new Map();
+                    idolSnaps.forEach(snap => snap.docs.forEach(d => idolMap.set(d.id, { id: d.id, ...d.data() })));
+                    const idols = Array.from(idolMap.values());
 
                     // Fetch Subsidiaries (Sub-companies)
                     // Support both legacy single parent and multiple parent arrays
@@ -181,40 +196,25 @@ export function CompanyDetailPage() {
 
         setDeleteConfirmModal({
             isOpen: true,
-            title: 'Delete Company',
-            message: `Are you sure you want to delete "${company.name}"? This will move it to trash and permanent deletion will occur in 7 days.`,
+            title: 'ส่งคำขอลบบริษัท',
+            message: `ส่งคำขอลบ "${company.name}" ใช่หรือไม่? รายการจะหายจากหน้ารายการและรอการอนุมัติจากแอดมิน (ต้องใส่รหัสผ่านเพื่อยืนยันการลบ)`,
             type: 'danger',
-            confirmText: 'Delete',
-            onConfirm: async () => {
+            confirmText: 'ส่งคำขอ',
+            showReasonInput: true,
+            reasonValue: '',
+            onReasonChange: (v) => setDeleteConfirmModal(prev => ({ ...prev, reasonValue: v })),
+            onConfirm: async (reason) => {
                 try {
-                    const expireDate = new Date();
-                    expireDate.setDate(expireDate.getDate() + 7);
-
-                    await updateDoc(doc(db, 'companies', company.id), {
-                        deleted: true,
-                        deletedAt: serverTimestamp(),
-                        expireAt: Timestamp.fromDate(expireDate)
-                    });
-
-                    await logAudit({
-                        action: 'delete',
-                        targetType: 'company',
-                        targetId: company.id,
-                        user: user,
-                        details: { name: company.name, type: 'soft-delete' }
-                    });
-                    navigate('/admin/companies');
+                    const result = await submitDeleteRequest('company', company.id, company.name, user, reason);
+                    if (result.success) {
+                        toast.success('ส่งคำขอลบแล้ว รอการอนุมัติจากแอดมิน');
+                        navigate('/admin/submissions?tab=deletions');
+                    } else {
+                        toast.error(result.error || 'ส่งคำขอลบไม่สำเร็จ');
+                    }
                 } catch (err) {
-                    console.error('Error deleting company:', err);
-                    setDeleteConfirmModal({
-                        isOpen: true,
-                        title: 'Delete Failed',
-                        message: 'Failed to delete company. Please try again.',
-                        type: 'danger',
-                        singleButton: true,
-                        confirmText: 'Close',
-                        onConfirm: () => { }
-                    });
+                    console.error('Error submitting delete request:', err);
+                    toast.error(err?.message || 'ส่งคำขอลบไม่สำเร็จ');
                 }
             }
         });
@@ -578,17 +578,36 @@ export function CompanyDetailPage() {
                                 </div>
                             </div>
 
-                            <div className={cn(
-                                'p-5 rounded-2xl border',
-                                theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
-                            )}>
-                                <span className={cn('text-xs font-black uppercase tracking-widest block mb-2', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
-                                    Founders / CEO
-                                </span>
-                                <div className={cn('text-base font-semibold', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-                                    {company.founders || '-'}
-                                </div>
-                            </div>
+                            {((Array.isArray(company.founders) && company.founders.length > 0) || (Array.isArray(company.ceos) && company.ceos.length > 0) || company.founder || company.ceo || (typeof company.founders === 'string' && company.founders)) && (
+                                <>
+                                    {(Array.isArray(company.founders) ? company.founders.length > 0 : company.founder) && (
+                                        <div className={cn(
+                                            'p-5 rounded-2xl border',
+                                            theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
+                                        )}>
+                                            <span className={cn('text-xs font-black uppercase tracking-widest block mb-2', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
+                                                Founder(s) / Co-founder(s)
+                                            </span>
+                                            <div className={cn('text-base font-semibold', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                                                {Array.isArray(company.founders) ? company.founders.join(', ') : (company.founder || company.founders)}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(Array.isArray(company.ceos) ? company.ceos.length > 0 : company.ceo) && (
+                                        <div className={cn(
+                                            'p-5 rounded-2xl border',
+                                            theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
+                                        )}>
+                                            <span className={cn('text-xs font-black uppercase tracking-widest block mb-2', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
+                                                CEO
+                                            </span>
+                                            <div className={cn('text-base font-semibold', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
+                                                {Array.isArray(company.ceos) ? company.ceos.join(', ') : company.ceo}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
 
                             <div className={cn(
                                 'p-5 rounded-2xl border',
@@ -607,11 +626,11 @@ export function CompanyDetailPage() {
                                     'p-6 md:p-8 rounded-2xl border md:col-span-2 lg:col-span-3',
                                     theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50'
                                 )}>
-                                    <span className={cn('text-xs font-black uppercase tracking-widest block mb-4', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
+                                    <span className={cn('text-xs font-black uppercase tracking-widest block mb-2', theme === 'dark' ? 'text-slate-500' : 'text-slate-400')}>
                                         About
                                     </span>
                                     <div className={cn(
-                                        'text-base md:text-lg leading-[1.8] whitespace-pre-line text-justify',
+                                        'text-sm md:text-base leading-snug whitespace-pre-line',
                                         theme === 'dark' ? 'text-slate-300' : 'text-slate-600'
                                     )}>
                                         {company.description}
@@ -752,7 +771,21 @@ export function CompanyDetailPage() {
                                         <img
                                             src={convertDriveLink(group.coverImage || group.image)}
                                             alt={group.name}
-                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                            className="w-full h-full transition-transform duration-500 group-hover:scale-110"
+                                            style={(() => {
+                                                const pos = group.coverImagePosition || group.imagePosition;
+                                                const x = pos?.x ?? 50;
+                                                const y = pos?.y ?? 50;
+                                                const scale = group.coverImageScale ?? group.imageScale ?? 1;
+                                                const fit = group.coverImageFit ?? group.imageFit ?? 'cover';
+                                                const styles = { objectFit: fit };
+                                                if (pos) styles.objectPosition = `${x}% ${y}%`;
+                                                if (scale !== 1) {
+                                                    styles.transform = `scale(${scale})`;
+                                                    styles.transformOrigin = `${x}% ${y}%`;
+                                                }
+                                                return styles;
+                                            })()}
                                         />
                                         <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-4">
                                             <h3 className="text-white font-black text-lg leading-tight">{group.name}</h3>
@@ -955,13 +988,17 @@ export function CompanyDetailPage() {
             {/* Delete Confirmation Modal */}
             <ConfirmationModal
                 isOpen={deleteConfirmModal.isOpen}
-                onClose={() => setDeleteConfirmModal({ ...deleteConfirmModal, isOpen: false })}
+                onClose={() => setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }))}
                 onConfirm={deleteConfirmModal.onConfirm}
                 title={deleteConfirmModal.title}
                 message={deleteConfirmModal.message}
                 type={deleteConfirmModal.type || 'danger'}
                 confirmText={deleteConfirmModal.confirmText || 'Confirm'}
                 singleButton={deleteConfirmModal.singleButton || false}
+                showReasonInput={deleteConfirmModal.showReasonInput}
+                reasonValue={deleteConfirmModal.reasonValue ?? ''}
+                onReasonChange={deleteConfirmModal.onReasonChange}
+                reasonPlaceholder={deleteConfirmModal.reasonPlaceholder}
             />
         </div>
     );

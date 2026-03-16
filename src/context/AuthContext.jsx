@@ -8,7 +8,9 @@ import {
     sendPasswordResetEmail,
     setPersistence,
     browserLocalPersistence,
-    browserSessionPersistence
+    browserSessionPersistence,
+    reauthenticateWithCredential,
+    EmailAuthProvider
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -220,6 +222,15 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    /** ยืนยันรหัสผ่านแอดมิน (สำหรับอนุมัติการลบ ฯลฯ) — ใช้ reauthenticate */
+    const verifyAdminPassword = async (password) => {
+        const currentUser = auth.currentUser;
+        if (!currentUser) throw new Error('กรุณาเข้าสู่ระบบ');
+        if (!currentUser.email) throw new Error('บัญชีนี้ไม่มีอีเมล ไม่สามารถยืนยันด้วยรหัสผ่านได้');
+        const credential = EmailAuthProvider.credential(currentUser.email, password);
+        await reauthenticateWithCredential(currentUser, credential);
+    };
+
     const isAdmin = user?.role === 'admin';
 
     const value = {
@@ -230,7 +241,8 @@ export const AuthProvider = ({ children }) => {
         updateUser,
         logout,
         isAdmin,
-        resetPassword
+        resetPassword,
+        verifyAdminPassword
     };
 
     return (

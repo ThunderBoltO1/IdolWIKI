@@ -1,18 +1,25 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence, useScroll, useTransform, Reorder } from 'framer-motion';
-import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Globe, Upload, Loader2, X, ChevronLeft, ChevronRight, Maximize2, PlayCircle, Search, Share2, Check, GripVertical, History } from 'lucide-react';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { ArrowLeft, Building2, Calendar, Plus, Save, Trash2, Youtube, Image as ImageIcon, Instagram, Globe, Upload, Loader2, X, ChevronLeft, ChevronRight, Maximize2, PlayCircle, Search, Share2, Check, GripVertical, History, Users } from 'lucide-react';
+import { doc, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { cn, getYouTubeEmbedSrc } from '../lib/utils';
+import { cn, formatBiographyText, getYouTubeEmbedSrc, groupAlbumsByType, restorePageScroll } from '../lib/utils';
 import { convertDriveLink } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useTranslation } from '../context/LanguageContext';
+import { useConfirm } from '../context/ConfirmContext';
+import { useToast } from './Toast';
 import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/upload';
 import { BackgroundShapes } from './BackgroundShapes';
 import { Helmet } from 'react-helmet-async';
 import { BackToTopButton } from './BackToTopButton';
+import { YouTubeSearchModal } from './YouTubeSearchModal';
+import { MusicBrainzImportModal } from './MusicBrainzImportModal';
+import { DateSelect } from './DateSelect';
+import { findCompanyByName } from '../lib/companyUtils';
 
 const XIcon = ({ size = 24, className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -25,6 +32,9 @@ export function IdolDetailPage() {
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
   const { theme } = useTheme();
+  const t = useTranslation();
+  const { confirm } = useConfirm();
+  const toast = useToast();
 
   const getYouTubeVideoId = (url) => {
     if (!url) return null;
@@ -47,6 +57,9 @@ export function IdolDetailPage() {
   };
 
   const [idol, setIdol] = useState(null);
+  const [groupCompany, setGroupCompany] = useState(null); // company from group when idol.company empty
+  const [companyDisplayName, setCompanyDisplayName] = useState(null);
+  const [soloCompanyDisplayName, setSoloCompanyDisplayName] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -68,9 +81,22 @@ export function IdolDetailPage() {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoSearch, setVideoSearch] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const [showYouTubeSearchVideoIdx, setShowYouTubeSearchVideoIdx] = useState(null);
+  const [showImportAlbumsModal, setShowImportAlbumsModal] = useState(false);
+  const [showBiographyModal, setShowBiographyModal] = useState(false);
 
-  const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 500], [0, 100]);
+  // ล็อก scroll หน้าหลักเมื่อเปิด popup/modal ใดๆ (ให้ scroll ได้แค่ใน overlay)
+  const hasOverlayOpen = showBiographyModal || !!lightboxImage || !!selectedVideo || showReasonModal;
+  useEffect(() => {
+    if (hasOverlayOpen) {
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [hasOverlayOpen]);
 
   useEffect(() => {
     if (!idolId) return;
@@ -116,6 +142,39 @@ export function IdolDetailPage() {
     }
   }, [idol]);
 
+  useEffect(() => {
+    if (!idol?.groupId || idol.company) {
+      setGroupCompany(null);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(db, 'groups', idol.groupId)).then((snap) => {
+      if (cancelled || !snap.exists()) return;
+      setGroupCompany(snap.data().company || null);
+    }).catch(() => setGroupCompany(null));
+    return () => { cancelled = true; };
+  }, [idol?.groupId, idol?.company]);
+
+  useEffect(() => {
+    const groupKey = idol?.company || groupCompany;
+    const soloKey = idol?.soloCompany;
+    if (!groupKey && !soloKey) {
+      setCompanyDisplayName(null);
+      setSoloCompanyDisplayName(null);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      groupKey ? findCompanyByName(groupKey) : null,
+      soloKey ? findCompanyByName(soloKey) : null
+    ]).then(([groupDoc, soloDoc]) => {
+      if (cancelled) return;
+      setCompanyDisplayName(groupDoc ? groupDoc.data().name : (groupKey || null));
+      setSoloCompanyDisplayName(soloDoc ? soloDoc.data().name : (soloKey || null));
+    });
+    return () => { cancelled = true; };
+  }, [idol?.company, idol?.soloCompany, groupCompany]);
+
   const filteredVideos = useMemo(() => {
     const videos = idol?.videos || [];
     if (!videoSearch.trim()) return videos;
@@ -152,7 +211,26 @@ export function IdolDetailPage() {
   };
 
   const removeAlbum = (index) => {
-    setAlbumsDraft((prev) => (prev || []).filter((_, i) => i !== index));
+    const album = (albumsDraft || [])[index];
+    const title = album?.title || `Album #${index + 1}`;
+    confirm({
+      title: 'Remove Album',
+      message: `Remove "${title}"?`,
+      confirmText: 'Remove',
+      onConfirm: () => setAlbumsDraft((prev) => (prev || []).filter((_, i) => i !== index))
+    });
+  };
+
+  const handleImportAlbums = (albums) => {
+    if (!Array.isArray(albums) || albums.length === 0) return;
+    const normalized = albums.map((a) => ({
+      title: a.title || '',
+      date: a.date || '',
+      cover: a.cover || '',
+      youtube: a.youtube || '',
+      tracks: Array.isArray(a.tracks) ? a.tracks : []
+    }));
+    setAlbumsDraft((prev) => [...(prev || []), ...normalized]);
   };
 
   const addVideo = () => {
@@ -168,7 +246,14 @@ export function IdolDetailPage() {
   };
 
   const removeVideo = (index) => {
-    setVideosDraft((prev) => (prev || []).filter((_, i) => i !== index));
+    const video = (videosDraft || [])[index];
+    const title = video?.title || `Video #${index + 1}`;
+    confirm({
+      title: 'Remove Video',
+      message: `Remove "${title}"?`,
+      confirmText: 'Remove',
+      onConfirm: () => setVideosDraft((prev) => (prev || []).filter((_, i) => i !== index))
+    });
   };
 
   const updateGalleryImage = (index, value) => {
@@ -179,13 +264,19 @@ export function IdolDetailPage() {
     });
   };
 
-  const removeGalleryImage = async (index) => {
-    if (!window.confirm("Are you sure you want to delete this image?")) return;
-    const urlToRemove = galleryDraft[index]?.url;
-    if (urlToRemove) {
-      await deleteImage(urlToRemove);
-    }
-    setGalleryDraft((prev) => (prev || []).filter((_, i) => i !== index));
+  const removeGalleryImage = (index) => {
+    confirm({
+      title: 'Delete Image',
+      message: 'Are you sure you want to delete this image?',
+      confirmText: 'Delete',
+      onConfirm: async () => {
+        const urlToRemove = galleryDraft[index]?.url;
+        if (urlToRemove) {
+          await deleteImage(urlToRemove);
+        }
+        setGalleryDraft((prev) => (prev || []).filter((_, i) => i !== index));
+      }
+    });
   };
 
   const handleProfileChange = (field, value) => {
@@ -197,7 +288,7 @@ export function IdolDetailPage() {
 
     // Calculate changes
     const changes = {};
-    const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'birthDate', 'height', 'bloodType', 'birthPlace', 'instagram', 'twitter', 'description', 'status', 'retirementDate'];
+    const fieldsToCheck = ['name', 'koreanName', 'company', 'debutDate', 'soloDebutDate', 'birthDate', 'height', 'bloodType', 'birthPlace', 'instagram', 'twitter', 'description', 'status', 'retirementDate'];
 
     let hasChanges = false;
     fieldsToCheck.forEach(field => {
@@ -265,6 +356,7 @@ export function IdolDetailPage() {
         gallery: galleryDraft.map(item => item.url),
         status: profileDraft.status || 'Active',
         retirementDate: profileDraft.retirementDate || '',
+        description: profileDraft.description ?? '',
         updatedAt: new Date().toISOString()
       });
       setIsEditingWorks(false);
@@ -283,8 +375,8 @@ export function IdolDetailPage() {
     for (const file of files) {
       try {
         validateFile(file, 5);
-      } catch (error) {
-        alert(`File ${file.name} is too large. Max 5MB.`);
+      } catch (e) {
+        toast.error(e.message || `Invalid file: ${file.name}`);
         return;
       }
     }
@@ -297,10 +389,11 @@ export function IdolDetailPage() {
       setGalleryDraft(prev => [...(prev || []), ...urls.map((url, i) => ({ id: `new-${Date.now()}-${i}`, url }))]);
     } catch (error) {
       console.error("Gallery upload error", error);
-      alert("Failed to upload images");
+      toast.error("Failed to upload images");
     } finally {
       setIsUploading(false);
       if (galleryInputRef.current) galleryInputRef.current.value = '';
+      restorePageScroll();
     }
   };
 
@@ -309,15 +402,20 @@ export function IdolDetailPage() {
     if (!album || !album.cover) return;
 
     if (album.cover.includes('firebasestorage')) {
-      if (window.confirm("Are you sure you want to remove this cover? This will also delete the image from the server.")) {
-        try {
-          await deleteImage(album.cover);
-          updateAlbum(index, 'cover', '');
-        } catch (error) {
-          console.error("Error deleting album cover:", error);
-          alert("Failed to delete album cover.");
+      confirm({
+        title: 'Remove Cover',
+        message: 'Are you sure you want to remove this cover? This will also delete the image from the server.',
+        confirmText: 'Remove',
+        onConfirm: async () => {
+          try {
+            await deleteImage(album.cover);
+            updateAlbum(index, 'cover', '');
+          } catch (error) {
+            console.error("Error deleting album cover:", error);
+            toast.error("Failed to delete album cover.");
+          }
         }
-      }
+      });
     } else {
       // It's a local preview (blob URL), just clear it
       updateAlbum(index, 'cover', '');
@@ -331,7 +429,7 @@ export function IdolDetailPage() {
     try {
       validateFile(file, 5);
     } catch (error) {
-      alert(error.message);
+      toast.error(error.message);
       return;
     }
 
@@ -358,6 +456,7 @@ export function IdolDetailPage() {
     } finally {
       setIsUploading(false);
       if (albumCoverInputRef.current) albumCoverInputRef.current.value = '';
+      restorePageScroll();
     }
   };
 
@@ -387,7 +486,7 @@ export function IdolDetailPage() {
       if (!lightboxImage) return;
       if (e.key === 'ArrowRight') handleNextImage();
       if (e.key === 'ArrowLeft') handlePrevImage();
-      if (e.key === 'Escape') setLightboxImage(null);
+      if (e.key === 'Escape') { restorePageScroll(); setLightboxImage(null); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -439,7 +538,7 @@ export function IdolDetailPage() {
   if (!idol) return null;
 
   const metaTitle = `${idol.name}${idol.group ? ` (${idol.group})` : ''} | K-Pop Wiki`;
-  const metaDesc = idol.description ? (idol.description.slice(0, 160) + (idol.description.length > 160 ? '…' : '')) : `${idol.name}: ข้อมูลไอดอลเคป๊อป`;
+  const metaDesc = idol.description ? (idol.description.slice(0, 160) + (idol.description.length > 160 ? '…' : '')) : `${idol.name}: K-Pop idol info`;
   const ogImage = idol.image ? convertDriveLink(idol.image) : '';
 
   return (
@@ -529,17 +628,16 @@ export function IdolDetailPage() {
       </div>
 
       <div className={cn(
-        'rounded-[40px] border overflow-hidden',
-        theme === 'dark' ? 'bg-slate-900/40 border-white/10' : 'bg-white border-slate-200'
+        'rounded-[32px] border overflow-hidden shadow-lg',
+        theme === 'dark' ? 'bg-slate-900/50 border-white/10' : 'bg-white border-slate-200'
       )}>
-        <div className="grid grid-cols-1 md:grid-cols-12">
-          <div className="md:col-span-5">
-            <div className="aspect-3/4 relative overflow-hidden group cursor-zoom-in" onClick={() => setLightboxImage(idol.image)}>
-              <motion.img
-                style={{ y }}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-0 md:items-stretch">
+          <div className="md:col-span-5 p-4 md:p-6 flex md:items-stretch justify-center md:justify-end min-h-[280px] md:min-h-0">
+            <div className="w-full max-w-md h-full min-h-[280px] md:min-h-[360px] relative overflow-hidden group cursor-zoom-in rounded-2xl shadow-xl ring-1 ring-black/5" onClick={() => setLightboxImage(idol.image)}>
+              <img
                 src={convertDriveLink(idol.image)}
                 alt={idol.name}
-                className="w-full h-[120%] object-cover -mt-[10%]"
+                className="absolute inset-0 w-full h-full object-cover object-center"
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-linear-to-t from-slate-950/80 via-transparent to-transparent" />
@@ -551,27 +649,84 @@ export function IdolDetailPage() {
             </div>
           </div>
 
-          <div className="md:col-span-7 p-6 md:p-10 space-y-6">
-            <div>
+          <div className="md:col-span-7 p-6 md:p-8 lg:p-10 space-y-8">
+            <div className="space-y-4">
               <p className={cn('text-xs font-black uppercase tracking-[0.25em]', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Artist</p>
-              <h1 className={cn('text-2xl sm:text-4xl md:text-6xl font-black tracking-tight mt-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
+              <h1 className={cn('text-3xl sm:text-4xl md:text-5xl font-black tracking-tight', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.name}</h1>
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <div className={cn(
-                  'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border group transition-colors',
-                  theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50',
-                  idol.company && 'cursor-pointer hover:bg-brand-pink hover:text-white hover:border-brand-pink'
-                )} onClick={() => idol.company && navigate(`/company/${encodeURIComponent(idol.company)}`)}>
-                  <Building2 size={14} className="group-hover:text-white transition-colors text-brand-pink" />
-                  <span>{idol.company || 'Unknown company'}</span>
-                </div>
+                {(idol.company || groupCompany) ? (
+                  <div className={cn(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border group transition-colors cursor-pointer hover:bg-brand-pink hover:text-white hover:border-brand-pink',
+                    theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
+                  )} onClick={() => navigate(`/company/${encodeURIComponent(idol.company || groupCompany)}`)}>
+                    <Building2 size={14} className="group-hover:text-white transition-colors text-brand-pink" />
+                    <span>{(companyDisplayName ?? idol.company ?? groupCompany)}{idol.soloCompany ? ' (Group)' : ''}</span>
+                  </div>
+                ) : null}
 
-                <div className={cn(
-                  'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border',
-                  theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
-                )}>
-                  <Calendar size={14} className="text-brand-purple" />
-                  <span>{idol.debutDate || 'Debut date n/a'}</span>
-                </div>
+                {idol.soloCompany && (
+                  <div
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors cursor-pointer',
+                      theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40 hover:bg-brand-blue/30 hover:text-white hover:border-brand-blue' : 'border-slate-200 text-slate-700 bg-slate-50 hover:bg-brand-blue/20 hover:text-slate-900 hover:border-brand-blue'
+                    )}
+                    onClick={() => navigate(`/company/${encodeURIComponent(idol.soloCompany)}`)}
+                  >
+                    <Building2 size={14} className="text-brand-blue" />
+                    <span>{soloCompanyDisplayName ?? idol.soloCompany}</span>
+                  </div>
+                )}
+
+                {idol.group && (
+                  <div
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                      theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50',
+                      idol.groupId && 'cursor-pointer hover:bg-brand-purple hover:text-white hover:border-brand-purple'
+                    )}
+                    onClick={() => idol.groupId && navigate(`/group/${idol.groupId}`)}
+                  >
+                    <Users size={14} className="text-brand-purple" />
+                    <span>{idol.group}</span>
+                  </div>
+                )}
+
+                {(idol.subUnits || []).map((su, idx) => {
+                  const item = typeof su === 'string' ? { group: su, groupId: '' } : su;
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                        theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50',
+                        item.groupId && 'cursor-pointer hover:bg-amber-500/30 hover:text-amber-100 hover:border-amber-500/50'
+                      )}
+                      onClick={() => item.groupId && navigate(`/group/${item.groupId}`)}
+                    >
+                      <Users size={14} className="text-amber-500" />
+                      <span>{item.group || item} (Sub-unit)</span>
+                    </div>
+                  );
+                })}
+
+                {idol.debutDate && (
+                  <div className={cn(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border',
+                    theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
+                  )}>
+                    <Calendar size={14} className="text-brand-purple" />
+                    <span>{idol.soloDebutDate ? 'Debut (Group) ' : 'Debut '}{idol.debutDate}</span>
+                  </div>
+                )}
+                {idol.soloDebutDate && (
+                  <div className={cn(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border',
+                    theme === 'dark' ? 'border-white/10 text-slate-200 bg-slate-950/40' : 'border-slate-200 text-slate-700 bg-slate-50'
+                  )}>
+                    <Calendar size={14} className="text-brand-purple" />
+                    <span>Debut {idol.soloDebutDate}</span>
+                  </div>
+                )}
 
                 {idol.instagram && (
                   <a
@@ -609,22 +764,30 @@ export function IdolDetailPage() {
                 theme === 'dark' ? 'border-white/10 bg-slate-950/30 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-700'
               )}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm font-medium">
-                  <div>
-                    <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Full name</span>
-                    <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.fullEnglishName || '-'}</div>
-                  </div>
-                  <div>
-                    <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Korean name</span>
-                    <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.koreanName || '-'}</div>
-                  </div>
-                  <div>
-                    <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Nationality</span>
-                    <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.nationality || '-'}</div>
-                  </div>
-                  <div>
-                    <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Birth date</span>
-                    <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.birthDate || '-'}</div>
-                  </div>
+                  {idol.fullEnglishName && (
+                    <div>
+                      <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Full name</span>
+                      <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.fullEnglishName}</div>
+                    </div>
+                  )}
+                  {idol.koreanName && (
+                    <div>
+                      <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Korean name</span>
+                      <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.koreanName}</div>
+                    </div>
+                  )}
+                  {idol.nationality && (
+                    <div>
+                      <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Nationality</span>
+                      <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.nationality}</div>
+                    </div>
+                  )}
+                  {idol.birthDate && (
+                    <div>
+                      <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Birth date</span>
+                      <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.birthDate}</div>
+                    </div>
+                  )}
                   <div>
                     <span className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Status</span>
                     {isEditingWorks ? (
@@ -644,25 +807,104 @@ export function IdolDetailPage() {
                     )}
                   </div>
                   {(isEditingWorks ? ['inactive', 'former'].includes(profileDraft.status?.toLowerCase()) : ['inactive', 'former'].includes(idol.status?.toLowerCase())) && (
-                    <div>
-                      <span className={cn('text-xs font-black uppercase tracking-widest text-red-500')}>Retirement Date</span>
-                      {isEditingWorks ? (
-                        <input
-                          type="date"
+                    (isEditingWorks || idol.retirementDate) ? (
+                      isEditingWorks ? (
+                        <DateSelect
+                          label="Retirement Date"
                           value={profileDraft.retirementDate || ''}
-                          onChange={(e) => handleProfileChange('retirementDate', e.target.value)}
-                          className={cn("w-full bg-transparent border-b focus:outline-none", theme === 'dark' ? "border-white/20 text-white" : "border-slate-300 text-slate-900")}
+                          onChange={val => handleProfileChange('retirementDate', val)}
+                          theme={theme}
                         />
                       ) : (
-                        <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.retirementDate || '-'}</div>
-                      )}
+                        <div>
+                          <span className={cn('text-xs font-black uppercase tracking-widest text-red-500')}>Retirement Date</span>
+                          <div className={cn(theme === 'dark' ? 'text-white' : 'text-slate-900')}>{idol.retirementDate}</div>
+                        </div>
+                      )
+                    ) : null
+                  )}
+                  <div className="sm:col-span-2 border-t pt-4 mt-2 border-slate-200 dark:border-slate-800">
+                    <span className={cn('text-xs font-black uppercase tracking-widest mb-2 block', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>{t('idolDetail.biography')}</span>
+                    {isEditingWorks ? (
+                      <div>
+                        <textarea
+                          value={profileDraft.description ?? profileDraft.biography ?? ''}
+                          onChange={(e) => handleProfileChange('description', e.target.value)}
+                          placeholder="History / Story of the artist "
+                          rows={5}
+                          className={cn("w-full p-4 rounded-2xl border resize-y min-h-[120px] outline-none text-sm", theme === 'dark' ? "border-white/10 bg-slate-900/50 text-white placeholder:text-slate-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400")}
+                        />
+                        <p className={cn("mt-2 text-xs", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                          ใช้ <b>**ตัวหนา**</b> <i>*ตัวเอียง*</i> <u>__ขีดเส้นใต้__</u> เพื่อเน้นข้อความ
+                        </p>
+                      </div>
+                    ) : (() => {
+                      const fullBio = idol.description || idol.biography || t('idolDetail.noBiography');
+                      const maxPreviewLen = 280;
+                      const isLong = fullBio !== t('idolDetail.noBiography') && fullBio.length > maxPreviewLen;
+                      const previewEnd = isLong ? (fullBio.lastIndexOf(' ', maxPreviewLen) >= 200 ? fullBio.lastIndexOf(' ', maxPreviewLen) : maxPreviewLen) : fullBio.length;
+                      const previewText = isLong ? fullBio.slice(0, previewEnd).trim() + '…' : fullBio;
+                      return (
+                        <div>
+                          <div className={cn("text-sm leading-relaxed whitespace-pre-wrap", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>
+                            {previewText.split('\n').map((p, i) => (p ? <p key={i} className="mb-2 last:mb-0" dangerouslySetInnerHTML={{ __html: formatBiographyText(p) }} /> : <br key={i} />))}
+                          </div>
+                          {isLong && (
+                            <button
+                              type="button"
+                              onClick={() => setShowBiographyModal(true)}
+                              className={cn("mt-3 text-sm font-semibold flex items-center gap-1 hover:underline", theme === 'dark' ? "text-brand-pink" : "text-brand-pink")}
+                            >
+                              {t('idolDetail.readMore')}
+                              <ChevronRight size={16} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  {idol.formerCompanies?.length > 0 && (
+                    <div className="sm:col-span-2 border-t pt-4 mt-2 border-dashed border-slate-200 dark:border-slate-800">
+                      <span className={cn('text-xs font-black uppercase tracking-widest mb-2 block', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Former Companies (Group)</span>
+                      <div className="space-y-2">
+                        {[...idol.formerCompanies].sort((a, b) => {
+                          const getEndYear = (item) => {
+                            const val = typeof item === 'string' ? '' : (item.duration || '');
+                            const lower = val.toLowerCase();
+                            if (lower.includes('now') || lower.includes('present') || lower.includes('current')) return 9999;
+                            const match = val.match(/(\d{4})/g);
+                            return match ? parseInt(match[match.length - 1]) : 0;
+                          };
+                          return getEndYear(b) - getEndYear(a);
+                        }).map((company, index) => (
+                          <div key={index}
+                            onClick={() => navigate(`/company/${encodeURIComponent(typeof company === 'string' ? company : company.company)}`)}
+                            className={cn(
+                              "px-4 py-3 rounded-2xl text-sm font-bold border flex items-center justify-between gap-3 group hover:border-brand-pink/50 transition-colors cursor-pointer",
+                              theme === 'dark' ? "bg-slate-900 border-white/5 text-slate-300 hover:bg-slate-800" : "bg-white border-slate-100 text-slate-600 hover:bg-slate-50"
+                            )}>
+                            <div className="flex items-center gap-2">
+                              <History size={14} className="opacity-40 group-hover:text-brand-pink group-hover:opacity-100 transition-all" />
+                              <span className="group-hover:text-brand-pink transition-colors">{typeof company === 'string' ? company : company.company}</span>
+                            </div>
+                            {typeof company !== 'string' && company.duration && (
+                              <span className={cn(
+                                "text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-lg",
+                                theme === 'dark' ? "bg-white/5 text-slate-400" : "bg-slate-100 text-slate-500"
+                              )}>
+                                {company.duration}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
-                  {idol.formerCompanies?.length > 0 && (
+                  {idol.soloFormerCompanies?.length > 0 && (
                     <div className="sm:col-span-2 border-t pt-4 mt-2 border-dashed border-slate-200 dark:border-slate-800">
                       <span className={cn('text-xs font-black uppercase tracking-widest mb-2 block', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>Former Companies</span>
                       <div className="space-y-2">
-                        {[...idol.formerCompanies].sort((a, b) => {
+                        {[...idol.soloFormerCompanies].sort((a, b) => {
                           const getEndYear = (item) => {
                             const val = typeof item === 'string' ? '' : (item.duration || '');
                             const lower = val.toLowerCase();
@@ -706,7 +948,7 @@ export function IdolDetailPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-            <Youtube size={20} /> Featured Videos
+            <Youtube size={20} /> {t('idolDetail.featuredVideos')}
           </h2>
           {isEditingWorks && (
             <button
@@ -737,19 +979,23 @@ export function IdolDetailPage() {
                     className={cn("w-full p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
                     placeholder="Title (e.g. MV)"
                   />
-                  <div className="flex gap-2">
-                    <input type="date" value={video.date || ''} onChange={e => updateVideo(idx, 'date', e.target.value)} className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                    <button type="button" onClick={() => updateVideo(idx, 'date', new Date().toISOString().split('T')[0])} className={cn("p-2 rounded-lg border font-bold text-[10px] uppercase", theme === 'dark' ? "border-white/10 hover:bg-white/5" : "border-slate-200 hover:bg-slate-50")}>
-                      Today
-                    </button>
-                  </div>
+                  <DateSelect label="Date" value={video.date || ''} onChange={val => updateVideo(idx, 'date', val)} theme={theme} />
                 </div>
-                <input
-                  value={video.url || ''}
-                  onChange={e => updateVideo(idx, 'url', e.target.value)}
-                  className={cn("w-full p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
-                  placeholder="YouTube URL..."
-                />
+                <div className="flex gap-2">
+                  <input
+                    value={video.url || ''}
+                    onChange={e => updateVideo(idx, 'url', e.target.value)}
+                    className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                    placeholder="YouTube URL..."
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowYouTubeSearchVideoIdx(idx)}
+                    className={cn("shrink-0 px-3 py-2 rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}
+                  >
+                    <Youtube size={14} /> Search
+                  </button>
+                </div>
               </div>
             ))}
             {videosDraft.length === 0 && <p className="text-sm text-slate-500 italic">No videos added.</p>}
@@ -803,25 +1049,37 @@ export function IdolDetailPage() {
               )}
             </>
           ) : (
-            <p className="text-sm text-slate-500 italic">No videos available.</p>
+            <p className="text-sm text-slate-500 italic">{t('idolDetail.noVideosAvailable')}</p>
           )
         )}
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest', theme === 'dark' ? 'text-white' : 'text-slate-900')}>Discography</h2>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{t('idolDetail.discography')}</h2>
           {isEditingWorks && (
-            <button
-              type="button"
-              onClick={addAlbum}
-              className={cn(
-                'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
-                'border-transparent bg-brand-purple text-white hover:bg-brand-purple/90'
-              )}
-            >
-              <Plus size={14} /> Add album
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowImportAlbumsModal(true)}
+                className={cn(
+                  'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                  theme === 'dark' ? 'border-white/20 text-slate-200 hover:bg-white/10' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                )}
+              >
+                <Search size={14} /> Import from iTunes
+              </button>
+              <button
+                type="button"
+                onClick={addAlbum}
+                className={cn(
+                  'inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-colors',
+                  'border-transparent bg-brand-purple text-white hover:bg-brand-purple/90'
+                )}
+              >
+                <Plus size={14} /> Add album
+              </button>
+            </div>
           )}
         </div>
 
@@ -831,9 +1089,9 @@ export function IdolDetailPage() {
             theme === 'dark' ? 'bg-slate-900/40 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'
           )}>
             <p className={cn('text-sm font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>No works yet</p>
-            <p className={cn('mt-2 text-sm', theme === 'dark' ? 'text-slate-300' : 'text-slate-600')}>Add albums/works to show here.</p>
+            <p className={cn('mt-2 text-sm', theme === 'dark' ? 'text-slate-300' : 'text-slate-600')}>{t('idolDetail.addAlbumsHint')}</p>
           </div>
-        ) : (
+        ) : isEditingWorks ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {normalizedAlbums.map((album, idx) => (
               <div
@@ -984,6 +1242,63 @@ export function IdolDetailPage() {
               </div>
             ))}
           </div>
+        ) : (
+          (() => {
+            const { albums, mini, singles, other } = groupAlbumsByType(normalizedAlbums);
+            const AlbumViewCard = ({ album }) => (
+              <div className={cn('rounded-[40px] border overflow-hidden', theme === 'dark' ? 'bg-slate-900/40 border-white/10' : 'bg-white border-slate-200')}>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <h3 className={cn('text-2xl font-black tracking-tight', theme === 'dark' ? 'text-white' : 'text-slate-900')}>{album.title || 'Untitled'}</h3>
+                    <p className={cn('mt-2 text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>{album.date || 'Release date n/a'}</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className={cn('rounded-3xl border overflow-hidden', theme === 'dark' ? 'border-white/10 bg-slate-950/30' : 'border-slate-200 bg-slate-50')}>
+                      <div className="aspect-square overflow-hidden">
+                        <img src={convertDriveLink(album.cover) || convertDriveLink(idol.image)} alt={album.title || 'Album cover'} className="w-full h-full object-cover" loading="lazy" />
+                      </div>
+                    </div>
+                    <div className={cn('rounded-3xl border p-4', theme === 'dark' ? 'border-white/10 bg-slate-950/30 text-slate-200' : 'border-slate-200 bg-slate-50 text-slate-700')}>
+                      <p className={cn('text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Youtube</p>
+                      {album.youtube ? (
+                        <div className="mt-4 rounded-2xl overflow-hidden shadow-lg aspect-video bg-black relative">
+                          <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${getYouTubeVideoId(album.youtube)}`} title="YouTube video player" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen className="absolute inset-0" />
+                        </div>
+                      ) : (
+                        <p className={cn('mt-2 text-sm', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>n/a</p>
+                      )}
+                      <p className={cn('mt-5 text-xs font-black uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>Tracks</p>
+                      <div className="mt-2 space-y-1">
+                        {(album.tracks || []).length === 0 ? (
+                          <p className={cn('text-sm', theme === 'dark' ? 'text-slate-500' : 'text-slate-500')}>n/a</p>
+                        ) : (
+                          (album.tracks || []).slice(0, 8).map((t, i) => (
+                            <div key={i} className={cn('text-sm font-medium truncate', theme === 'dark' ? 'text-slate-200' : 'text-slate-800')}>{i + 1}. {t}</div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+            return (
+              <div className="space-y-10">
+                {albums.length > 0 && (
+                  <div><h4 className={cn('text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}><div className="w-6 h-0.5 bg-brand-purple rounded-full" /> Albums</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{albums.map((a, i) => <AlbumViewCard key={`${a.title}-${a.date}-${i}`} album={a} />)}</div></div>
+                )}
+                {mini.length > 0 && (
+                  <div><h4 className={cn('text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}><div className="w-6 h-0.5 bg-brand-purple/70 rounded-full" /> Mini Albums & EPs</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{mini.map((a, i) => <AlbumViewCard key={`${a.title}-${a.date}-${i}`} album={a} />)}</div></div>
+                )}
+                {singles.length > 0 && (
+                  <div><h4 className={cn('text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}><div className="w-6 h-0.5 bg-brand-pink/70 rounded-full" /> Singles</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{singles.map((a, i) => <AlbumViewCard key={`${a.title}-${a.date}-${i}`} album={a} />)}</div></div>
+                )}
+                {other.length > 0 && (
+                  <div><h4 className={cn('text-sm font-black uppercase tracking-widest mb-4 flex items-center gap-2', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}><div className="w-6 h-0.5 bg-slate-400 rounded-full" /> Other</h4><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{other.map((a, i) => <AlbumViewCard key={`${a.title}-${a.date}-${i}`} album={a} />)}</div></div>
+                )}
+              </div>
+            );
+          })()
         )}
       </div>
 
@@ -991,7 +1306,7 @@ export function IdolDetailPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4">
           <h2 className={cn('text-lg md:text-xl font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-            <ImageIcon size={20} /> Gallery
+            <ImageIcon size={20} /> {t('idolDetail.gallery')}
           </h2>
           {isEditingWorks && (
             <>
@@ -1016,18 +1331,17 @@ export function IdolDetailPage() {
             <Reorder.Group axis="y" values={galleryDraft} onReorder={setGalleryDraft} className="space-y-3">
               {galleryDraft.map((item, idx) => (
                 <Reorder.Item key={item.id} value={item} className="flex gap-2 items-center bg-black/5 dark:bg-white/5 p-2 rounded-xl">
-                  <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1">
+                  <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1 shrink-0">
                     <GripVertical size={16} />
                   </div>
-                  <input
-                    value={item.url}
-                    onChange={(e) => updateGalleryImage(idx, e.target.value)}
-                    className={cn(
-                      "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                      theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner"
-                    )}
-                    placeholder="Image URL..."
-                  />
+                  <div className={cn("flex-1 min-w-0 flex items-center gap-3 rounded-2xl border-2 overflow-hidden", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-slate-50 border-slate-100")}>
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-700">
+                      {item.url ? (
+                        <img src={convertDriveLink(item.url)} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
+                      ) : null}
+                    </div>
+                    <span className="text-xs font-medium text-slate-500 truncate">Gallery {idx + 1}</span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeGalleryImage(idx)}
@@ -1061,7 +1375,7 @@ export function IdolDetailPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500 italic">No gallery images.</p>
+            <p className="text-sm text-slate-500 italic">{t('idolDetail.noGalleryImages')}</p>
           )
         )}
       </div>
@@ -1143,11 +1457,11 @@ export function IdolDetailPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setSelectedVideo(null)}
+              onClick={() => { restorePageScroll(); setSelectedVideo(null); }}
               className="fixed inset-0 z-100 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
             >
               <button
-                onClick={() => setSelectedVideo(null)}
+                onClick={() => { restorePageScroll(); setSelectedVideo(null); }}
                 className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-10"
               >
                 <X size={24} />
@@ -1209,6 +1523,74 @@ export function IdolDetailPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Biography full-screen popup */}
+      <AnimatePresence>
+        {showBiographyModal && idol && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setShowBiographyModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl shadow-2xl border overflow-hidden",
+                theme === 'dark' ? "bg-slate-900 border-white/10" : "bg-white border-slate-200"
+              )}
+            >
+              <div className={cn("flex items-center justify-between gap-3 p-4 border-b shrink-0", theme === 'dark' ? "border-white/10" : "border-slate-100")}>
+                <h3 className={cn("text-lg font-bold truncate", theme === 'dark' ? "text-white" : "text-slate-900")}>
+                  {t('idolDetail.biography')} — {idol.name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowBiographyModal(false)}
+                  className={cn("p-2 rounded-xl transition-colors", theme === 'dark' ? "hover:bg-white/10 text-slate-400" : "hover:bg-slate-100 text-slate-500")}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain p-6 custom-scrollbar min-h-0">
+                <div className={cn("text-sm leading-relaxed whitespace-pre-wrap", theme === 'dark' ? "text-slate-300" : "text-slate-600")}>
+                  {(idol.description || idol.biography || t('idolDetail.noBiography')).split('\n').map((p, i) => (p ? <p key={i} className="mb-3 last:mb-0" dangerouslySetInnerHTML={{ __html: formatBiographyText(p) }} /> : <br key={i} />))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <YouTubeSearchModal
+        isOpen={showYouTubeSearchVideoIdx != null}
+        onClose={() => setShowYouTubeSearchVideoIdx(null)}
+        defaultQuery={idol?.name ? `${idol.name} ${(videosDraft[showYouTubeSearchVideoIdx]?.title || '')} MV`.trim() : ''}
+        onSelect={(url, item) => {
+          if (showYouTubeSearchVideoIdx != null && url) {
+            setVideosDraft(prev => {
+              const next = [...prev];
+              const v = next[showYouTubeSearchVideoIdx] || {};
+              next[showYouTubeSearchVideoIdx] = {
+                ...v,
+                url,
+                title: item?.title ?? v.title,
+                date: item?.date ?? v.date,
+              };
+              return next;
+            });
+          }
+          setShowYouTubeSearchVideoIdx(null);
+        }}
+      />
+
+      <MusicBrainzImportModal
+        isOpen={showImportAlbumsModal}
+        onClose={() => setShowImportAlbumsModal(false)}
+        defaultArtist={idol?.name || ''}
+        onAdd={handleImportAlbums}
+      />
 
       <BackToTopButton />
     </div>

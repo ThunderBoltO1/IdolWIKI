@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Search, Loader2, Disc, Check } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
-import { useMusicBrainz, fetchCoverArt, fetchTracklist } from '../hooks/useMusicBrainz';
+import { useiTunes, fetchTracklist } from '../hooks/useiTunes';
 import { cn } from '../lib/utils';
 
 export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', onAdd }) {
   const { theme } = useTheme();
-  const { search, results, loading, error, clear } = useMusicBrainz();
+  const { search, results, loading, error, clear } = useiTunes();
   const [query, setQuery] = useState(defaultArtist || '');
   const [selected, setSelected] = useState(new Set());
   const [adding, setAdding] = useState(false);
@@ -35,30 +35,27 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
     };
   }, [isOpen]);
 
-  const toggleSelect = (mbid) => {
+  const toggleSelect = (id) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(mbid)) next.delete(mbid);
-      else next.add(mbid);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const handleAdd = async () => {
-    const items = results.filter((r) => selected.has(r.mbid));
+    const items = results.filter((r) => selected.has(r.id));
     if (items.length === 0) return;
     setAdding(true);
     try {
       const albums = await Promise.all(
         items.map(async (r) => {
-          const [cover, tracks] = await Promise.all([
-            fetchCoverArt(r.mbid),
-            fetchTracklist(r.mbid),
-          ]);
+          const tracks = await fetchTracklist(r.id);
           return {
             title: r.title,
             date: r.date || '',
-            cover: cover || '',
+            cover: r.cover || '',
             youtube: '',
             tracks: tracks || [],
           };
@@ -67,7 +64,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
       onAdd?.(albums);
       onClose?.();
     } catch (e) {
-      console.error('MusicBrainz import error', e);
+      console.error('iTunes import error', e);
     } finally {
       setAdding(false);
     }
@@ -98,7 +95,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
         >
           <div className={cn('flex items-center justify-between p-4 border-b', theme === 'dark' ? 'border-white/10' : 'border-slate-200')}>
             <h3 className={cn('text-lg font-black uppercase tracking-widest flex items-center gap-2', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
-              <Disc size={20} className="text-brand-purple" /> Import from MusicBrainz
+              <Disc size={20} className="text-brand-pink" /> Import from iTunes
             </h3>
             <button onClick={onClose} className={cn('p-2 rounded-xl transition-colors', theme === 'dark' ? 'hover:bg-white/10 text-slate-400' : 'hover:bg-slate-100 text-slate-500')}>
               <X size={20} />
@@ -111,7 +108,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && search(query)}
-                placeholder="ค้นหาชื่อศิลปิน/กลุ่ม (เช่น BTS, NewJeans)"
+                placeholder="Search artist/group name (e.g. BTS, NewJeans)"
                 className={cn(
                   'flex-1 px-4 py-3 rounded-xl border outline-none font-medium',
                   theme === 'dark' ? 'bg-slate-800/50 border-white/10 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400'
@@ -126,7 +123,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
                 )}
               >
                 {loading ? <Loader2 size={18} className="animate-spin" /> : <Search size={18} />}
-                {loading ? 'กำลังค้นหา...' : 'ค้นหา'}
+                {loading ? 'Searching...' : 'Search'}
               </button>
             </div>
 
@@ -137,37 +134,40 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
             {results.length > 0 && (
               <>
                 <p className={cn('text-xs font-bold uppercase tracking-widest', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
-                  เลือกอัลบั้มที่ต้องการนำเข้า ({selected.size} เลือกแล้ว)
+                  Select albums to import ({selected.size} selected)
                 </p>
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                   {results.map((r) => (
                     <button
-                      key={r.mbid}
+                      key={r.id}
                       type="button"
-                      onClick={() => toggleSelect(r.mbid)}
+                      onClick={() => toggleSelect(r.id)}
                       className={cn(
                         'w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-all',
-                        selected.has(r.mbid)
+                        selected.has(r.id)
                           ? 'border-brand-purple bg-brand-purple/10'
                           : theme === 'dark'
                             ? 'border-white/10 bg-slate-800/30 hover:bg-slate-800/60'
                             : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                       )}
                     >
+                      {r.cover && (
+                        <img src={r.cover} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                      )}
                       <div
                         className={cn(
                           'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0',
-                          selected.has(r.mbid) ? 'border-brand-purple bg-brand-purple' : theme === 'dark' ? 'border-slate-500' : 'border-slate-300'
+                          selected.has(r.id) ? 'border-brand-purple bg-brand-purple' : theme === 'dark' ? 'border-slate-500' : 'border-slate-300'
                         )}
                       >
-                        {selected.has(r.mbid) && <Check size={12} className="text-white" />}
+                        {selected.has(r.id) && <Check size={12} className="text-white" />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={cn('font-bold truncate', theme === 'dark' ? 'text-white' : 'text-slate-900')}>
                           {r.title}
                         </p>
                         <p className={cn('text-xs', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
-                          {r.type} {r.date ? `· ${r.date}` : ''}
+                          {r.type} {r.date ? `· ${r.date}` : ''} {r.trackCount ? `· ${r.trackCount} tracks` : ''}
                         </p>
                       </div>
                     </button>
@@ -178,7 +178,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
 
             {!loading && results.length === 0 && !error && query && (
               <p className={cn('text-sm text-center py-8', theme === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
-                พิมพ์ชื่อศิลปินหรือกลุ่มแล้วกดค้นหา
+                Enter artist or group name and click Search
               </p>
             )}
           </div>
@@ -192,7 +192,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
                   theme === 'dark' ? 'text-slate-400 hover:bg-white/5' : 'text-slate-600 hover:bg-slate-100'
                 )}
               >
-                ยกเลิก
+                Cancel
               </button>
               <button
                 onClick={handleAdd}
@@ -203,7 +203,7 @@ export function MusicBrainzImportModal({ isOpen, onClose, defaultArtist = '', on
                 )}
               >
                 {adding ? <Loader2 size={16} className="animate-spin" /> : null}
-                นำเข้า {selected.size} อัลบั้ม
+                Import {selected.size} album{selected.size !== 1 ? 's' : ''}
               </button>
             </div>
           )}

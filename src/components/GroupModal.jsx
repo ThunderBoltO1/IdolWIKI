@@ -2,14 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { X, Save, Building2, Globe, Calendar, Users, Image as ImageIcon, Loader2, Trophy, Plus, Trash2, Youtube, Search, Upload, Instagram, GripVertical, Heart, Facebook, Music2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, restorePageScroll } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
-import { getDocs, query, where, collection } from 'firebase/firestore';
+import { useConfirm } from '../context/ConfirmContext';
+import { getDocs, query, where, collection, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { convertDriveLink } from '../lib/storage';
 import { useAwards } from '../hooks/useAwards.js';
-import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
+import { uploadImage, deleteImage, validateFile, compressImage, compressImageForHero } from '../lib/upload';
 import { useToast } from './Toast';
+import { ensureCompanyExists } from '../lib/companyUtils';
+import { DateSelect } from './DateSelect';
 
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -29,86 +32,9 @@ const SpotifyIcon = ({ size = 24, className }) => (
     </svg>
 );
 
-function DateSelect({ value, onChange, theme, label }) {
-    const date = value ? new Date(value) : new Date();
-    const [year, setYear] = useState(value ? date.getFullYear() : '');
-    const [month, setMonth] = useState(value ? date.getMonth() + 1 : '');
-    const [day, setDay] = useState(value ? date.getDate() : '');
-
-    useEffect(() => {
-        if (value) {
-            const d = new Date(value);
-            setYear(d.getFullYear());
-            setMonth(d.getMonth() + 1);
-            setDay(d.getDate());
-        }
-    }, [value]);
-
-    const updateDate = (y, m, d) => {
-        if (y && m && d) {
-            const formattedDate = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            onChange(formattedDate);
-        } else {
-            onChange('');
-        }
-    };
-
-    const years = Array.from({ length: new Date().getFullYear() - 1989 }, (_, i) => new Date().getFullYear() - i);
-    const months = [
-        { val: 1, label: 'Jan' }, { val: 2, label: 'Feb' }, { val: 3, label: 'Mar' }, { val: 4, label: 'Apr' },
-        { val: 5, label: 'May' }, { val: 6, label: 'Jun' }, { val: 7, label: 'Jul' }, { val: 8, label: 'Aug' },
-        { val: 9, label: 'Sep' }, { val: 10, label: 'Oct' }, { val: 11, label: 'Nov' }, { val: 12, label: 'Dec' }
-    ];
-    const days = Array.from({ length: 31 }, (_, i) => i + 1);
-
-    const selectClass = cn(
-        "flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold appearance-none cursor-pointer",
-        theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
-    );
-
-    return (
-        <div className="space-y-2">
-            <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-4s00")}>
-                <Calendar size={12} /> {label}
-            </label>
-            <div className="flex gap-2">
-                <div className="relative flex-1">
-                    <select
-                        value={day}
-                        onChange={(e) => { setDay(e.target.value); updateDate(year, month, e.target.value); }}
-                        className={selectClass}
-                    >
-                        <option value="">Day</option>
-                        {days.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                </div>
-                <div className="relative flex-1">
-                    <select
-                        value={month}
-                        onChange={(e) => { setMonth(e.target.value); updateDate(year, e.target.value, day); }}
-                        className={selectClass}
-                    >
-                        <option value="">Month</option>
-                        {months.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
-                    </select>
-                </div>
-                <div className="relative flex-1">
-                    <select
-                        value={year}
-                        onChange={(e) => { setYear(e.target.value); updateDate(e.target.value, month, day); }}
-                        className={selectClass}
-                    >
-                        <option value="">Year</option>
-                        {years.map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const { theme } = useTheme();
+    const { confirm } = useConfirm();
     const toast = useToast();
     const [loading, setLoading] = useState(false);
     const [memberSearch, setMemberSearch] = useState('');
@@ -142,6 +68,14 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         spotify: ''
     });
     const { awards: awardData } = useAwards();
+    const [companies, setCompanies] = useState([]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        getDocs(query(collection(db, 'companies'), orderBy('name')))
+            .then(snap => setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => setCompanies([]));
+    }, [isOpen]);
 
     const [newAward, setNewAward] = useState({
         year: new Date().getFullYear(),
@@ -155,13 +89,9 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
             document.body.style.overflow = 'hidden';
             document.documentElement.style.overflow = 'hidden';
         } else {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
+            restorePageScroll();
         }
-        return () => {
-            document.body.style.overflow = '';
-            document.documentElement.style.overflow = '';
-        };
+        return () => restorePageScroll();
     }, [isOpen]);
 
     useEffect(() => {
@@ -220,8 +150,16 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                 }
             }
 
+            const companyToSave = formData.company === '__other__' ? '' : formData.company;
+            try {
+                await ensureCompanyExists(companyToSave);
+            } catch (err) {
+                console.warn('ensureCompanyExists:', err);
+            }
+
             await onSave({
                 ...formData,
+                company: companyToSave,
                 members: selectedMembers.map(m => m.id)
             });
             toast.success(`Group "${formData.name}" created successfully!`);
@@ -252,7 +190,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         setIsUploading(true);
         setUploadProgress(0);
         try {
-            const compressedFile = await compressImage(file);
+            const compressedFile = await compressImageForHero(file);
             if (formData.image && formData.image.includes('firebasestorage')) {
                 await deleteImage(formData.image);
             }
@@ -265,6 +203,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
             setIsUploading(false);
             setUploadProgress(0);
             if (fileInputRef.current) fileInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -276,7 +215,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
             try {
                 validateFile(file, 5);
             } catch (error) {
-                alert(`File ${file.name} is too large. Max 5MB.`);
+                toast.error(error.message || `Invalid file: ${file.name}`);
                 return;
             }
         }
@@ -292,6 +231,7 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
         } finally {
             setIsUploading(false);
             if (galleryInputRef.current) galleryInputRef.current.value = '';
+            restorePageScroll();
         }
     };
 
@@ -304,8 +244,15 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     const addGalleryImage = () => setFormData({ ...formData, gallery: [...(formData.gallery || []), ''] });
 
     const removeGalleryImage = (index) => {
-        const newGallery = (formData.gallery || []).filter((_, i) => i !== index);
-        setFormData({ ...formData, gallery: newGallery });
+        confirm({
+            title: 'Remove Image',
+            message: 'Remove this image from gallery?',
+            confirmText: 'Remove',
+            onConfirm: () => {
+                const newGallery = (formData.gallery || []).filter((_, i) => i !== index);
+                setFormData({ ...formData, gallery: newGallery });
+            }
+        });
     };
 
     const handleAddAward = () => {
@@ -314,7 +261,12 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
     };
 
     const handleRemoveAward = (index) => {
-        setFormData({ ...formData, awards: (formData.awards || []).filter((_, i) => i !== index) });
+        confirm({
+            title: 'Remove Award',
+            message: 'Remove this award?',
+            confirmText: 'Remove',
+            onConfirm: () => setFormData({ ...formData, awards: (formData.awards || []).filter((_, i) => i !== index) })
+        });
     };
 
     if (!isOpen) return null;
@@ -400,7 +352,36 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                     <input value={formData.image || ''} onChange={e => handleImageChange(e.target.value)} className={cn("w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")} placeholder="https://..." />
                                 </div>
 
-                                <InputGroup label="Company" value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })} theme={theme} icon={Building2} placeholder="e.g. YG Entertainment" />
+                                <div className="space-y-2">
+                                    <label className={cn("text-xs font-black uppercase tracking-widest ml-1 flex items-center gap-2", theme === 'dark' ? "text-slate-500" : "text-slate-400")}>
+                                        <Building2 size={12} /> Company
+                                    </label>
+                                    <select
+                                        value={companies.some(c => c.name === formData.company) ? formData.company : (formData.company ? '__other__' : '')}
+                                        onChange={e => {
+                                            const v = e.target.value;
+                                            setFormData({ ...formData, company: v === '__other__' ? '__other__' : v });
+                                        }}
+                                        className={cn(
+                                            "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold appearance-none cursor-pointer",
+                                            theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white [&>option]:bg-slate-900" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 [&>option]:bg-white"
+                                        )}
+                                    >
+                                        <option value="">None</option>
+                                        {companies.map(c => (
+                                            <option key={c.id} value={c.name}>{c.name}</option>
+                                        ))}
+                                        <option value="__other__">Other (type manually)</option>
+                                    </select>
+                                    {(companies.some(c => c.name === formData.company) ? formData.company : (formData.company ? '__other__' : '')) === '__other__' && (
+                                        <input
+                                            value={formData.company === '__other__' ? '' : (formData.company || '')}
+                                            onChange={e => setFormData({ ...formData, company: e.target.value })}
+                                            className={cn("w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-sm font-bold mt-1", theme === 'dark' ? "bg-slate-800/50 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900")}
+                                            placeholder="e.g. YG Entertainment"
+                                        />
+                                    )}
+                                </div>
                                 <DateSelect label="Debut Date" value={formData.debutDate} onChange={val => setFormData({ ...formData, debutDate: val })} theme={theme} />
                                 <InputGroup label="Fanclub Name" value={formData.fanclub} onChange={e => setFormData({ ...formData, fanclub: e.target.value })} theme={theme} icon={Users} placeholder="e.g. BLINK" />
 
@@ -548,13 +529,20 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                                         key={idol.id}
                                                         type="button"
                                                         onClick={() => {
+                                                            const doAdd = () => {
+                                                                setSelectedMembers([...selectedMembers, idol]);
+                                                                searchInputRef.current?.focus();
+                                                            };
                                                             if (idol.groupId) {
-                                                                if (!window.confirm(`${idol.name} is already in "${idol.group}". Do you want to move them to this new group?`)) {
-                                                                    return;
-                                                                }
+                                                                confirm({
+                                                                    title: 'Move Member',
+                                                                    message: `${idol.name} is already in "${idol.group}". Do you want to move them to this new group?`,
+                                                                    confirmText: 'Move',
+                                                                    onConfirm: doAdd
+                                                                });
+                                                            } else {
+                                                                doAdd();
                                                             }
-                                                            setSelectedMembers([...selectedMembers, idol]);
-                                                            searchInputRef.current?.focus();
                                                         }}
                                                         className={cn(
                                                             "w-full p-3 flex items-center gap-3 hover:bg-brand-pink/10 transition-colors text-left",
@@ -617,7 +605,14 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                                         </div>
                                                         <button
                                                             type="button"
-                                                            onClick={() => setSelectedMembers(selectedMembers.filter(m => m.id !== member.id))}
+                                                            onClick={() => {
+                                                                confirm({
+                                                                    title: 'Remove Member',
+                                                                    message: `Remove ${member.name || member.fullEnglishName} from members?`,
+                                                                    confirmText: 'Remove',
+                                                                    onConfirm: () => setSelectedMembers(selectedMembers.filter(m => m.id !== member.id))
+                                                                });
+                                                            }}
                                                             className="p-1.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 transition-colors"
                                                         >
                                                             <X size={14} />
@@ -672,26 +667,30 @@ export function GroupModal({ isOpen, onClose, onSave, idols = [], onAddIdol }) {
                                             </button>
                                         </div>
                                     </div>
-                                    {(formData.gallery || []).map((url, idx) => (
-                                        <div key={idx} className="flex gap-2 items-center">
-                                            <input
-                                                value={url}
-                                                onChange={(e) => handleGalleryChange(idx, e.target.value)}
-                                                className={cn(
-                                                    "w-full rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold",
-                                                    theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900"
-                                                )}
-                                                placeholder={`Gallery Image ${idx + 1} URL...`}
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => removeGalleryImage(idx)}
-                                                className={cn("p-3 rounded-2xl transition-colors shrink-0", theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100")}
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    ))}
+                                    <Reorder.Group axis="y" values={formData.gallery || []} onReorder={(newGallery) => setFormData(prev => ({ ...prev, gallery: newGallery }))} className="space-y-2">
+                                        {(formData.gallery || []).map((url, idx) => (
+                                            <Reorder.Item key={`${url}-${idx}`} value={url} className="flex gap-2 items-center">
+                                                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-brand-pink p-1 shrink-0">
+                                                    <GripVertical size={16} />
+                                                </div>
+                                                <div className={cn("flex-1 min-w-0 flex items-center gap-3 rounded-2xl border-2 overflow-hidden", theme === 'dark' ? "bg-slate-900 border-white/5" : "bg-slate-50 border-slate-100")}>
+                                                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden shrink-0 bg-slate-200 dark:bg-slate-700">
+                                                        {url ? (
+                                                            <img src={convertDriveLink(url)} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = ''; e.target.style.display = 'none'; }} />
+                                                        ) : null}
+                                                    </div>
+                                                    <span className="text-xs font-medium text-slate-500 truncate">Gallery {idx + 1}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeGalleryImage(idx)}
+                                                    className={cn("p-3 rounded-2xl transition-colors shrink-0", theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100")}
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </Reorder.Item>
+                                        ))}
+                                    </Reorder.Group>
                                 </div>
                             </div>
 

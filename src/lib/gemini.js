@@ -137,18 +137,28 @@ ${chatHistory.length > 0 ? `## ประวัติบทสนทนาล่�
   ];
 
   const url = `${BASE}/gemini-2.5-flash:generateContent?key=${encodeURIComponent(API_KEY)}`;
-  const doFetch = () => fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 2048,
-        topP: 0.95
-      }
-    })
-  });
+  const payload = {
+    contents,
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 2048,
+      topP: 0.95
+    }
+  };
+
+  const doFetch = async () => {
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      // Typical browser message is "Load failed" / "Failed to fetch"
+      const msg = (err && err.message) ? err.message : String(err);
+      throw new Error(`Gemini network error: ${msg}`);
+    }
+  };
 
   let res = await doFetch();
   if (!res.ok && res.status >= 500) {
@@ -156,8 +166,19 @@ ${chatHistory.length > 0 ? `## ประวัติบทสนทนาล่�
     res = await doFetch();
   }
 
-  const data = await res.json();
-  if (data.error) {
+  let data;
+  try {
+    data = await res.json();
+  } catch (err) {
+    const msg = (err && err.message) ? err.message : String(err);
+    throw new Error(`Gemini response parse error: ${msg} (HTTP ${res.status})`);
+  }
+
+  if (!res.ok) {
+    const apiMsg = data?.error?.message || data?.message || `HTTP ${res.status}`;
+    throw new Error(`Gemini API error: ${apiMsg}`);
+  }
+  if (data?.error) {
     throw new Error(data.error?.message || 'Gemini API error');
   }
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;

@@ -1475,7 +1475,7 @@ export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose
                                         <div className="space-y-8">
                                             {editMode ? (
                                                 <div className="space-y-8">
-                                                    {/* Section 1: Basic Info */}
+                                                    {/* Section 1: Basic Info */} 
                                                     <div className="space-y-4">
                                                         <h3 className={cn("text-sm font-black uppercase tracking-widest border-b pb-2", theme === 'dark' ? "text-slate-400 border-white/10" : "text-slate-500 border-slate-200")}>Basic Information</h3>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

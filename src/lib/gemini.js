@@ -1,5 +1,5 @@
-// Primary source: Vite env. Fallback: hard-coded key user provided (for Netlify where env may not inject correctly).
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDYCj1lqWqOg2mwMEhge7FYO5MT6FCDcXU';
+// ใช้เฉพาะ env — ห้ามฝัง API key ในโค้ด (Google จะถือว่า leaked และปิดคีย์)
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**

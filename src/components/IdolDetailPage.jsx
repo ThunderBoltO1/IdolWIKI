@@ -16,7 +16,6 @@ import { deleteImage, uploadImage, validateFile, compressImage } from '../lib/up
 import { BackgroundShapes } from './BackgroundShapes';
 import { Helmet } from 'react-helmet-async';
 import { BackToTopButton } from './BackToTopButton';
-import { YouTubeSearchModal } from './YouTubeSearchModal';
 import { MusicBrainzImportModal } from './MusicBrainzImportModal';
 import { DateSelect } from './DateSelect';
 import { findCompanyByName } from '../lib/companyUtils';
@@ -81,7 +80,6 @@ export function IdolDetailPage() {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoSearch, setVideoSearch] = useState('');
   const [isCopied, setIsCopied] = useState(false);
-  const [showYouTubeSearchVideoIdx, setShowYouTubeSearchVideoIdx] = useState(null);
   const [showImportAlbumsModal, setShowImportAlbumsModal] = useState(false);
   const [showBiographyModal, setShowBiographyModal] = useState(false);
 
@@ -637,7 +635,18 @@ export function IdolDetailPage() {
               <img
                 src={convertDriveLink(idol.image)}
                 alt={idol.name}
-                className="absolute inset-0 w-full h-full object-cover object-center"
+                className="absolute inset-0 w-full h-full"
+                style={(() => {
+                  const pos = idol.imagePosition || { x: 50, y: 50 };
+                  const x = pos?.x ?? 50;
+                  const y = pos?.y ?? 50;
+                  const scale = idol.imageScale ?? 1;
+                  const fit = idol.imageFit ?? 'cover';
+                  const s = { objectFit: fit };
+                  s.objectPosition = `${x}% ${y}%`;
+                  if (scale !== 1) { s.transform = `scale(${scale})`; s.transformOrigin = `${x}% ${y}%`; }
+                  return s;
+                })()}
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-linear-to-t from-slate-950/80 via-transparent to-transparent" />
@@ -981,20 +990,13 @@ export function IdolDetailPage() {
                   />
                   <DateSelect label="Date" value={video.date || ''} onChange={val => updateVideo(idx, 'date', val)} theme={theme} />
                 </div>
-                <div className="flex gap-2">
+                <div>
                   <input
                     value={video.url || ''}
                     onChange={e => updateVideo(idx, 'url', e.target.value)}
-                    className={cn("flex-1 p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
+                    className={cn("w-full p-2 rounded-lg border bg-transparent outline-none text-xs font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")}
                     placeholder="YouTube URL..."
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowYouTubeSearchVideoIdx(idx)}
-                    className={cn("shrink-0 px-3 py-2 rounded-lg font-bold text-[10px] uppercase tracking-wider flex items-center gap-2", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}
-                  >
-                    <Youtube size={14} /> Search
-                  </button>
                 </div>
               </div>
             ))}
@@ -1562,28 +1564,6 @@ export function IdolDetailPage() {
           </div>
         )}
       </AnimatePresence>
-
-      <YouTubeSearchModal
-        isOpen={showYouTubeSearchVideoIdx != null}
-        onClose={() => setShowYouTubeSearchVideoIdx(null)}
-        defaultQuery={idol?.name ? `${idol.name} ${(videosDraft[showYouTubeSearchVideoIdx]?.title || '')} MV`.trim() : ''}
-        onSelect={(url, item) => {
-          if (showYouTubeSearchVideoIdx != null && url) {
-            setVideosDraft(prev => {
-              const next = [...prev];
-              const v = next[showYouTubeSearchVideoIdx] || {};
-              next[showYouTubeSearchVideoIdx] = {
-                ...v,
-                url,
-                title: item?.title ?? v.title,
-                date: item?.date ?? v.date,
-              };
-              return next;
-            });
-          }
-          setShowYouTubeSearchVideoIdx(null);
-        }}
-      />
 
       <MusicBrainzImportModal
         isOpen={showImportAlbumsModal}

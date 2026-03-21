@@ -107,7 +107,18 @@ export function IdolCard({ idol, onLike, onClick, onEdit, searchTerm, groups = [
                 transition={{ duration: 0.5 }}
                 src={convertDriveLink(idol.image, 600)}
                 alt={idol.name}
-                className="absolute inset-0 w-full h-full object-cover object-center transition-transform duration-1000 group-hover:scale-110"
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                style={(() => {
+                    const pos = idol.imagePosition || { x: 50, y: 50 };
+                    const x = pos?.x ?? 50;
+                    const y = pos?.y ?? 50;
+                    const scale = idol.imageScale ?? 1;
+                    const fit = idol.imageFit ?? 'cover';
+                    const s = { objectFit: fit };
+                    s.objectPosition = `${x}% ${y}%`;
+                    if (scale !== 1) { s.transform = `scale(${scale})`; s.transformOrigin = `${x}% ${y}%`; }
+                    return s;
+                })()}
                 loading="lazy"
                 decoding="async"
                 onLoad={() => setImageLoaded(true)}

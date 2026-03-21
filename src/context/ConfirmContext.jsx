@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
 import { ConfirmationModal } from '../components/ConfirmationModal';
 
 const ConfirmContext = createContext(null);
 
 export function ConfirmProvider({ children }) {
+  const resolveRef = useRef(null);
   const [config, setConfig] = useState({
     isOpen: false,
     title: '',
@@ -16,6 +17,7 @@ export function ConfirmProvider({ children }) {
 
   const confirm = useCallback((opts) => {
     return new Promise((resolve) => {
+      resolveRef.current = resolve;
       setConfig({
         isOpen: true,
         title: opts.title || 'Confirm',
@@ -24,14 +26,20 @@ export function ConfirmProvider({ children }) {
         type: opts.type || 'danger',
         singleButton: opts.singleButton ?? false,
         onConfirm: () => {
+          const r = resolveRef.current;
+          resolveRef.current = null;
           if (opts.onConfirm) opts.onConfirm();
-          resolve(true);
+          if (r) r(true);
         },
       });
     });
   }, []);
 
   const handleClose = useCallback(() => {
+    if (resolveRef.current) {
+      resolveRef.current(false);
+      resolveRef.current = null;
+    }
     setConfig((prev) => ({ ...prev, isOpen: false }));
   }, []);
 

@@ -19,13 +19,12 @@ export function ConfirmationModal({
     showReasonInput = false,
     reasonValue = '',
     onReasonChange,
-    reasonPlaceholder
+    reasonPlaceholder,
+    playSound = true
 }) {
     const { theme } = useTheme();
     const t = useTranslation();
     const resolvedReasonPlaceholder = reasonPlaceholder ?? t('deleteRequest.reasonPlaceholder');
-
-    if (!isOpen) return null;
 
     let Icon = AlertTriangle;
     let iconClass = "bg-red-500/10 text-red-500";
@@ -36,15 +35,18 @@ export function ConfirmationModal({
     } else if (type === 'info') {
         Icon = Info;
         iconClass = "bg-blue-500/10 text-blue-500";
+    } else if (type === 'warning') {
+        Icon = AlertTriangle;
+        iconClass = "bg-brand-pink/10 text-brand-pink";
     }
 
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && playSound) {
             const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
             audio.volume = 0.2;
             audio.play().catch(() => {});
         }
-    }, [isOpen]);
+    }, [isOpen, playSound]);
 
     useEffect(() => {
         if (isOpen) {
@@ -60,6 +62,8 @@ export function ConfirmationModal({
         if (onConfirm) await Promise.resolve(onConfirm(showReasonInput ? reasonValue : undefined));
         onClose();
     };
+
+    if (!isOpen) return null;
 
     return createPortal(
         <AnimatePresence>

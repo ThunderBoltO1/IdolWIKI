@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, Reorder, useAnimation } from 'framer-motion';
 import { ArrowLeft, Users, Calendar, Building2, Star, Info, ChevronRight, ChevronLeft, Music, Heart, Globe, Edit2, Loader2, MessageSquare, Send, User, Trash2, Save, X, Trophy, Plus, Disc, PlayCircle, ListMusic, ExternalLink, Youtube, Pin, Flag, Share2, Check, Search, History, Instagram, RefreshCw, GripVertical, ListOrdered, Newspaper, Upload, Bold, Italic, Eye, Music2, CheckSquare, Square, FileText, AlertCircle, ImageIcon, Facebook, ZoomIn } from 'lucide-react';
@@ -24,7 +24,6 @@ import { useGroupNews } from '../hooks/useGroupNews';
 import { GroupNewsSection } from './group/GroupNewsSection';
 import { MusicBrainzImportModal } from './MusicBrainzImportModal';
 import { Helmet } from 'react-helmet-async';
-import { YouTubeSearchModal } from './YouTubeSearchModal';
 import { DateSelect } from './DateSelect';
 const XIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -37,6 +36,8 @@ const TikTokIcon = ({ size = 24, className }) => (
         <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5" />
     </svg>
 );
+
+const EDITABLE_TABS = ['members', 'gallery', 'discography', 'videos'];
 
 const SpotifyIcon = ({ size = 24, className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="0" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -100,6 +101,7 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         onConfirm: null,
         confirmText: 'OK'
     });
+    const [unsavedTabModal, setUnsavedTabModal] = useState({ isOpen: false, pendingTab: null });
     const [similarGroups, setSimilarGroups] = useState([]);
     const [isCopied, setIsCopied] = useState(false);
 
@@ -135,8 +137,6 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
 
     const [showReasonModal, setShowReasonModal] = useState(false);
     const [showMusicBrainzModal, setShowMusicBrainzModal] = useState(false);
-    const [showYouTubeSearchModal, setShowYouTubeSearchModal] = useState(false);
-    const [youtubeSearchAlbumIdx, setYoutubeSearchAlbumIdx] = useState(null);
     const [editReason, setEditReason] = useState('');
     const [groupChanges, setGroupChanges] = useState(null);
     const { awards: awardData } = useAwards();
@@ -151,15 +151,106 @@ export function GroupPage({ group, members, onBack, onMemberClick, onUpdateGroup
         return age;
     };
 
-    const handleTimelineDotClick = (memberId) => {
-        setActiveTab('members');
+    const hasTabUnsavedChanges = useCallback((tab) => {
+        try {
+            if (tab === 'members' && isEditingMembers) {
+                const currentIds = (editingMembers || []).map(m => m?.id);
+                const savedIds = displayGroup?.members || [];
+                return JSON.stringify(currentIds) !== JSON.stringify(savedIds);
+            }
+            if (tab === 'gallery' && isEditingGallery) {
+                const current = (galleryItems || []).map(i => i?.url).filter(Boolean);
+                const saved = displayGroup?.gallery || [];
+                return JSON.stringify(current) !== JSON.stringify(saved);
+            }
+            if (tab === 'discography' && isEditingDiscography) {
+                const current = (albumList || []).map((a) => {
+                    if (!a || typeof a !== 'object') return {};
+                    const { internalId, ...r } = a;
+                    return r;
+                });
+                const saved = displayGroup?.albums || [];
+                return JSON.stringify(current) !== JSON.stringify(saved);
+            }
+            if (tab === 'videos' && isEditingVideos) {
+                const current = (videoList || []).map((v) => {
+                    if (!v || typeof v !== 'object') return {};
+                    const { internalId, ...r } = v;
+                    return r;
+                });
+                const saved = displayGroup?.videos || [];
+                return JSON.stringify(current) !== JSON.stringify(saved);
+            }
+        } catch (e) {
+            console.warn('[hasTabUnsavedChanges]', e);
+            return true;
+        }
+        return false;
+    }, [isEditingMembers, isEditingGallery, isEditingDiscography, isEditingVideos, editingMembers, galleryItems, albumList, videoList, displayGroup]);
+
+    const resetTabEdit = useCallback((tab) => {
+        try {
+            const g = displayGroup;
+            const safeAlbums = (g?.albums || []).map((a, i) => (a && typeof a === 'object' ? { ...a, internalId: `alb-${i}` } : { internalId: `alb-${i}` }));
+            const safeVideos = (g?.videos || []).map((v, i) => (v && typeof v === 'object' ? { ...v, internalId: `vid-${i}` } : { internalId: `vid-${i}` }));
+            if (tab === 'members') {
+                setIsEditingMembers(false);
+                setIsReordering(false);
+                setMemberAddSearch('');
+                setFormData(prev => ({ ...prev, members: g?.members }));
+                setEditingMembers(members || []);
+            } else if (tab === 'gallery') {
+                setIsEditingGallery(false);
+                setFormData(prev => ({ ...prev, gallery: g?.gallery }));
+                setGalleryItems((g?.gallery || []).map((url, i) => ({ id: `gal-${i}`, url })));
+            } else if (tab === 'discography') {
+                setIsEditingDiscography(false);
+                setFormData(prev => ({ ...prev, albums: g?.albums }));
+                setAlbumList(safeAlbums);
+            } else if (tab === 'videos') {
+                setIsEditingVideos(false);
+                setFormData(prev => ({ ...prev, videos: g?.videos }));
+                setVideoList(safeVideos);
+            }
+        } catch (e) {
+            console.warn('[resetTabEdit]', e);
+        }
+    }, [displayGroup, members]);
+
+    const switchTab = useCallback((nextTab) => {
+        if (nextTab === activeTab) return;
+        const isCurrentEditable = EDITABLE_TABS.includes(activeTab);
+        const isCurrentEditing = (activeTab === 'members' && isEditingMembers) || (activeTab === 'gallery' && isEditingGallery) || (activeTab === 'discography' && isEditingDiscography) || (activeTab === 'videos' && isEditingVideos);
+        if (isCurrentEditable && isCurrentEditing) {
+            const hasUnsaved = hasTabUnsavedChanges(activeTab);
+            if (hasUnsaved) {
+                setUnsavedTabModal({ isOpen: true, pendingTab: nextTab });
+                return;
+            }
+            resetTabEdit(activeTab);
+        }
+        setActiveTab(nextTab);
+    }, [activeTab, isEditingMembers, isEditingGallery, isEditingDiscography, isEditingVideos, hasTabUnsavedChanges, resetTabEdit]);
+
+    const handleUnsavedTabConfirm = useCallback(() => {
+        if (unsavedTabModal.pendingTab) {
+            resetTabEdit(activeTab);
+            setActiveTab(unsavedTabModal.pendingTab);
+        }
+        setUnsavedTabModal({ isOpen: false, pendingTab: null });
+    }, [unsavedTabModal.pendingTab, activeTab, resetTabEdit]);
+
+    const handleUnsavedTabClose = useCallback(() => {
+        setUnsavedTabModal({ isOpen: false, pendingTab: null });
+    }, []);
+
+    const handleTimelineDotClick = useCallback((memberId) => {
+        switchTab('members');
         setTimeout(() => {
             const element = document.getElementById(`member-${memberId}`);
-            if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
+            if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
-    };
+    }, [switchTab]);
 
     const getYouTubeVideoId = (url) => {
         if (!url) return null;
@@ -1923,27 +2014,27 @@ label={t('groupPage.debutEra')}
                     {/* Tabs Navigation */}
                     <div className="w-full">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 w-full">
-                            <button onClick={() => setActiveTab('members')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('members')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'members' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'members' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><Star size={20} fill="currentColor" /></motion.div>}
                                 {t('groupPage.members')}
                             </button>
-                            <button onClick={() => setActiveTab('gallery')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('gallery')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'gallery' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'gallery' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><ImageIcon size={20} fill="currentColor" /></motion.div>}
                                 {t('groupPage.gallery')}
                             </button>
-                            <button onClick={() => setActiveTab('timeline')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('timeline')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'timeline' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'timeline' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-pink/10 text-brand-pink shadow-inner"><History size={20} /></motion.div>}
                                 {t('groupPage.timeline')}
                             </button>
-                            <button onClick={() => setActiveTab('discography')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('discography')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'discography' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'discography' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-purple/10 text-brand-purple shadow-inner"><Disc size={20} fill="currentColor" /></motion.div>}
                                 {t('groupPage.discography')}
                             </button>
-                            <button onClick={() => setActiveTab('videos')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('videos')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'videos' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'videos' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-red-500/10 text-red-500 shadow-inner"><Youtube size={20} fill="currentColor" /></motion.div>}
                                 {t('groupPage.videoGallery')}
                             </button>
-                            <div onClick={() => setActiveTab('news')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <div onClick={() => switchTab('news')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all cursor-pointer shrink-0", activeTab === 'news' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'news' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-green-500/10 text-green-500 shadow-inner"><Newspaper size={20} fill="currentColor" /></motion.div>}
                                 <div className="flex items-center gap-3">
                                     {t('groupPage.news')}
@@ -1954,7 +2045,7 @@ label={t('groupPage.debutEra')}
                                     )}
                                 </div>
                             </div>
-                            <button onClick={() => setActiveTab('comments')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
+                            <button onClick={() => switchTab('comments')} className={cn("text-base sm:text-xl md:text-2xl lg:text-4xl font-black flex items-center gap-2 transition-all shrink-0", activeTab === 'comments' ? (theme === 'dark' ? "text-white" : "text-slate-900") : "text-slate-400 hover:text-slate-500 scale-90 origin-left")}>
                                 {activeTab === 'comments' && <motion.div layoutId="tab-icon" className="p-2 rounded-xl bg-brand-blue/10 text-brand-blue shadow-inner"><MessageSquare size={20} fill="currentColor" /></motion.div>}
                                 {t('groupPage.fanTalk')}
                                 <span className="text-base md:text-xl opacity-30 ml-2">({comments.length})</span>
@@ -3243,15 +3334,8 @@ label={t('groupPage.debutEra')}
                                                             </div>
                                                         </div>
                                                     </div>
-                                                    <div className="md:col-span-2 flex gap-2">
-                                                        <input placeholder="YouTube Playlist/Video URL" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("flex-1 p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => { setYoutubeSearchAlbumIdx(idx); setShowYouTubeSearchModal(true); }}
-                                                            className={cn("shrink-0 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}
-                                                        >
-                                                            <Youtube size={18} /> Search
-                                                        </button>
+                                                    <div className="md:col-span-2">
+                                                        <input placeholder="YouTube Playlist/Video URL" value={album.youtube || ''} onChange={e => handleAlbumChange(idx, 'youtube', e.target.value)} className={cn("w-full p-3 rounded-xl border bg-transparent outline-none font-bold", theme === 'dark' ? "border-white/10 text-white" : "border-slate-200 text-slate-900")} />
                                                     </div>
                                                     <div className="md:col-span-2">
                                                         <textarea
@@ -3557,20 +3641,23 @@ label={t('groupPage.debutEra')}
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
 
+            <ConfirmationModal
+                isOpen={unsavedTabModal.isOpen}
+                onClose={handleUnsavedTabClose}
+                onConfirm={handleUnsavedTabConfirm}
+                title={t('groupPage.unsavedConfirmTitle')}
+                message={t('groupPage.unsavedConfirmMessage')}
+                confirmText={t('groupPage.unsavedConfirmLeave')}
+                singleButton={false}
+                type="warning"
+                playSound={false}
+            />
+
             <MusicBrainzImportModal
                 isOpen={showMusicBrainzModal}
                 onClose={() => setShowMusicBrainzModal(false)}
                 defaultArtist={displayGroup?.name || displayGroup?.koreanName}
                 onAdd={handleMusicBrainzAdd}
-            />
-
-            <YouTubeSearchModal
-                isOpen={showYouTubeSearchModal}
-                onClose={() => { setShowYouTubeSearchModal(false); setYoutubeSearchAlbumIdx(null); }}
-                defaultQuery={youtubeSearchAlbumIdx != null && albumList[youtubeSearchAlbumIdx] ? `${displayGroup?.name || ''} ${albumList[youtubeSearchAlbumIdx]?.title || ''} playlist`.trim() : ''}
-                onSelect={(url) => {
-                    if (youtubeSearchAlbumIdx != null) handleAlbumChange(youtubeSearchAlbumIdx, 'youtube', url);
-                }}
             />
 
             {/* Reason Modal */}

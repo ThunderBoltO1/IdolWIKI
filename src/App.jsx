@@ -41,7 +41,6 @@ const CompanyDetailPage = React.lazy(() => import('./components/CompanyDetailPag
 const CompanyModal = React.lazy(() => import('./components/CompanyModal').then(module => ({ default: module.CompanyModal })));
 const CompanyManagement = React.lazy(() => import('./components/CompanyManagement').then(module => ({ default: module.CompanyManagement })));
 import { PageViewLogger } from './components/PageViewLogger';
-import { ChatbotWidget } from './components/ChatbotWidget';
 
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-[50vh]">
@@ -1097,8 +1096,6 @@ function AppContent() {
           </Suspense>
         )}
       </AnimatePresence>
-
-      <ChatbotWidget idols={idols} groups={groups} companies={companies} />
     </div>
   );
 }

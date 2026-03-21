@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence, Reorder, animate } from 'framer-motion';
-import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText, Facebook } from 'lucide-react';
+import { X, Heart, Edit2, Trash2, Save, Calendar, User, Ruler, Activity, Building2, Globe, Instagram, Youtube, Check, Star, Volume2, Loader2, Rocket, Lock, Plus, GripVertical, MessageSquare, Send, MapPin, Droplet, Trophy, Tag, Disc, PlayCircle, ListMusic, Users, Search, ZoomIn, ZoomOut, RotateCcw, History, ArrowLeft, Copy, Maximize, Minimize, Upload, FileText, Facebook, Pin } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn, getYouTubeEmbedSrc, groupAlbumsByType, restorePageScroll } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +15,6 @@ import { IdolCard } from './IdolCard';
 import { useAwards } from '../hooks/useAwards.js';
 import { uploadImage, deleteImage, validateFile, compressImage } from '../lib/upload';
 import { useToast } from './Toast';
-import { YouTubeSearchModal } from './YouTubeSearchModal';
 import { ensureCompanyExists, findCompanyByName } from '../lib/companyUtils';
 import { DateSelect, DateSelectField } from './DateSelect';
 
@@ -127,7 +126,6 @@ export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose
 
     const { awards: awardData } = useAwards();
     const [isYTCopied, setIsYTCopied] = useState(false);
-    const [showYouTubeSearchVideoIdx, setShowYouTubeSearchVideoIdx] = useState(null);
     const [companies, setCompanies] = useState([]);
 
     useEffect(() => {
@@ -1173,24 +1171,66 @@ export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose
                             )}>
                                 <div className="relative flex-1 overflow-hidden">
                                     <AnimatePresence mode="wait">
-                                        <motion.img
+                                        <motion.div
                                             key={activeImage}
-                                            initial={{ opacity: 0, scale: 1.15 }}
-                                            animate={{ opacity: 1, scale: 1 }}
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
                                             exit={{ opacity: 0 }}
-                                            src={convertDriveLink(activeImage) || null}
-                                            alt={formData.name}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                e.target.onerror = null;
-                                                e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
-                                            }}
-                                        />
+                                            className="absolute inset-0"
+                                        >
+                                            <img
+                                                src={convertDriveLink(activeImage) || null}
+                                                alt={formData.name}
+                                                className="w-full h-full"
+                                                style={(() => {
+                                                    const pos = formData.imagePosition || { x: 50, y: 50 };
+                                                    const x = pos?.x ?? 50;
+                                                    const y = pos?.y ?? 50;
+                                                    const scale = formData.imageScale ?? 1;
+                                                    const fit = formData.imageFit ?? 'cover';
+                                                    const s = { objectFit: fit };
+                                                    s.objectPosition = `${x}% ${y}%`;
+                                                    if (scale !== 1) { s.transform = `scale(${scale})`; s.transformOrigin = `${x}% ${y}%`; }
+                                                    return s;
+                                                })()}
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = 'https://via.placeholder.com/500x800?text=No+Image';
+                                                }}
+                                            />
+                                        </motion.div>
                                     </AnimatePresence>
                                     <div className={cn(
                                         "absolute inset-0 bg-gradient-to-t via-transparent to-transparent opacity-80",
                                         theme === 'dark' ? "from-slate-900" : "from-black/60"
                                     )} />
+
+                                    {editMode && formData.image && (
+                                        <div className="absolute bottom-0 left-0 right-0 z-20 p-3 bg-black/40 backdrop-blur-sm border-t border-white/10">
+                                            <div className="flex items-center gap-1.5 mb-1.5">
+                                                <Pin size={12} className="text-brand-pink shrink-0" />
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Adjust position</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <span className="text-[9px] text-white/70 block">X {formData.imagePosition?.x ?? 50}%</span>
+                                                    <input type="range" min="0" max="100" value={formData.imagePosition?.x ?? 50} onChange={e => setFormData(prev => ({ ...prev, imagePosition: { x: Number(e.target.value), y: prev.imagePosition?.y ?? 50 } }))} className="w-full h-1 accent-brand-pink" />
+                                                </div>
+                                                <div>
+                                                    <span className="text-[9px] text-white/70 block">Y {formData.imagePosition?.y ?? 50}%</span>
+                                                    <input type="range" min="0" max="100" value={formData.imagePosition?.y ?? 50} onChange={e => setFormData(prev => ({ ...prev, imagePosition: { x: prev.imagePosition?.x ?? 50, y: Number(e.target.value) } }))} className="w-full h-1 accent-brand-pink" />
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                                <span className="text-[9px] text-white/70">Fit:</span>
+                                                <button type="button" onClick={() => setFormData(prev => ({ ...prev, imageFit: 'cover' }))} className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold", (formData.imageFit ?? 'cover') === 'cover' ? "bg-brand-pink text-white" : "bg-white/20 text-white/80")}>Cover</button>
+                                                <button type="button" onClick={() => setFormData(prev => ({ ...prev, imageFit: 'contain' }))} className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold", formData.imageFit === 'contain' ? "bg-brand-pink text-white" : "bg-white/20 text-white/80")}>Contain</button>
+                                                <span className="text-[9px] text-white/70 ml-1">Scale:</span>
+                                                <input type="range" min="25" max="200" value={(formData.imageScale ?? 1) * 100} onChange={e => setFormData(prev => ({ ...prev, imageScale: Number(e.target.value) / 100 }))} className="w-16 h-1 accent-brand-pink" />
+                                                <button type="button" onClick={() => setFormData(prev => ({ ...prev, imagePosition: { x: 50, y: 50 } }))} className="text-[9px] text-white/60 hover:text-white">Reset</button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {!editMode && (
                                         <div className="absolute bottom-6 left-6 right-6 flex justify-between items-end z-10">
@@ -1874,7 +1914,6 @@ export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose
                                                                     <div key={idx} className="flex gap-2 items-center">
                                                                         <input value={video.title} onChange={e => handleVideoChange(idx, 'title', e.target.value)} className={cn("w-1/3 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="Title (e.g. MV)" />
                                                                         <input value={video.url} onChange={e => handleVideoChange(idx, 'url', e.target.value)} className={cn("flex-1 rounded-2xl py-3 px-4 border-2 focus:outline-none transition-all text-xs font-bold", theme === 'dark' ? "bg-slate-900 border-white/5 focus:border-brand-pink text-white" : "bg-slate-50 border-slate-100 focus:border-brand-pink text-slate-900 shadow-inner")} placeholder="YouTube URL..." />
-                                                                        <button type="button" onClick={() => setShowYouTubeSearchVideoIdx(idx)} className={cn("shrink-0 px-3 py-3 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-colors", theme === 'dark' ? "bg-red-500/20 text-red-400 hover:bg-red-500/30" : "bg-red-50 text-red-600 hover:bg-red-100")}><Youtube size={14} /> Search</button>
                                                                         <button type="button" onClick={() => removeVideo(idx)} className={cn("p-3 rounded-2xl transition-colors shrink-0", theme === 'dark' ? "bg-slate-800 text-red-400 hover:bg-red-900/40" : "bg-red-50 text-red-500 hover:bg-red-100")}><Trash2 size={16} /></button>
                                                                     </div>
                                                                 ))}
@@ -2956,20 +2995,6 @@ export function IdolModal({ isOpen, mode, idol, idols = [], groups = [], onClose
                 onClose={() => setModalConfig(prev => ({ ...prev, isOpen: false }))}
             />
 
-            <YouTubeSearchModal
-                isOpen={showYouTubeSearchVideoIdx != null}
-                onClose={() => setShowYouTubeSearchVideoIdx(null)}
-                defaultQuery={formData?.name ? `${formData.name} ${(formData.videos?.[showYouTubeSearchVideoIdx]?.title || '')} MV`.trim() : ''}
-                onSelect={(url, item) => {
-                    if (showYouTubeSearchVideoIdx != null && url) {
-                        const newVideos = [...(formData.videos || [])];
-                        const v = newVideos[showYouTubeSearchVideoIdx] || {};
-                        newVideos[showYouTubeSearchVideoIdx] = { ...v, url, title: item?.title ?? v.title };
-                        setFormData(prev => ({ ...prev, videos: newVideos }));
-                    }
-                    setShowYouTubeSearchVideoIdx(null);
-                }}
-            />
         </AnimatePresence>,
         document.body
     );

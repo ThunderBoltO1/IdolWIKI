@@ -115,6 +115,9 @@ const translations = {
         activeMembers: { en: 'Active Members', th: 'สมาชิกปัจจุบัน' },
         edit: { en: 'Edit', th: 'แก้ไข' },
         noGalleryYet: { en: 'No gallery images yet.', th: 'ยังไม่มีรูปแกลเลอรี' },
+        unsavedConfirmTitle: { en: 'Unsaved changes', th: 'ยังไม่ได้บันทึก' },
+        unsavedConfirmMessage: { en: 'You have unsaved changes. Leave this tab?', th: 'ยังไม่ได้บันทึก ต้องการออกจากแท็บนี้ไหม?' },
+        unsavedConfirmLeave: { en: 'Leave', th: 'ออก' },
     },
     idolDetail: {
         biography: { en: 'Biography', th: 'ประวัติ' },
